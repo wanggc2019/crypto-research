@@ -1,0 +1,111 @@
+schema_version: 1
+# 文档类型识别：按顺序匹配，先命中先得（正则，大小写不敏感）。
+doc_types:
+  judicial_interpretation:
+    - '法释[〔\[［]'
+    - '最高人民法院.*解释'
+    - '最高人民检察院.*解释'
+    - '指导意见'
+  law:
+    - '^中华人民共和国.*法$'
+    - '法（20\d{2}'
+  admin_regulation:
+    - '国务院令'
+    - '条例'
+  dept_rule:
+    - '中国人民银行令'
+    - '办法$'
+    - '规定$'
+    - '实施细则'
+  normative_doc:
+    - '银发[〔\[［]'
+    - '证监发[〔\[［]'
+    - '汇发[〔\[［]'
+    - '公告[〔\[［]'
+    - '通知'
+  case:
+    - '典型案例'
+    - '指导性案例'
+    - '案例'
+  interpretation:
+    - '答记者问'
+    - '解读'
+    - '评论'
+
+# 国外监管源文档类型（按顺序匹配）
+foreign_doc_types:
+  rulemaking:
+    - '^(regulation|directive|decision) \(eu\)'
+    - 'proposes? (a )?rule'
+    - 'proposal'
+    - 'final rule'
+    - 'rulemaking'
+    - 'adopts? (a )?(new )?(rule|amendments?)'
+    - 'notice of proposed'
+    - 'request for comment'
+    - 'consultation'
+  enforcement:
+    - 'charges'
+    - 'enforcement action'
+    - 'settles?'
+    - 'fined'
+    - 'penalt(y|ies)'
+    - 'cease and desist'
+    - 'sanctions?'
+    - 'stops?'
+    - 'bans?'
+    - 'warns?'
+    - 'restricts?'
+  guidance:
+    - 'guidance'
+    - 'consultation'
+    - 'consults?'
+    - 'framework'
+    - 'interpretive'
+    - 'statement on'
+    - 'policy statement'
+  speech:
+    - 'speech'
+    - 'remarks'
+    - 'keynote'
+  press_release:
+    - 'press release'
+    - 'announces?'
+    - 'launches?'
+
+doc_type_cn:
+  law: 法律
+  admin_regulation: 行政法规
+  judicial_interpretation: 司法解释
+  dept_rule: 部门规章
+  normative_doc: 规范性文件
+  case: 案例
+  interpretation: 解读
+  news: 新闻
+  rulemaking: 规则制定
+  enforcement: 执法行动
+  guidance: 指引/咨询
+  speech: 讲话
+  press_release: 新闻稿
+  final_rule: 最终规则
+  proposed_rule: 拟议规则
+  notice: 公告
+  other: 其他
+
+# 文号：银发〔2026〕42号 / 法释〔2024〕10号 / 公告〔2026〕第25号
+doc_no_re: '([\u4e00-\u9fa5]{2,12}[〔\[［]\d{4}[〕\]］]\s*第?\s*\d+\s*号)'
+# 施行日期：自2026年2月6日起施行
+effective_re: '自\s*(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日\s*起'
+# 废止/替代关系：兼容「废止……银发〔2021〕237号」和「银发〔2021〕237号同时废止」两种写法
+supersede_re: '([\u4e00-\u9fa5]{2,12}[〔\[［]\d{4}[〕\]］]\s*第?\s*\d+\s*号)[^。；\n]{0,20}?(?:同时)?废止|废止[^。；\n]{0,50}?([\u4e00-\u9fa5]{2,12}[〔\[［]\d{4}[〕\]］]\s*第?\s*\d+\s*号)'
+
+# 高敏感主题：命中即按「重要」处理（P0 候选）
+high_topics:
+  - 虚拟货币
+  - 稳定币
+  - 加密资产
+  - 加密货币
+  - RWA
+  - 现实世界资产代币化
+  - 挖矿
+  - 矿机

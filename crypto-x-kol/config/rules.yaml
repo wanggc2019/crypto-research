@@ -1,0 +1,128 @@
+# crypto-x-kol 规则
+#
+# 1) topics：主题分组（决定「值不值得告警」）
+#    kind = critical（安全/监管，可升 P0）| strong（上币/资金/宏观/升级，可升 P1）
+#           | action（操作观点）| breaking（突发词）| rumor/promo/gm（扣分项）
+# 2) alert：评分权重/阈值/每日上限（只影响 Telegram 告警；所有新帖仍进日报）
+# 3) high_signal：仅用于报告/消息里的 ⚡ 标记与旧版兼容
+schema_version: 1
+updated: "2026-11-08"
+
+alert:
+  weights:
+    tier: {T1: 18, T2: 10}
+    critical: 30
+    strong: 16
+    action: 8
+    breaking: 10
+    asset: 5
+    quote: 2
+    consensus_per_other: 10   # 每多一位 KOL 提到同一主题
+    consensus_cap: 20
+    novelty: 8                # N 天内首次提该主题
+  penalties:
+    promo: -25                # 抽奖/活动/AMA/邀请码
+    gm: -18                   # GM/早安/晚安
+    rumor: -10                # 传闻/据传/rumor
+  thresholds: {P0: 45, P1: 28, P2: 10}
+  consensus_window_hours: 4
+  novelty_days: 7
+  p0_pierce_quiet: true       # 静默时段 P0 是否穿透（夜里只有安全/监管/多 KOL 同题能到 P0）
+  caps:
+    per_day: 8                # 每天最多推送的「告警」条数；其余只进日报
+    max_per_message: 5        # 单条 Telegram 最多列几条
+    p0_bypass_cap: true       # P0 不受 per_day 限制（但仍受 max_per_message 限制）
+
+topics:
+  security:
+    label: 安全事件
+    kind: critical
+    keywords: [被盗, 被黑, 黑客, 攻击, 漏洞, 脱锚, 清算, 暂停提币, 暂停充值, 暂停提现, 破产, 跑路,
+               hack, hacked, hacking, exploit, exploited, breach, depeg, drained, stolen, paused withdrawals]
+  regulation:
+    label: 监管/ETF
+    kind: critical
+    keywords: [监管, 诉讼, 罚款, 立案, 逮捕, 牌照, 合规, 法案, 国会, SEC, CFTC, ETF, DOJ, 美联储, 制裁]
+  listing:
+    label: 上币/下架
+    kind: strong
+    keywords: [上币, 下架, 清退, 上市, listing, list, delist, delisting, 退市]
+  flows:
+    label: 资金动作
+    kind: strong
+    keywords: [增持, 减持, 买入, 卖出, 回购, 销毁, 解锁, 空投, 抛售, 巨额, 转入, 转出, 囤币, 建仓, 清仓]
+  macro:
+    label: 宏观
+    kind: strong
+    keywords: [降息, 加息, 鲍威尔, FOMC, CPI, 通胀, 流动性, 衰退, 关税, 战争, 美债, 收益率]
+  upgrade:
+    label: 技术升级
+    kind: strong
+    keywords: [升级, 主网, 分叉, 硬分叉, 测试网, 上线, 路线图, mainnet, upgrade, fork]
+  action:
+    label: 操作观点
+    kind: action
+    keywords: [做多, 做空, 目标价, 抄底, 逃顶, 止损, 加仓, all in, 空仓, 满仓]
+  breaking:
+    label: 突发
+    kind: breaking
+    keywords: [breaking, just in, 突发, 刚刚, 紧急, 快讯, alert]
+  rumor:
+    label: 传闻
+    kind: rumor
+    keywords: [传闻, 据传, 据说, 网传, rumor, unconfirmed, 未经证实]
+  promo:
+    label: 推广
+    kind: promo
+    keywords: [抽奖, giveaway, 白名单, whitelist, AMA, space, 活动, 报名, 邀请码, 推荐码, 返佣, 空投链接]
+  gm:
+    label: 日常
+    kind: gm
+    keywords: [gm, 早安, 晚安, good morning, good night]
+
+# 报告/消息里的 ⚡ 标记（与评分无关，保留旧版可读性）
+high_signal:
+  keywords:
+    - 上币
+    - 下架
+    - 清退
+    - 监管
+    - 诉讼
+    - 罚款
+    - 立案
+    - 逮捕
+    - 牌照
+    - 合规
+    - SEC
+    - CFTC
+    - ETF
+    - 被盗
+    - 攻击
+    - 漏洞
+    - 黑客
+    - 脱锚
+    - 清算
+    - 破产
+    - 降息
+    - 加息
+    - 鲍威尔
+    - FOMC
+    - CPI
+    - 流动性
+    - 增持
+    - 减持
+    - 买入
+    - 卖出
+    - 回购
+    - 销毁
+    - 解锁
+    - 空投
+    - 分叉
+    - 升级
+    - 主网
+    - BTC
+    - ETH
+    - BNB
+
+# 资产关注（评分 +5；仓库主线是 BTC/ETH/BNB）
+assets: [BTC, ETH, BNB]

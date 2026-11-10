@@ -1,0 +1,190 @@
+schema_version: 1
+# 只放 T0/T1 权威源：官网原文优先，媒体只做线索（后续再加）。
+# item_href_re 用来从列表页里挑出「文章链接」，避免把导航/栏目页当成文章。
+sources:
+  - id: pbc_tiaofasi
+    name: 中国人民银行·条法司（规范性文件）
+    tier: T0
+    url: https://www.pbc.gov.cn/tiaofasi/144941/3581332/index.html
+    base_url: https://www.pbc.gov.cn
+    item_href_re: '/tiaofasi/144941/3581332/\d{16,}/index\.html'
+    default_doc_type: normative_doc
+
+  - id: pbc_news
+    name: 中国人民银行·新闻发布
+    tier: T1
+    url: https://www.pbc.gov.cn/goutongjiaoliu/113456/113469/index.html
+    base_url: https://www.pbc.gov.cn
+    item_href_re: '/goutongjiaoliu/113456/113469/\d{16,}/index\.html'
+    default_doc_type: news
+
+  - id: safe_zcfg
+    name: 国家外汇管理局·政策法规
+    tier: T0
+    url: https://www.safe.gov.cn/safe/zcfg/index.html
+    base_url: https://www.safe.gov.cn
+    item_href_re: '/safe/20\d{2}/\d{4}/\d+\.html'
+    default_doc_type: normative_doc
+
+  # 2026-11-08 调研实测可用：证监会规章库（静态，反爬需限速）
+  - id: csrc_guizhang
+    name: 证监会·规章库
+    tier: T0
+    url: https://www.csrc.gov.cn/csrc/c106256/fg.shtml
+    base_url: https://www.csrc.gov.cn
+    item_href_re: '/csrc/c106256/c\d+/content\.shtml'
+    default_doc_type: dept_rule
+
+  # 最高人民法院·司法解释（静态；详情正文在 div 里，解析有兜底）
+  - id: court_sfjs
+    name: 最高人民法院·司法解释
+    tier: T0
+    url: https://www.court.gov.cn/fabu/gengduo/16.html
+    base_url: https://www.court.gov.cn
+    item_href_re: '/fabu/xiangqing/\d+\.html'
+    default_doc_type: judicial_interpretation
+
+  # 最高人民法院公报（静态；司法解释 + 指导性案例）
+  - id: gongbao_sfjs
+    enabled: false   # 站点对本机网络不稳定（302 循环），先禁用
+    name: 最高人民法院公报·司法解释
+    tier: T0
+    url: https://gongbao.court.gov.cn/ArticleList.html?serial_no=sfjs
+    base_url: https://gongbao.court.gov.cn
+    item_href_re: '/Details/[0-9a-fA-F]{20,40}\.html'
+    list_timeout: 20
+    list_retries: 1
+    detail_timeout: 10
+    detail_limit: 1
+    default_doc_type: judicial_interpretation
+
+  - id: gongbao_zdal
+    enabled: false   # 站点对本机网络不稳定（302 循环），先禁用
+    name: 最高人民法院公报·指导性案例
+    tier: T1
+    url: https://gongbao.court.gov.cn/ArticleList.html?serial_no=al
+    base_url: https://gongbao.court.gov.cn
+    item_href_re: '/Details/[0-9a-fA-F]{20,40}\.html'
+    list_timeout: 20
+    list_retries: 1
+    detail_limit: 0
+    default_doc_type: case
+
+  # ===== 国外监管源（2026-11-09 实测 RSS 可用）=====
+  # 只按标题/摘要命中 crypto 主题才进库；详情每源最多 2 篇，避免抓取量过大。
+  - id: sec_press
+    name: 美国 SEC·新闻稿
+    tier: T0
+    jurisdiction: US
+    type: rss
+    url: https://www.sec.gov/news/pressreleases.rss
+    default_doc_type: press_release
+    max_items: 40
+    detail_limit: 2
+    detail_timeout: 12
+
+  - id: cftc_press
+    name: 美国 CFTC·新闻稿
+    tier: T0
+    jurisdiction: US
+    type: rss
+    url: https://www.cftc.gov/PressRoom/PressReleases/rss
+    default_doc_type: press_release
+    max_items: 40
+    detail_limit: 2
+    detail_timeout: 12
+
+  - id: fed_press
+    list_retries: 1
+    name: 美联储·新闻稿
+    tier: T1
+    jurisdiction: US
+    type: rss
+    url: https://www.federalreserve.gov/feeds/press_all.xml
+    default_doc_type: press_release
+    max_items: 30
+    detail_limit: 1
+    detail_timeout: 12
+
+  - id: ecb_press
+    name: 欧洲央行·新闻/讲话
+    tier: T1
+    jurisdiction: EU
+    type: rss
+    url: https://www.ecb.europa.eu/rss/press.html
+    default_doc_type: press_release
+    max_items: 30
+    detail_limit: 1
+    detail_timeout: 12
+
+  - id: esma_news
+    name: 欧盟 ESMA·新闻
+    tier: T0
+    jurisdiction: EU
+    type: rss
+    url: https://www.esma.europa.eu/press-news/esma-news/rss
+    default_doc_type: press_release
+    max_items: 40
+    detail_limit: 2
+    detail_timeout: 12
+
+  - id: fca_news
+    name: 英国 FCA·新闻
+    tier: T1
+    jurisdiction: UK
+    type: rss
+    url: https://www.fca.org.uk/news/rss.xml
+    default_doc_type: press_release
+    max_items: 40
+    detail_limit: 2
+    detail_timeout: 12
+
+  - id: mas_news
+    enabled: false   # 本机访问 RSS 偶发 404，先备用
+    list_retries: 1
+    name: 新加坡 MAS·新闻
+    tier: T1
+    jurisdiction: SG
+    type: rss
+    url: https://www.mas.gov.sg/rss/newsroom
+    default_doc_type: press_release
+    max_items: 40
+    detail_limit: 2
+    detail_timeout: 12
+
+  - id: fsa_jp_press
+    name: 日本金融厅·新闻稿
+    tier: T1
+    jurisdiction: JP
+    url: https://www.fsa.go.jp/en/press_releases/index.html
+    base_url: https://www.fsa.go.jp
+    item_href_re: '/en/news/20\d{2}/\d{8}-\d+\.html'
+    default_doc_type: press_release
+    detail_limit: 2
+    detail_timeout: 12
+
+  # ===== 法规原文层（2026-11-09 实测可用）=====
+  - id: federal_register
+    name: 美国联邦公报·规则 (Federal Register)
+    tier: T0
+    jurisdiction: US
+    type: federal_register
+    # OR 查询会打乱 newest 排序；用多 query 合并后按日期排序
+    queries: ["crypto", "stablecoin", "digital asset", "virtual asset", "digital currency"]
+    max_age_days: 180
+    default_doc_type: press_release
+    max_items: 40
+    detail_limit: 1
+    detail_timeout: 15
+
+  - id: eurlex_search
+    name: 欧盟 EUR-Lex·法规检索 (crypto)
+    tier: T0
+    jurisdiction: EU
+    type: list
+    url: https://eur-lex.europa.eu/search.html?text=crypto&scope=EURLEX&type=quick&lang=en&sortOne=date
+    base_url: https://eur-lex.europa.eu/
+    item_href_re: 'legal-content/(AUTO|EN)/(?:[A-Z]+/)?\?uri=CELEX:'
+    default_doc_type: rulemaking
+    detail_limit: 0   # EUR-Lex 详情页是 JS/框架，正文抓取不可靠；只用列表标题分类
+    detail_timeout: 15

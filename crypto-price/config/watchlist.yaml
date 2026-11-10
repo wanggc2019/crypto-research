@@ -1,0 +1,44 @@
+# 关注标的（watchlist）—— 当前范围：BTC / ETH / BNB
+# 只监控这里列出的资产；新增资产 = 加一段配置 + 确认三个交易所都有对应交易对。
+# 阈值不在这里（见 rules.yaml），这里只管"看什么"。
+
+schema_version: 1
+updated: "2026-11-08"
+
+assets:
+  BTC:
+    name: Bitcoin
+    tier: core
+    # 三家交易所的交易对（免 API key 的公开行情）
+    binance: BTCUSDT
+    okx: BTC-USDT
+    coinbase: BTC-USD
+    # 关键整数关口：穿越时提示（不构成 P0）。按当前价格区间维护，长期可季度校准。
+    levels: [65000, 70000, 75000, 80000, 85000, 90000, 100000]
+    # 行情页（告警卡片里的"查看行情"链接）
+    chart_url: "https://www.binance.com/zh-CN/trade/BTC_USDT?type=spot"
+
+  ETH:
+    name: Ethereum
+    tier: core
+    binance: ETHUSDT
+    okx: ETH-USDT
+    coinbase: ETH-USD
+    levels: [1800, 2000, 2200, 2500, 2800, 3000, 3500, 4000]
+    chart_url: "https://www.binance.com/zh-CN/trade/ETH_USDT?type=spot"
+
+  BNB:
+    name: BNB
+    tier: core_platform
+    binance: BNBUSDT
+    okx: BNB-USDT
+    coinbase: BNB-USD
+    levels: [500, 550, 600, 650, 700, 750, 800]
+    chart_url: "https://www.binance.com/zh-CN/trade/BNB_USDT?type=spot"
+
+# 冻结标的：不采集、不告警。恢复时把条目移到 assets 并按需补 levels。
+paused:
+  - symbol: SOL
+    reason: 当前配置暂不关注
+  - symbol: ASTER
+    reason: 当前配置暂不关注

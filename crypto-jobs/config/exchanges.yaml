@@ -1,0 +1,76 @@
+schema_version: 1
+# 交易所分类（用于报告里的 CEX / DEX 对比与招聘节奏分析）。
+# slug 必须与 sources.py 归一化出的 company_slug 一致；未在本次数据中出现的公司只计入覆盖率提示。
+cex:
+  - {slug: okx, name: OKX}
+  - {slug: coinbase, name: Coinbase}
+  - {slug: bybit, name: Bybit}
+  - {slug: binance, name: Binance}
+  - {slug: kraken, name: Kraken}
+  - {slug: gemini, name: Gemini}
+  - {slug: gate-io, name: Gate.io}
+  - {slug: crypto-com, name: Crypto.com}
+  - {slug: bitstamp, name: Bitstamp}
+  - {slug: deribit, name: Deribit}
+  - {slug: bitget, name: Bitget}
+  - {slug: kucoin, name: KuCoin}
+
+dex:
+  - {slug: uniswap-labs, name: Uniswap Labs}
+  - {slug: 0x, name: 0x / Matcha}
+  - {slug: dodo, name: DODO}
+  - {slug: 1inch, name: 1inch}
+  - {slug: dydx, name: dYdX}
+  - {slug: curve, name: Curve}
+  - {slug: balancer, name: Balancer}
+  - {slug: pancakeswap, name: PancakeSwap}
+  - {slug: raydium, name: Raydium}
+  - {slug: jupiter, name: Jupiter}
+  - {slug: aerodrome, name: Aerodrome}
+  - {slug: sushiswap, name: SushiSwap}
+
+# 非交易所公司的行业类型（用于报告「类型」列与摘要标注；CEX/DEX 由上面的名单自动覆盖）。
+# 未列出的公司显示「—」；分类只影响展示，不影响统计。
+company_types:
+  trm-labs: 安全/合规
+  certik: 安全审计
+  elliptic: 安全/合规
+  openzeppelin: 安全审计
+  bitgo: 托管/钱包
+  anchorage-digital: 托管/钱包
+  ledger: 托管/钱包
+  fireblocks: 托管/钱包
+  paxos: 稳定币/托管
+  circle: 稳定币/支付
+  alchemy: 基础设施/RPC
+  quicknode: 基础设施/RPC
+  blockdaemon: 节点基础设施
+  helius: 基础设施/RPC
+  syndica: 基础设施/RPC
+  anza: 基础设施/RPC
+  chainlink-labs: Oracle/基础设施
+  ripple: 协议/支付
+  consensys: 协议/基础设施
+  aptos: L1 协议
+  mysten-labs: L1 协议
+  offchain-labs: L2 协议
+  matter-labs: L2 协议
+  morpho: DeFi 协议
+  safe: 钱包/基础设施
+  lista-dao: DeFi 协议
+  stellar-development-foundation: L1 协议
+  blockworks: 媒体/数据
+  galaxy: 资管/交易
+  amber-group: 资管/交易
+  agora: 稳定币
+  rain: 支付/卡
+  openfx: 稳定币/支付
+  dakota: 加密银行
+  fortitude-mining: 矿业
+  hivemapper: DePIN
+  smile-digital-health: 非加密（噪音）
+  civilgrid: 非加密（噪音）
+  mitre-media: 非加密（噪音）
+  claims: 非加密（噪音）
+  salvo-software: 非加密（噪音）
+  lemon-io: 外包/人力

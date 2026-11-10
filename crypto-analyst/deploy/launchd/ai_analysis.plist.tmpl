@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>__LABEL__</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>__MODULE_DIR__/scripts/ai_analysis.sh</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>__MODULE_DIR__</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>CRYPTO_JOB_LABEL</key>
+    <string>__LABEL__</string>
+  </dict>
+  <!-- 每周日 20:15（本地时区）AI 综合分析（周报 20:00 之后）；RunAtLoad=false -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Weekday</key>
+    <integer>0</integer>
+    <key>Hour</key>
+    <integer>20</integer>
+    <key>Minute</key>
+    <integer>15</integer>
+  </dict>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>StandardOutPath</key>
+  <string>__LOG_DIR__/launchd.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>__LOG_DIR__/launchd.err.log</string>
+</dict>
+</plist>

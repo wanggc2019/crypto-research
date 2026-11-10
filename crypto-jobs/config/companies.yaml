@@ -1,0 +1,167 @@
+schema_version: 1
+# crypto-jobs 公司白名单（T2 通用远程站过滤用，scripts/sources.py 读取）。
+#
+# 规则：公司名小写后按「词边界」匹配（crypto_core 的 clean_text 归一化后判断），
+# 命中白名单即视为 crypto/数字资产行业公司，可绕过关键词过滤收录。
+# 只放 crypto-native 公司；Web2 大厂外包/招聘中介不要放。
+crypto_companies:
+  # 交易所 / 经纪
+  - coinbase
+  - kraken
+  - binance
+  - okx
+  - bybit
+  - gemini
+  - bitstamp
+  - deribit
+  - bullish
+  - crypto.com
+  - gate.io
+  - bitfinex
+  - kucoin
+  - bitget
+  - mexc
+  - upbit
+  - bitbank
+  - coincheck
+  - coinbase pro
+  - coinlist
+  - binance.US
+  - independent reserve
+  # 托管 / 安全 / 合规数据
+  - fireblocks
+  - anchorage digital
+  - bitgo
+  - ledger
+  - trezor
+  - copper
+  - chainalysis
+  - trm labs
+  - elliptic
+  - certik
+  - openzeppelin
+  - trail of bits
+  - halborn
+  - quantstamp
+  - sumsub
+  - solidus labs
+  - hexagate
+  # 基础设施 / 节点 / RPC / 数据
+  - alchemy
+  - quicknode
+  - blockdaemon
+  - figment
+  - chorus one
+  - helius
+  - syndica
+  - chainstack
+  - infura
+  - dune
+  - dune analytics
+  - nansen
+  - messari
+  - glassnode
+  - kaiko
+  - amberdata
+  - coinmetrics
+  - blockworks
+  - the block
+  - coindesk
+  - cointelegraph
+  - arkham
+  - allium
+  - goldsky
+  - subquery
+  - the graph
+  # 协议 / L1 / L2 / DeFi
+  - ripple
+  - consensys
+  - metamask
+  - aptos
+  - aptos labs
+  - mysten labs
+  - sui
+  - solana labs
+  - solana foundation
+  - anza
+  - jito
+  - offchain labs
+  - arbitrum
+  - matter labs
+  - zksync
+  - optimism
+  - starkware
+  - starknet
+  - polygon
+  - uniswap
+  - uniswap labs
+  - safe
+  - gnosis
+  - aave
+  - compound
+  - makerdao
+  - sky
+  - morpho
+  - curve
+  - balancer
+  - lido
+  - rocket pool
+  - eigenlayer
+  - eigenlabs
+  - celestia
+  - cosmos
+  - polkadot
+  - parity technologies
+  - parity
+  - ethereum foundation
+  - avalanche
+  - avalabs
+  - near
+  - near protocol
+  - tezos
+  - cardano
+  - iohk
+  - injective
+  - sei
+  - monad
+  - berachain
+  - movement
+  - eclipse
+  - anoma
+  - dydx
+  - arcus
+  - 1inch
+  - immutable
+  - opensea
+  - gauntlet
+  - chaos labs
+  - paxos
+  - circle
+  - tether
+  - bitwise
+  - grayscale
+  - galaxy digital
+  - galaxy
+  - wintermute
+  - gsr
+  - amber group
+  - blockchain.com
+  - block
+  - square
+  - paypal
+  - stripe
+  - robinhood
+  - revolut
+  - nium
+  - rain
+  - onda finance
+  - superstate
+  - ethena
+  - pendle
+  - etherfi
+  - temple
+  - maple
+  - goldfinch
+  - centrifuge
+  - tokeny
+  - secnum

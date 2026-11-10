@@ -1,0 +1,6 @@
+{
+  "exclude_modules": [
+    "crypto-policy"
+  ],
+  "note": "临时排除 WIP 模块时把目录名加入 exclude_modules（crypto-policy 仍为并行会话 WIP；crypto-jobs 已稳定并纳入质量门）"
+}

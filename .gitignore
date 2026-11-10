@@ -1,0 +1,24 @@
+# 运行时产物（每天几百 KB，且会持续膨胀）
+data/
+# 密钥与本地环境
+.env
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+# 系统 / 编辑器缓存
+.DS_Store
+*.log
+.vscode/*
+!.vscode/settings.json
+!.vscode/launch.json
+.ruff_cache/
+*.egg-info/
+.pytest_cache/
+
+# 总结/报告/分析结果只留本地，不入库
+crypto-analyst/records/
+
+# 个人学习笔记只留本地，不入库
+learning/

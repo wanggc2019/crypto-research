@@ -1,0 +1,27 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "crypto-news: fetch (采集)",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/crypto-news/scripts/fetch.py",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "crypto-news: score (评分出报告)",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/crypto-news/scripts/score.py",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "crypto-news: notify (推送, dry-run)",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/crypto-news/scripts/notify.py",
+      "args": ["--dry-run"],
+      "console": "integratedTerminal"
+    }
+  ]
+}

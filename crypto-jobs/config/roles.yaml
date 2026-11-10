@@ -1,0 +1,282 @@
+schema_version: 1
+# 岗位/资历判定规则（业务策略，可随时调）。
+# 匹配顺序：roles 从上到下，标题命中第一个即归类；exclude_keywords 优先级最高。
+# 目标岗位（2026-11-09 起）= 原 DevOps/SRE/MLOps/平台 + 开发岗位（后端/前端/全栈/移动/区块链/
+# 数据/ML/嵌入式/交易系统/通用软件）。改目标范围时同步改 target_roles 与 app.yaml filters.target_roles。
+# 每个 keyword 按「词边界 + 大小写不敏感」匹配。
+target_roles: [devops, sre, mlops, platform, software, backend, frontend, fullstack, mobile,
+               blockchain, trading, data, ml, embedded]
+
+roles:
+  - id: sre
+    label: SRE / 可靠性
+    keywords:
+      - site reliability
+      - sre
+      - reliability engineer
+      - production engineer
+      - observability
+      - incident response
+      - incident management
+
+  - id: mlops
+    label: MLOps / AI 基础设施
+    keywords:
+      - mlops
+      - ml ops
+      - ml platform
+      - machine learning infrastructure
+      - machine learning platform
+      - machine learning infrastructure
+      - ai infrastructure
+      - ai platform
+      - model serving
+      - model deployment
+      - model training
+      - llm infrastructure
+      - inference infrastructure
+
+  - id: devops
+    label: DevOps / 交付
+    keywords:
+      - devops
+      - dev ops
+      - build engineer
+      - release engineer
+      - ci/cd
+      - cicd
+      - cloud engineer
+      - cloud operations
+      - automation engineer
+      - developer productivity
+      - developer experience
+      - engineering productivity
+
+  - id: platform
+    label: 平台 / 基础设施
+    keywords:
+      - platform engineer
+      - platform engineering
+      - infrastructure engineer
+      - infrastructure
+      - systems engineer
+      - system engineer
+      - cloud infrastructure
+      - cloud management
+      - network engineer
+      - database reliability
+      - data infrastructure
+      - storage engineer
+      - middleware
+      - kubernetes
+
+  - id: embedded
+    label: 嵌入式
+    keywords:
+      - embedded
+      - firmware
+
+  - id: mobile
+    label: 移动端开发
+    keywords:
+      - mobile
+      - ios
+      - android
+      - flutter
+      - react native
+
+  - id: fullstack
+    label: 全栈开发
+    keywords:
+      - full stack
+      - full-stack
+      - fullstack
+
+  - id: frontend
+    label: 前端开发
+    keywords:
+      - frontend
+      - front-end
+      - front end
+      - web engineer
+      - ui engineer
+      - react
+      - vue
+      - angular
+
+  - id: backend
+    label: 后端开发
+    keywords:
+      - backend
+      - back-end
+      - back end
+      - server engineer
+      - api engineer
+      - microservices
+      - java engineer
+      - golang
+      - rust engineer
+      - python engineer
+      - c++ engineer
+      - go engineer
+
+  - id: data
+    label: 数据工程
+    keywords:
+      - data engineer
+      - data platform
+      - data infrastructure
+      - analytics engineer
+      - database engineer
+      - data foundations
+      - crypto data
+      - data warehouse
+
+  - id: ml
+    label: AI / ML 工程
+    keywords:
+      - machine learning engineer
+      - ml engineer
+      - ai engineer
+      - algorithm engineer
+      - ai agent
+      - applied ai
+      - ai development
+      - ai application
+      - ai native
+      - llm engineer
+
+  - id: blockchain
+    label: 区块链 / 智能合约开发
+    keywords:
+      - blockchain
+      - smart contract
+      - solidity
+      - web3
+      - web 3
+      - dapp
+      - d-app
+      - onchain
+      - on-chain
+      - protocol engineer
+      - evm
+      - dex
+      - defi engineer
+      - crypto engineer
+
+  - id: trading
+    label: 交易系统开发
+    keywords:
+      - quant developer
+      - quantitative developer
+      - trading system
+      - trading systems
+      - trading services
+      - trading service
+      - trading engine
+      - matching engine
+      - low latency
+      - low-latency
+      - market data
+      - market making
+      - exchange os
+      - algorithmic trading
+      - liquidity platform
+
+  - id: software
+    label: 软件开发（通用）
+    keywords:
+      - software engineer
+      - software developer
+      - software development
+      - development engineer
+      - developer
+      - programmer
+      - "engineer,"
+      - engineer -
+      - engineer –
+      - engineer —
+      - application architect
+      - technical architect
+      - software architect
+      - platform architect
+      - ai architect
+  # 安全/测试默认不计入开发样本（可在 target_roles 里打开）
+
+  - id: security
+    label: 安全
+    keywords:
+      - security engineer
+      - application security
+      - cloud security
+      - infrastructure security
+      - security operations
+      - security compliance
+      - security governance
+
+  - id: other
+    label: 其他
+    keywords: []
+
+# 标题里出现以下词直接排除（非技术/管理/销售/测试等），优先级最高
+exclude_keywords:
+  - engineering manager
+  - director
+  - head of
+  - vp of
+  - vice president
+  - product manager
+  - project manager
+  - program manager
+  - technical program
+  - sales
+  - marketing
+  - account executive
+  - customer success
+  - customer support
+  - recruiter
+  - people partner
+  - legal
+  - compliance officer
+  - finance
+  - accountant
+  - controlling
+  - designer
+  - copywriter
+  - community manager
+  - business development
+  - developer advocate
+  - developer relations
+  - devrel
+  - technical writer
+  - solutions architect
+  - enterprise architect
+  - solutions engineer
+  - sales engineer
+  - field engineer
+  - support engineer
+  - qa
+  - quality assurance
+  - test engineer
+  - test development
+  - hardware engineer
+  - mechanical engineer
+  - electrical engineer
+  - quantitative trader
+  - trader
+  - data scientist
+  - research scientist
+  - analyst
+  - specialist
+  - coordinator
+
+# 资历：从标题解析，按顺序第一个命中
+seniority:
+  - {id: principal, keywords: [principal]}
+  - {id: staff, keywords: [staff]}
+  - {id: lead, keywords: [lead, leader, tech lead]}
+  - {id: head, keywords: [head, director, vp]}
+  - {id: senior, keywords: [senior, sr., sr]}
+  - {id: junior, keywords: [junior, jr., jr, entry level, entry-level, graduate, new grad]}
+  - {id: intern, keywords: [intern, internship]}
+  - {id: mid, keywords: [mid-level, mid level, intermediate, ii, iii]}

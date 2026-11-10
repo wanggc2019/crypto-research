@@ -1,0 +1,64 @@
+schema_version: 1
+# crypto-analyst 业务配置：改这里不改代码。
+# 说明：概率/情景区间是"判断"，需要每周日复核；数据与计算全部来自 scripts/ 下的代码。
+
+watchlist: [BTC, ETH, BNB, SOL]
+
+scenarios:
+  horizon_days: 90          # 情景窗口：约 1–3 个月
+  last_reviewed: "2026-11-08"
+  set:
+    A:
+      label: "场景1"
+      prob: 0.50
+      desc: "守住 MA200，修复至 MA50（动态位）"
+      anchor: ma50
+      band_px: [81000, 87400]
+    B:
+      label: "场景2"
+      prob: 0.35
+      desc: "日收盘跌破 MA200，下探 68,000–70,000"
+      band_px: [68000, 70000]
+    C:
+      label: "场景3"
+      prob: 0.15
+      desc: "突破 90 日高点，挑战 90,000+"
+      band_px: [90000, 1000000]
+  invalidation: "BTC 日收盘跌破 MA200 视为场景1/场景3 失效"
+
+review:
+  direction_days: 7         # 方向判断 7 天后打分
+  scenario_days: 30         # 情景概率 Brier 30 天后打分（到期日以复盘记录 review_by 为准）
+
+report:
+  daily_time: "10:00"
+  weekly_time: "20:00"
+  
+
+macro:
+  enabled: true
+  dvol:
+    url: "https://www.deribit.com/api/v2/public/get_volatility_index_data"
+    currency: BTC
+  us10y:
+    fred_id: DGS10
+  dxy:
+    yahoo_symbol: "DX-Y.NYB"
+
+events:
+  # 事件类别 → 一句话潜在影响（用于日报事件行，让读者知道"为什么它出现在这里"）
+  impact:
+    protocol_security: "抛压/情绪"
+    exchange_custody: "提币/信任"
+    regulation: "监管/流动性"
+    tokenomics: "供给/解锁"
+    macro: "风险偏好"
+    capital_flow: "资金流"
+    tech_upgrade: "技术叙事"
+    governance: "治理"
+    market_structure: "流动性/波动"
+  default: "情绪"
+
+compliance:
+  research_only: true
+  disclaimer: "本报告为公开数据的统计分析与方法研究，不构成投资建议；不提供任何交易、出入金或账户操作指引。"

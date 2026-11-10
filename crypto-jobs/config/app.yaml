@@ -1,0 +1,85 @@
+schema_version: 1
+# crypto-jobs：加密行业技术岗位（DevOps/SRE/MLOps 等）市场情报。
+# 每日采集 → 技能抽取 → 快照差分 → 周趋势报告；凭据只用仓库根 .env 的 Telegram。
+enabled: true
+
+# 调度周期（秒），tools/render_launchd.py 读取；jobs 变化慢，每天一次足够。
+poll_seconds: 86400
+
+fetch:
+  timeout_seconds: 20
+  retries: 1
+  # 单源单轮最多接收多少条（防止某个大厂 board 吃满预算；0 = 不限制）
+  max_jobs_per_source: 600
+  # JD 正文入库截断（技能抽取只需要前部；raw 里保留截断后的全文）
+  description_max_chars: 20000
+  # 单轮最多请求多少源（调试时 --limit-sources 覆盖）
+  max_sources: 120
+
+filters:
+  # 目标岗位：原 DevOps/SRE/MLOps/平台 + 开发岗位（2026-11-09 按设计约束纳入开发）
+  target_roles: [devops, sre, mlops, platform, software, backend, frontend, fullstack, mobile,
+                 blockchain, trading, data, ml, embedded]
+  # 单条岗位至少抽出 1 个技能才计入"有效样本"（0 = 不过滤）
+  min_skills: 1
+  # 通用招聘站（T2）必须同时命中 crypto 语境才收录；crypto-native ATS 不做此过滤
+  crypto_keywords:
+    - blockchain
+    - crypto
+    - cryptocurrency
+    - web3
+    - defi
+    - digital asset
+    - digital assets
+    - exchange
+    - wallet
+    - custody
+    - stablecoin
+    - bitcoin
+    - ethereum
+    - solana
+    - onchain
+    - on-chain
+    - validator
+    - staking
+    - protocol
+    - rollup
+    - tokenization
+    - tokenized
+    - nft
+    - dao
+    - mining
+    - trade
+    - trading
+
+snapshot:
+  # 每日快照保留天数（state/snapshots/*.json）；由模块自身清理
+  # 457 个岗位/天 ≈ 0.6MB/天，200 天 ≈ 120MB，配合 prune 保持在 data 预算内
+  keep_days: 200
+
+report:
+  top_skills: 25
+  min_skill_count: 3          # 报告里技能至少出现 N 次
+  rising_delta: 3             # 周环比增加 >= N 次视为"升温"
+  company_stats_limit: 200   # 公司统计表/导出最多保留多少家（按岗位数排序）
+  company_profiles: 10       # 周报「公司画像」展示前 N 家（角色/技能/代表岗位）
+  max_notable_jobs: 10
+
+delivery:
+  # 不做夜间静默：消息按计划时间及时发送，是否查看由用户决定。
+  # 周报：周日 10:00（本地时区）由同一个 launchd 任务的第二个触发时间执行；
+  # weekday 用 ISO 编号（1=周一 … 7=周日），供 --weekly-if-due 在 18:00 日更时做补跑判断。
+  weekly:
+    weekday: 7
+    hour: 10
+    minute: 0
+  # 日报：每天 18:00 日更后推送摘要（设计约束每天收）
+  daily_digest: true
+  daily_min_new_jobs: 0        # 0 = 每天都推（>0 时新增岗位数达到阈值才推）
+
+# 新岗位事件触发速报：独立轻量任务定时抓取，发现新目标岗位就立即推 Telegram。
+alerts:
+  enabled: true
+  min_new: 1                   # 单轮新增 >= N 个才推；1 = 每条新岗位都快报
+  max_items: 8                 # 速报里最多列多少条岗位
+  poll_seconds: 7200           # 扫描间隔（秒）；alert launchd 模板里硬编码同值

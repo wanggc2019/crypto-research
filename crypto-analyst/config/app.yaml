@@ -1,0 +1,4 @@
+# 模块调度参数（供 tools/healthcheck.py / tools/render_launchd.py 读取）
+# crypto-analyst 由 launchd StartCalendarInterval 每天 10:00 / 周日 20:00 触发，
+# 这里只用于让健康检查的「最近一轮」阈值按「天」而不是默认 25 分钟计算（取 2 倍周期）。
+poll_seconds: 86400

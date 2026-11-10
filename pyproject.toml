@@ -1,0 +1,19 @@
+[project]
+name = "crypto-research-workspace"
+version = "0.0.0"
+description = "个人 crypto 研究/监测仓库（多需求模块 + 共享库）"
+requires-python = ">=3.9"
+
+[tool.ruff]
+line-length = 120
+target-version = "py39"
+src = ["libs/crypto_core/src", "tools", "crypto-news/scripts"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# 月/季/年报告脚本为紧凑风格（单行初始化/分支），局部放行规则
+"crypto-analyst/scripts/monthly.py" = ["E701", "E402", "E702", "E741"]
+"crypto-analyst/scripts/period.py" = ["E701", "E402", "E702", "E741"]

@@ -1,0 +1,36 @@
+MLOps Engineer, AI Trading Platform
+Vertex Trading Labs — Remote (Global)
+
+About us
+Vertex Trading Labs builds machine learning systems for crypto market making and on-chain analytics. Our trading signals run on a 24/7 inference platform and our research team ships models weekly.
+
+What you'll do
+- Build and operate model training and serving infrastructure for trading signals.
+- Run MLflow and Kubeflow pipelines on Kubernetes; manage GPU clusters and CUDA drivers.
+- Serve LLMs and ranking models with vLLM and Triton; optimize inference latency.
+- Own distributed training jobs with PyTorch, Ray and HuggingFace.
+- Build feature stores and vector databases for RAG and fine-tuning workflows.
+- Automate data pipelines with Airflow, dbt and Kafka; store data in ClickHouse and Postgres.
+- Deploy on AWS with Terraform, Docker and GitHub Actions.
+- Monitor training and serving with Prometheus, Grafana and SLO-driven operations.
+
+Requirements
+- 4+ years of MLOps, ML platform or AI infrastructure experience
+- Strong Python and SQL; Go or Rust is a plus
+- Production experience with MLflow, Kubeflow and model serving
+- Hands-on with CUDA, GPU scheduling and distributed training
+- Experience with LLM, RAG, fine-tuning and RLHF
+- Feature stores and vector databases (pgvector, Pinecone)
+- Airflow, Kafka, ClickHouse and Postgres
+- Kubernetes, Docker, Terraform and AWS
+- Prometheus, Grafana and SLO-driven operations
+
+Nice to have
+- Solidity and smart contracts
+- Ethereum, MEV or market data experience
+- HSM or custody integration
+
+Benefits
+- Remote-first with quarterly onsites
+- Research budget for GPUs and conference travel
+- Competitive salary and token grant

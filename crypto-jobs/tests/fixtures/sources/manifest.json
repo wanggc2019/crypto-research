@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "note": "离线回放 fixtures：均为真实公开接口响应的裁剪版（JSON/XML 保持结构合法；HTML 只保留解析所需行与 JSON-LD）。由 tests/test_sources.py 回放，fetch_all(fixtures_dir=...) 时禁止任何网络请求。",
+  "generated_at": "2026-11-08T23:53:36",
+  "sources": {
+    "gh_coinbase": {
+      "file": "greenhouse_coinbase.json",
+      "type": "greenhouse",
+      "url": "https://boards-api.greenhouse.io/v1/boards/coinbase/jobs?content=true",
+      "trimmed": "283 → 5",
+      "bytes": 46830
+    },
+    "lv_anchorage": {
+      "file": "lever_anchorage.json",
+      "type": "lever",
+      "url": "https://api.lever.co/v0/postings/anchorage?mode=json",
+      "trimmed": "23 → 5",
+      "bytes": 84582
+    },
+    "as_kraken": {
+      "file": "ashby_kraken.json",
+      "type": "ashby",
+      "url": "https://api.ashbyhq.com/posting-api/job-board/kraken.com?includeCompensation=true",
+      "trimmed": "89 → 5",
+      "bytes": 79654
+    },
+    "cjl_rss": {
+      "file": "cryptojobslist.rss.xml",
+      "type": "rss_jobs",
+      "url": "https://api.cryptojobslist.com/jobs.rss",
+      "trimmed": "100 → 5",
+      "bytes": 36617
+    },
+    "web3career": {
+      "file": "web3career.html",
+      "type": "web3career",
+      "url": "https://web3.career/",
+      "trimmed": "16 → 4",
+      "bytes": 22397
+    },
+    "remoteok": {
+      "file": "remoteok.json",
+      "type": "remoteok",
+      "url": "https://remoteok.com/api",
+      "trimmed": "100 → 8",
+      "bytes": 39571
+    }
+  }
+}
