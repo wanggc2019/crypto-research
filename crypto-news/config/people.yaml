@@ -1,0 +1,115 @@
+# 高管发声监控（people）
+# 只监控"能影响市场的高管本人原创发言"，不监控广义 KOL / 影响者 / 喊单账号。
+# 零成本获取：r.jina.ai 代理 x.com 个人主页（无需 API key）+ Google News 姓名检索。
+
+version: 1
+updated: "2026-11-07"
+
+people:
+  - id: cz
+    name: CZ（赵长鹏）
+    role: Binance 创始人 / 大股东
+    x: cz_binance
+    verified: true
+    sensitivity: high
+    why: 历史多次单条推文直接影响 BNB 与全市场情绪；涉及 BNB、上币、监管、安全的表态必须看
+    watch_terms: [BNB, 上币, 下架, 监管, 安全, 储备, 市场]
+    routes:
+      mention_watchlist_asset: P1
+      general_market_view: P2
+      legal_or_scandal: P0
+      repost_or_like_only: drop
+
+  - id: yi_he
+    name: 何一（Yi He）
+    role: Binance 联合创始人
+    x: heyibinance
+    verified: true
+    sensitivity: high
+    why: 币安上币/产品/社区政策的实际决定者之一，中文表态传播快、常被二次解读
+    watch_terms: [上币, 下架, BNB, 币安, 安全, 用户资产]
+    routes:
+      mention_watchlist_asset: P1
+      general_market_view: P2
+      legal_or_scandal: P0
+      repost_or_like_only: drop
+
+  - id: brian_armstrong
+    name: Brian Armstrong
+    role: Coinbase CEO
+    x: brian_armstrong
+    verified: true
+    sensitivity: medium
+    why: 美国监管风向标，Coinbase 的监管动作常先由他公开表态
+    watch_terms: [SEC, regulation, listing, custody, ETF]
+    routes:
+      mention_watchlist_asset: P1
+      general_market_view: P2
+      legal_or_scandal: P0
+      repost_or_like_only: drop
+
+  - id: ben_zhou
+    name: Ben Zhou
+    role: Bybit CEO
+    x: benbybit
+    verified: true
+    sensitivity: medium
+    why: 衍生品/清算风险事件的第一手信息源（如安全事件、赔付方案）
+    watch_terms: [security, hack, liquidation, listing, proof of reserves]
+    routes:
+      mention_watchlist_asset: P1
+      general_market_view: P2
+      legal_or_scandal: P0
+      repost_or_like_only: drop
+
+  - id: jesse_powell
+    name: Jesse Powell
+    role: Kraken 联合创始人
+    x: jespow
+    verified: true
+    sensitivity: low
+    why: 监管立场表态有参考价值，但频率低、直接影响小
+    watch_terms: [SEC, regulation, custody]
+    routes:
+      mention_watchlist_asset: P2
+      general_market_view: P2
+      legal_or_scandal: P1
+      repost_or_like_only: drop
+
+  # ---------- 待核实（先不启用）----------
+  - id: okx_star
+    name: 徐明星（Star Xu）
+    role: OKX 创始人
+    x: null
+    verified: false
+    note: handle 未核实（候选 star_okx 已失效）；以 OKX 官方渠道核实后再启用
+    sensitivity: high
+
+  - id: binance_ceo
+    name: Richard Teng
+    role: Binance CEO
+    x: null
+    verified: false
+    note: 内容多首发于 Binance Square（binance.com/square/profile/richardteng）；X handle 待核实
+    sensitivity: medium
+
+# ---------- 明确不监控 ----------
+excluded:
+  - 泛指 KOL / 影响者 / 喊单账号 / 财经博主
+  - 转发（RT）、点赞、引用他人且无本人评论的内容
+  - 已离职且不再影响所涉平台的高管（可按需调整）
+
+# ---------- 采集方式（零成本）----------
+access:
+  primary:
+    method: jina_x_profile
+    url_template: "https://r.jina.ai/https://x.com/{handle}"
+    poll_seconds: 300
+    verified: true
+    notes: 返回 Markdown，含最近若干条帖子；无需 API key；jina 免费额度有限速，5 分钟一次足够
+  secondary:
+    method: google_news
+    url_template: "https://news.google.com/rss/search?q={query}"
+    poll_seconds: 900
+    notes: 媒体转述，覆盖更全但有延迟；用于交叉确认
+  caveat: fxtwitter（api.fxtwitter.com）只返回主页信息且会间歇性 404，不作为主通道

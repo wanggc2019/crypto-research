@@ -1,0 +1,27 @@
+name: PR Title
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+jobs:
+  check-title:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate PR title
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          echo "PR title: $TITLE"
+          if [ "${#TITLE}" -gt 72 ]; then
+            echo "::error::PR 标题过长（${#TITLE} 字符），请控制在 72 字符以内"
+            exit 1
+          fi
+          if echo "$TITLE" | grep -Eiq '(^|[\[ (])(wip|fixup|tmp)([\] )]|$)'; then
+            echo "::error::PR 标题不要使用 WIP/fixup/tmp"
+            exit 1
+          fi
+          if ! echo "$TITLE" | grep -Eq '^\[(crypto-news|crypto-price|crypto-analyst|crypto-policy|crypto-onchain|crypto-x-kol|crypto-jobs|crypto-knowledge|libs|tools|docs|ci|repo)\]\[(feat|fix|docs|chore|refactor|test|perf|build|revert)\] .+'; then
+            echo "::error::PR 标题格式：[scope][type] 摘要（例：[crypto-news][feat] 英文标题 AI 翻译）"
+            exit 1
+          fi

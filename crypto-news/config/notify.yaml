@@ -1,0 +1,66 @@
+# 送达配置（notify）—— 当前渠道：Telegram
+# 零成本：自建 Bot 免费；凭据放环境变量，不写进仓库。
+
+version: 1
+updated: "2026-11-07"
+
+channel: telegram
+
+telegram:
+  api_base: "https://api.telegram.org"
+  token_env: TELEGRAM_BOT_TOKEN
+  chat_id_env: TELEGRAM_CHAT_ID
+  parse_mode: HTML
+  disable_web_page_preview: false
+
+  rate_limit:
+    per_chat_per_minute: 20
+    backoff_seconds: [1, 4, 16]
+    max_retries: 3
+
+  # 单条上限 4096 字符；超长自动分条
+  max_message_length: 4096
+
+  # ---------- 消息模板 ----------
+  templates:
+    P0: |
+      🚨 <b>[P0 · {category}]</b> {title}
+      <b>发生了什么</b>：{what}
+      <b>为什么重要</b>：{why}
+      <b>动作参考</b>：{action}
+      <b>来源</b>：{sources}
+      <b>确认度</b>：{confirmation}
+      <b>评分</b>：{score} · {time}
+
+    P1: |
+      ⚠️ <b>[P1 · {category}]</b> {title}
+      {what} —— {action}
+      来源：{sources}
+
+    P2_digest: |
+      📊 <b>日报 {date}</b>
+      <b>市场</b>：BTC {btc} | ETH {eth} | BNB {bnb}
+      <b>资金费率</b>：{funding}
+      <b>稳定币</b>：{stable}
+      <b>今日事件</b>：
+      {events}
+      <b>未来 7 天日历</b>：
+      {calendar}
+
+    weekly: |
+      🧭 <b>周报 {week}</b>
+      P0 命中：{p0_count} 条（有用 {useful} / 噪音 {noise}）
+      漏报复盘：{missed}
+      阈值调整：{changes}
+      下周关注：{next_week}
+
+# ---------- 英文标题 AI 翻译（可选；失败自动回退规则翻译）----------
+translate:
+  enabled: true
+  timeout: 45
+  cache_size: 500
+
+# ---------- 备用渠道（后续再开）----------
+# email:
+#   smtp_host: ...
+#   to: ...

@@ -1,0 +1,88 @@
+# 规则与阈值（rules）—— 所有"要不要打扰你"的判断都收敛到这个文件。
+# 改阈值只改这里，不改代码。阈值单位：涨跌幅=百分比（1.0 = 1%），价差=基点（bps）。
+
+schema_version: 1
+updated: "2026-11-08"
+
+# ---------------------------------------------------------------- 波动检测
+rules:
+  # 短窗口急涨急跌：同一资产同一轮只报"最强的一条"，避免 1m/5m/15m 三连刷屏。
+  # P0 阈值 = max(P1 阈值 × p0_multiplier, p0_floor_pct)
+  fast_move:
+    enabled: true
+    windows: {m1: 60, m5: 300, m15: 900, h1: 3600}
+    p1_pct:
+      BTC: {m1: 0.6, m5: 1.0, m15: 1.5, h1: 2.0}
+      ETH: {m1: 0.8, m5: 1.2, m15: 1.8, h1: 2.5}
+      BNB: {m1: 0.9, m5: 1.4, m15: 2.0, h1: 2.8}
+    p0_multiplier: 2.0
+    p0_floor_pct: 3.0
+
+  # 24h 大幅波动（兜底：慢跌但累计幅度大，也应提醒）
+  day_move:
+    enabled: true
+    p1_pct: {BTC: 5.0, ETH: 6.0, BNB: 7.0}
+    p0_pct: {BTC: 10.0, ETH: 11.0, BNB: 12.0}
+
+  # 24h 新高/新低：与上一轮 24h 极值比较，至少超出 min_bps 才触发，过滤噪音。
+  # 同时 1h 同向波动 >= p0_requires_h1_move_pct → P0。
+  new_extreme:
+    enabled: true
+    min_bps: 5
+    p0_requires_h1_move_pct: 2.5
+
+  # 放量：近 window_min 成交量 / 前 baseline_min 均值；必须同时有价格波动才算信号。
+  volume_spike:
+    enabled: true
+    window_min: 5
+    baseline_min: 55
+    p1_ratio: 3.0
+    p0_ratio: 6.0
+    min_move_pct: 0.4
+    p0_min_move_pct: 1.0
+
+  # 永续 8h 资金费率绝对值：极端正费率=多头拥挤，极端负费率=空头拥挤。
+  funding:
+    enabled: true
+    p1_abs_pct: 0.10
+    p0_abs_pct: 0.20
+
+  # 15m 持仓量变化：必须与价格同向波动 >= only_with_move_pct 才算异动。
+  open_interest:
+    enabled: true
+    window_min: 15
+    p1_change_pct: 5.0
+    p0_change_pct: 10.0
+    only_with_move_pct: 0.5
+
+  # 关键整数关口：穿越后至少 confirm_bps 才算确认（防插针）。
+  level_break:
+    enabled: true
+    confirm_bps: 3
+
+# ---------------------------------------------------------------- 数据质量
+consensus:
+  # 至少 min_sources 个交易所报价，且价差不超过 max_spread_bps_p1，价格类规则才允许触发。
+  # 价格为「主源」中位数；只要还有 1 个主源能出价就不发数据质量告警（0 个才告警）
+  min_sources: 1
+  max_spread_bps_p1: 50        # >0.5%：抑制价格类告警，发数据异常提示
+  max_spread_bps_block: 100    # >1%：视为数据不可用
+  stale_seconds: 180           # 单个源报价超过 3 分钟视为过期
+
+# ---------------------------------------------------------------- 送达策略
+delivery:
+  quiet_hours: "off"           # 设计约束：不再夜间静默，所有告警即时发送
+  quiet_exception: []
+  cooldown_minutes:
+    default: 30
+    fast_move: 15
+    day_move: 120
+    new_extreme: 60
+    volume_spike: 30
+    funding: 120
+    open_interest: 60
+    level_break: 60
+    data_quality: 60
+  escalate_ratio: 1.5          # 同方向波动继续扩大 1.5 倍 → 绕过冷却再报一次（标题标注"加剧"）
+  daily_cap_p1: 0              # 0 = P1 不限量；设计约束及时发送，不做日限额
+  morning_digest: false        # 不再夜间压制，无需早报汇总

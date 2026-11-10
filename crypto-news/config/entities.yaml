@@ -1,0 +1,91 @@
+# 实体词典（entities）—— 当前范围：BTC / ETH / BNB
+# 命中规则：标题/正文命中任一 alias 或关键词 → 进入候选；否则丢弃。
+
+version: 3
+updated: "2026-11-07"
+
+# ---------- 标的（与 watchlist 对齐）----------
+assets:
+  BTC:
+    aliases: [bitcoin, btc, xbt, 比特币, 大饼]
+    related: [ibit, fbtc, gbtc, spot bitcoin etf, 减半, halving, hashrate, 算力, miner, 矿工]
+  ETH:
+    aliases: [ethereum, eth, ether, 以太坊]
+    related: [staking, 质押, beacon chain, EIP-4844, EIP-7702, blob, L2, rollup, 升级, Dencun, Pectra, validator]
+  BNB:
+    aliases: [bnb, binance coin, 币安币, bsc, bnb chain, opbnb]
+    related: [auto-burn, 自动销毁, 季度销毁, burn, 销毁, bnb chain upgrade, opbnb, bsc, bnb greenfield, mega fuel]
+
+# 冻结标的（不参与匹配）
+paused: [SOL, ASTER]
+
+# ---------- 稳定币（系统性风险，不做交易）----------
+stablecoins:
+  - {symbol: USDT, aliases: [tether, 泰达]}
+  - {symbol: USDC, aliases: [circle, usd coin]}
+  - {symbol: USDe, aliases: [ethena]}
+  - {symbol: FDUSD, aliases: [first digital]}
+
+# ---------- 机构 / 监管 ----------
+institutions:
+  regulators:
+    - {name: SEC, aliases: [securities and exchange commission, 美国证监会]}
+    - {name: CFTC, aliases: [commodity futures trading commission]}
+    - {name: Fed, aliases: [federal reserve, fomc, powell, 美联储]}
+    - {name: Treasury, aliases: [美国财政部, ofac, 制裁]}
+    - {name: DOJ, aliases: [department of justice, 司法部]}
+    - {name: SFC, aliases: [香港证监会, hong kong sfc]}
+    - {name: MAS, aliases: [新加坡金管局]}
+    - {name: FSA, aliases: [日本金融厅]}
+    - {name: ESMA, aliases: [mica, 欧盟]}
+  exchanges:
+    - {name: Binance, aliases: [币安, cz]}
+    - {name: Coinbase, aliases: [coinbase]}
+    - {name: OKX, aliases: [欧易, okex]}
+    - {name: Bybit, aliases: [bybit]}
+    - {name: Kraken, aliases: [kraken]}
+  issuers:
+    - {name: BlackRock, aliases: [贝莱德, ibit]}
+    - {name: Fidelity, aliases: [富达, fbtc]}
+    - {name: Grayscale, aliases: [灰度, gbtc]}
+    - {name: VanEck, aliases: [vaneck]}
+  projects:
+    - {name: BNB Chain, aliases: [bnb chain, bsc, opbnb, bnb foundation]}
+    - {name: Tether, aliases: [tether]}
+    - {name: Circle, aliases: [circle]}
+    - {name: Ethereum Foundation, aliases: [以太坊基金会]}
+
+# ---------- 高管（配合 config/people.yaml 使用）----------
+people:
+  CZ: {aliases: [cz, cz_binance, changpeng zhao, 赵长鹏]}
+  YiHe: {aliases: [何一, yi he, heyibinance]}
+  BrianArmstrong: {aliases: [brian armstrong]}
+  BenZhou: {aliases: [ben zhou, benbybit]}
+  JessePowell: {aliases: [jesse powell, jespow]}
+  徐明星: {aliases: [star xu, star_okx]}
+
+# ---------- 雇主（组织动向类线索的匹配对象：裁员/离职/重组）----------
+employers:
+  Binance: {aliases: [币安, binance]}
+  Coinbase: {aliases: [coinbase]}
+  OKX: {aliases: [欧易, okx]}
+  Bybit: {aliases: [bybit]}
+  Kraken: {aliases: [kraken]}
+  Bitget: {aliases: [bitget]}
+  Gate: {aliases: [gate.io, gate]}
+  HTX: {aliases: [火币, htx, huobi]}
+  Gemini: {aliases: [gemini]}
+  CryptoCom: {aliases: [crypto.com]}
+
+# ---------- 事件关键词（用于分类，不是过滤器）----------
+event_keywords:
+  protocol_security: [hack, exploit, drained, stolen, 被盗, 攻击, 重入, 私钥泄露, 闪电贷, compromised]
+  exchange_custody: [withdrawals halted, 暂停提币, 暂停充提, insolvent, 破产, 挤兑, bank run, proof of reserves, 储备证明]
+  regulatory: [lawsuit, 起诉, settlement, 和解, ban, 禁令, license, 牌照, enforcement, 执法, subpoena]
+  tokenomics: [unlock, 解锁, cliff, 悬崖, emission, 增发, buyback, 回购, burn, 销毁, auto-burn, 自动销毁]
+  macro: [fomc, cpi, nfp, 非农, rate cut, 降息, rate hike, 加息, qt, liquidity, 流动性]
+  capital_flow: [etf inflow, etf outflow, 净流入, 净流出, whale, 巨鲸, mint, 增发, exchange netflow]
+  tech_upgrade: [hard fork, 硬分叉, mainnet, 主网, upgrade, 升级, client bug, 客户端, hardfork]
+  governance: [proposal, 提案, vote, 投票, quorum, treasury, 财库]
+  market_structure: [liquidation, 清算, basis, 基差, market maker, 做市商, expiry, 到期, funding rate, 资金费率]
+  industry_labor: [layoff, laid off, 裁员, 重组, restructuring, severance, 遣散, resignation, resign, 辞职, 离职, steps down, 卸任]

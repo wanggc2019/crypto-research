@@ -1,0 +1,163 @@
+# 阈值与评分（thresholds）
+# 所有"打扰你"的判断都收敛到这个文件。改阈值只改这里，不改代码。
+
+version: 1
+updated: "2026-11-07"
+
+# Score = clamp(0,100, (0.20*S + 0.30*T + 0.35*M + 0.15*C) * D)
+scoring:
+  weights:
+    source: 0.20
+    event_type: 0.30
+    magnitude: 0.35
+    confirmation: 0.15
+
+  source_scores:      # S
+    official: 100     # 交易所/监管/项目官方
+    tier1_media: 80
+    vertical_media: 60
+    kol: 25
+    anonymous: 10
+
+  event_base:        # T（事件基准分）
+    industry_labor: 40     # 组织动向：默认低分，只做 P2 线索
+    protocol_security: 95
+    exchange_custody: 90
+    stablecoin_depeg: 85
+    regulatory: 75
+    macro: 85
+    tokenomics: 55
+    capital_flow: 50
+    tech_upgrade: 45
+    governance: 40
+    market_structure: 45
+
+  magnitude:          # M
+    amount: "25*log10(usd_loss/1e4)"      # $1万=0, $100万=50, $1亿=100
+    depeg_bps: "25*|bps|/100"             # 100bps=25, 400bps=100
+    jurisdiction: {local: 20, agency: 50, national: 80, multinational: 100}
+    multi_dimension_bonus: 10             # 每多命中一个维度 +10，封顶 100
+
+  confirmation: "100*(1-0.5^(k-1))"       # k=独立信源数
+  confirmation_official_multiplier: 1.3   # 官方一手加权，封顶 100
+
+  decay_hours:        # D = 2^(-Δt/h)
+    security: 24
+    regulatory: 24
+    exchange: 24
+    market: 6
+    macro: 12
+
+  levels:             # 分级阈值
+    P0: 78
+    P1: 58
+    P2: 35
+
+  hard:               # 硬条件升级门槛（避免低可信/过期新闻被抬成 P0）
+    window_hours: 48          # 超过 48h 不再因硬条件升 P0
+    stale_window_hours: 96    # 超过 96h 的硬条件事件只按分数归档
+    min_decay: 0.1            # 衰减 D 低于该值不升 P0（防止极旧新闻）
+
+# ---------- P0 硬条件：命中任一立即推，不看总分 ----------
+hard_triggers:
+  - id: stablecoin_depeg
+    desc: 主流稳定币脱锚 > 200bps 且持续 > 15 分钟；或法币抵押型价格 < 0.95
+  - id: exchange_withdrawal
+    desc: 头部交易所暂停提币 / 到账延迟 > 2 小时；或 24h 储备流出 > 10%
+  - id: hack_large
+    desc: 协议/项目被盗 > $10M，或被盗金额占 TVL > 5%
+  - id: bridge_outflow
+    desc: 跨链桥 1h 净流出 > $20M
+  - id: etf_resolution
+    desc: BTC/ETH 现货 ETF 正式决议（获批/否决/关键推迟）
+  - id: sec_head_exchange
+    desc: SEC/CFTC 起诉或和解头部交易所
+  - id: fomc_surprise
+    desc: FOMC 实际结果偏离市场定价 > 30%（如 ±50bp 意外）
+  - id: liquidation_cascade
+    desc: 全市场 1h 清算 > $500M
+  - id: executive_legal
+    desc: 头部交易所创始人/CEO 被起诉、被调查、限制出境或突然辞职（账号本人或权威媒体确认）
+
+# ---------- 按标的的专属规则（当前启用 BTC / ETH / BNB；SOL、ASTER 已冻结）----------
+asset_overrides:
+  BTC:
+    - id: btc_etf_flow
+      desc: 单日 ETF 净流出 > $5 亿，或连续 5 个交易日净流出
+      level: P1
+    - id: btc_miner_stress
+      desc: 矿工余额单周大幅下降 / 算力骤降 > 20%
+      level: P2
+
+  ETH:
+    - id: eth_etf_flow
+      desc: 单日 ETF 净流出 > $3 亿，或连续 5 个交易日净流出
+      level: P1
+    - id: eth_staking_event
+      desc: 大规模验证者退出队列异常 / 质押率骤变
+      level: P1
+
+  BNB:
+    # BNB 的风险结构和 BTC/ETH 不同：它一半是平台币，Binance 的监管风险会直接传导。
+    - id: bnb_binance_regulatory
+      desc: SEC/DOJ/CFTC 对 Binance 的起诉、和解、牌照吊销或重大处罚
+      level: P0
+    - id: bnb_chain_halt
+      desc: BSC / opBNB 出块停滞 > 60s，或官方状态异常
+      level: P1
+    - id: bnb_chain_upgrade
+      desc: BNB Chain 主网升级 / 硬分叉（含兼容性变更）
+      level: P2
+    - id: bnb_quarterly_burn
+      desc: 季度自动销毁（auto-burn）公告与销毁量
+      level: P2
+      direction: positive
+    - id: bnb_bsc_tvl_drop
+      desc: BSC DeFi TVL 24h -20% 且非价格因素
+      level: P1
+
+# ---------- 高管发声路由（见 config/people.yaml）----------
+# 原则：本人原创、官方账号、只对"会影响持仓"的内容分级；转发/点赞一律丢弃。
+people_routing:
+  source_score: 85          # 本人一手：低于官方公告(100)，高于一线媒体(80)
+  treat_as_official: true   # 官方认证账号的本人原创，视为一手信源
+  require_second_channel: true   # 账号被盗/被黑是真实风险，重大表态需第二渠道确认
+  routes:
+    mention_watchlist_asset: P1     # 提到 BTC/ETH/BNB、上币/下架、储备、安全
+    general_market_view: P2         # 泛市场看法，只进日报
+    legal_or_scandal: P0            # 被起诉/调查/限制出境/辞职
+    personnel_change: P1            # 交易所核心高管变动
+    repost_or_like_only: drop       # 转发、点赞、无本人评论的引用
+
+# ---------- 领先指标阈值 ----------
+early_warning:
+  - id: stablecoin_premium
+    metric: 主流稳定币池 TWAP 相对 1.0 的偏离
+    warn: 50bps
+    alert: 200bps
+  - id: funding_rate
+    metric: BTC/ETH 永续 8h 资金费率
+    warn: 0.05%
+    alert: 0.10%
+  - id: bsc_tvl
+    metric: BSC 链 TVL 24h 变化
+    warn: -15%
+    alert: -20%
+  - id: cex_reserve
+    metric: 头部交易所 BTC/ETH 余额 7 日变化
+    warn: -5%
+    alert: -10%
+  - id: whale_to_cex
+    metric: 单笔转入交易所金额
+    warn: "$50M"
+    alert: "$200M"
+
+# ---------- 打扰控制 ----------
+delivery:
+  quiet_enabled: false         # 设计约束：消息及时发，不设夜间静默（全天即时发送）
+  quiet_hours: "22:00-07:00"   # 仅在 quiet_enabled=true 时生效
+  quiet_hours_exception: ["P0"]
+  cooldown_minutes: 30         # 同一 event_id 冷却
+  daily_cap: 10                # 超过说明阈值太松
+  digest_times: ["08:00", "21:00"]
+  weekly_review: "SUN 20:00"

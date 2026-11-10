@@ -1,0 +1,408 @@
+# 技能分类法（skill taxonomy）—— crypto-jobs「技能抽取」的唯一配置源。
+#
+# 设计约定：
+#   - id：小写短横线、全局唯一、语义单一。报告按 id 聚合趋势，改 id 会断历史，只增不改。
+#   - label：中文优先；技术专有名词保留英文原名（Kubernetes/Prometheus 等）。
+#   - aliases：大小写不敏感、按词边界匹配（中文别名同样适用），支持常见复数。
+#   - regex：可选；原样编译（默认大小写敏感，需要不敏感时写 (?i:...)），与 aliases 按 OR 合并。
+#     短词/歧义词（go/rust/c/r/move/ray/spark/l2/ml/ai）不要放进 aliases，必须用显式 regex。
+#   - 每个技能至少 1 个 alias；尽量 2+，且第一个 alias 选无歧义写法（测试据此回验）。
+#
+# 分类法覆盖目标：通用 DevOps / SRE / MLOps 技能 + 加密行业特有技能（节点/验证者/托管/HSM/撮合等）。
+# 缺省不收录：db、ops 这类过于宽泛、单独出现几乎不能说明需求的词（由具体技能覆盖）。
+
+schema_version: 1
+
+categories:
+  - {id: language, label: 编程语言}
+  - {id: platform, label: 平台工程与 DevOps}
+  - {id: container, label: 容器与编排}
+  - {id: iac, label: 基础设施即代码}
+  - {id: cicd, label: 持续集成与交付}
+  - {id: cloud, label: 云平台与主机}
+  - {id: network, label: 操作系统与网络}
+  - {id: observability, label: 可观测性}
+  - {id: reliability, label: 可靠性与应急}
+  - {id: mlops, label: MLOps 与 AI 基础设施}
+  - {id: data, label: 数据与流处理}
+  - {id: crypto-chain, label: 公链与协议}
+  - {id: crypto-node, label: 节点与验证者运维}
+  - {id: crypto-trading, label: 交易与市场基础设施}
+  - {id: crypto-custody, label: 托管与密钥安全}
+  - {id: security, label: 安全与合规}
+  - {id: testing, label: 质量与测试}
+  - {id: webdev, label: Web 与应用开发}
+  - {id: mobile, label: 移动端开发}
+  - {id: chaindev, label: 智能合约与链上开发}
+
+# 宽口径技能的「拆解」：报告/日报里把 AI、可观测性、钱包这类大项展开成具体技术。
+# key = 大项 skill id，value = 子技能 id 列表（必须都能在 skills 里找到；只影响展示聚合，不影响抽取）。
+drilldown:
+  # Python 是具体技能，但求职者常问「Python 具体做什么」，这里拆成它最常见的生态/方向
+  python: [django, flask, fastapi, airflow, pytest, pytorch, tensorflow]
+  ai: [llm, machine-learning, rag, pytorch, tensorflow, huggingface, fine-tuning, rlhf, vector-database, model-serving]
+  mlops: [mlflow, kubeflow, feature-store, model-serving, vllm, triton, ray, sagemaker]
+  observability: [prometheus, grafana, datadog, opentelemetry, distributed-tracing, logging, sentry, pagerduty]
+  incident-management: [on-call, postmortem, error-budget]
+  sre: [slo-sli, on-call, incident-management, chaos-engineering, postmortem]
+  wallet: [custody, cold-wallet, hsm, kms, multi-sig, mpc, key-management, fireblocks]
+  dapp: [smart-contracts, solidity, evm, hardhat, foundry, ethersjs, viem, wagmi, web3js]
+  kubernetes: [helm, istio, service-mesh, kubernetes-operator]
+  devops: [cicd, gitops, argocd, iac, terraform, ansible]
+  platform-engineering: [developer-experience, internal-developer-platform, backstage]
+
+skills:
+  # ============ 1. 编程语言（12）============
+  - {id: python, label: Python, category: language, aliases: [python, py, "python 3"]}
+  - id: go
+    label: Go
+    category: language
+    aliases: [golang, "go language", "go developer", "go engineer", "go programming"]
+    # 歧义：go to market / go live 等动词用法不命中；只认大写 Go 或明确语言语境。
+    regex: |-
+      (?<![A-Za-z0-9_-])Go(?![A-Za-z0-9_-])(?![ \t]+(?:to|live|ahead|through|beyond|above|below|back|forward|down|up|away|after|with|on|off|in|out|into|over|under|by|from)\b)|(?i:\bgo\s+(?:language|developer|engineer|programming|code|services?|backend)\b)
+  - id: rust
+    label: Rust
+    category: language
+    aliases: [rustlang, "rust programming", "rust developer", "rust engineer"]
+    # 歧义：rust prevention / rust-proof 等不命中（语言名在 JD 里通常大写）。
+    regex: |-
+      (?<![A-Za-z0-9_-])Rust(?![A-Za-z0-9_-])(?![ \t]+(?:prevention|proof|proofing|removal|protection|treatment|corrosion|resistant|bucket|oleum|free|colored|stain)\b)
+  - {id: typescript, label: TypeScript, category: language, aliases: [typescript, "type script"]}
+  - id: javascript
+    label: JavaScript
+    category: language
+    aliases: [javascript, "java script", ecmascript]
+    # 歧义：裸 js 会误命中 node.js / next.js / web3.js 等文件名，只认独立的 JS（且不能紧跟在点号后）。
+    regex: '(?<![A-Za-z0-9._])[Jj][Ss](?![A-Za-z0-9_])'
+  - {id: java, label: Java, category: language, aliases: [java, jdk, jvm]}
+  - {id: cpp, label: C++, category: language, aliases: [cpp, "c++", "c plus plus"]}
+  - id: c
+    label: C
+    category: language
+    aliases: ["c language", "c programming", "ansi c"]
+    # 歧义：C++/C#/CI/CD/CPU 都不算 C；C-suite/C-level 也不算。
+    # 歧义：C++/C#/CI/CD/CPU/C-suite 不算；Series C（融资轮次）、Class C、Washington D.C. 也不算。
+    # 只认「列表语境」里的独立 C（后面紧跟逗号/斜杠/竖线/右括号），避免融资轮次/地名误报。
+    regex: |-
+      (?<![A-Za-z0-9_])(?<![Ss]eries )(?<![Cc]lass )C(?![A-Za-z0-9_+#-])(?![ \t]+(?:suite|level|officer|executive|corporation)\b)(?=\s*[,/|)\]、])
+  - {id: bash, label: Bash, category: language, aliases: [bash, "shell scripting", "shell script"]}
+  - {id: zig, label: Zig, category: language, aliases: [zig, "zig language"]}
+  - {id: solidity, label: Solidity, category: language, aliases: [solidity, "solidity developer", "solidity contracts"]}
+  - id: move
+    label: Move
+    category: language
+    aliases: ["move language", movevm, "move smart contract"]
+    # 歧义：动词 move 不命中；仅命中列表语境中的大写 Move 或明确语言语境。
+    regex: |-
+      (?<![A-Za-z0-9_-])Move(?![A-Za-z0-9_-])(?=[ \t]*(?:[,/()、]|$|\band\b|\bor\b))|(?i:\bmove\s+(?:language|programming|smart contracts?|developer|engineer|vm)\b)
+  - id: r-lang
+    label: R
+    category: language
+    aliases: ["r programming", "r language", rstudio, "r statistics"]
+    # 歧义：R&D / R&R / R-squared / "R and R" 不命中；只认列表语境或 R 语言语境。
+    regex: |-
+      (?:(?:^|[\n\r])[ \t]*(?:[-*•·+][ \t]+)?R(?![A-Za-z0-9_+\-&])(?![ \t]+(?:and|or|&)[ \t]+R\b)(?![ \t]+(?:squared|squar|value|package|studio)\b))|(?:[,/（(、][ \t]*R(?![A-Za-z0-9_+\-&])(?![ \t]+(?:squared|squar|value|package|studio)\b))|(?i:(?:in|with|using|proficiency\s+in)\s+R(?![A-Za-z0-9_+\-&])(?![ \t]+(?:squared|squar|value|package|studio)\b))
+
+  # ============ 2. 平台工程与 DevOps（5）============
+  - {id: devops, label: DevOps, category: platform, aliases: [devops, "dev ops", 运维开发]}
+  - {id: platform-engineering, label: 平台工程, category: platform, aliases: ["platform engineering", "platform engineer", "platform team", 平台工程]}
+  - {id: developer-experience, label: 开发者体验, category: platform, aliases: ["developer experience", devex, "developer productivity", 开发者体验]}
+  - {id: internal-developer-platform, label: 内部开发者平台, category: platform, aliases: ["internal developer platform", "internal platform", 内部开发者平台]}
+  - {id: backstage, label: Backstage, category: platform, aliases: [backstage, "backstage.io", "software catalog", 软件目录]}
+
+  # ============ 3. 容器与编排（7）============
+  - {id: kubernetes, label: Kubernetes, category: container, aliases: [kubernetes, k8s, kube, kubectl, 容器编排]}
+  - {id: docker, label: Docker, category: container, aliases: [docker, dockerfile, 容器化]}
+  - {id: helm, label: Helm, category: container, aliases: [helm, "helm chart", "helm charts"]}
+  - {id: containerd, label: containerd, category: container, aliases: [containerd, "container runtime", cri-o]}
+  - {id: istio, label: Istio, category: container, aliases: [istio, "istio service mesh"]}
+  - {id: service-mesh, label: 服务网格, category: container, aliases: ["service mesh", 服务网格, "sidecar proxy"]}
+  - {id: kubernetes-operator, label: Kubernetes Operator, category: container, aliases: ["kubernetes operator", "k8s operator", "custom resource definition", crd, "controller-runtime"]}
+
+  # ============ 4. 基础设施即代码（6）============
+  - {id: iac, label: 基础设施即代码, category: iac, aliases: ["infrastructure as code", iac, 基础设施即代码]}
+  - {id: terraform, label: Terraform, category: iac, aliases: [terraform, hcl, "terraform cloud"]}
+  - {id: pulumi, label: Pulumi, category: iac, aliases: [pulumi, "pulumi cli"]}
+  - {id: ansible, label: Ansible, category: iac, aliases: [ansible, "ansible playbook"]}
+  - {id: cloudformation, label: CloudFormation, category: iac, aliases: [cloudformation, cfn]}
+  - {id: packer, label: Packer, category: iac, aliases: [packer, "hashicorp packer"]}
+
+  # ============ 5. 持续集成与交付（8）============
+  - {id: cicd, label: CI/CD, category: cicd, aliases: ["ci/cd", "ci cd", cicd, "continuous integration", "continuous delivery", "continuous deployment", 持续集成, 持续交付]}
+  - {id: github-actions, label: GitHub Actions, category: cicd, aliases: ["github actions", gha, "github action"]}
+  - {id: gitlab-ci, label: GitLab CI, category: cicd, aliases: ["gitlab ci", "gitlab ci/cd", ".gitlab-ci.yml"]}
+  - {id: jenkins, label: Jenkins, category: cicd, aliases: [jenkins, jenkinsfile]}
+  - {id: gitops, label: GitOps, category: cicd, aliases: [gitops, "git ops", "git-based deployment"]}
+  - {id: argocd, label: Argo CD, category: cicd, aliases: [argocd, "argo cd"]}
+  - {id: fluxcd, label: Flux CD, category: cicd, aliases: [fluxcd, "flux cd", flux]}
+  - {id: circleci, label: CircleCI, category: cicd, aliases: [circleci, "circle ci"]}
+
+  # ============ 6. 云平台与主机（6）============
+  - {id: aws, label: AWS, category: cloud, aliases: [aws, "amazon web services", ec2, s3, eks]}
+  - {id: gcp, label: GCP, category: cloud, aliases: [gcp, "google cloud", gke, "google cloud platform"]}
+  - {id: azure, label: Azure, category: cloud, aliases: [azure, "microsoft azure", aks]}
+  - {id: digitalocean, label: DigitalOcean, category: cloud, aliases: [digitalocean, "digital ocean"]}
+  - {id: cloudflare, label: Cloudflare, category: cloud, aliases: [cloudflare, "cloudflare workers", "cloudflare r2"]}
+  - {id: bare-metal, label: 裸金属/物理机, category: cloud, aliases: ["bare metal", "bare-metal", "physical servers", 裸金属, 物理机, "on-prem"]}
+
+  # ============ 7. 操作系统与网络（11）============
+  - {id: linux, label: Linux, category: network, aliases: [linux, unix, "linux kernel", 操作系统]}
+  - {id: dns, label: DNS, category: network, aliases: [dns, "domain name system", route53, "route 53"]}
+  - {id: load-balancing, label: 负载均衡, category: network, aliases: ["load balancing", "load balancer", "load-balancer", 负载均衡]}
+  - {id: nginx, label: Nginx, category: network, aliases: [nginx, "nginx plus"]}
+  - {id: envoy, label: Envoy, category: network, aliases: [envoy, "envoy proxy"]}
+  - {id: tcp-ip, label: TCP/IP, category: network, aliases: ["tcp/ip", "tcp ip", tcp, udp]}
+  - {id: bgp, label: BGP, category: network, aliases: [bgp, "border gateway protocol"]}
+  - {id: cdn, label: CDN, category: network, aliases: [cdn, "content delivery network", "content delivery"]}
+  - {id: vpn, label: VPN, category: network, aliases: [vpn, wireguard, "site-to-site vpn"]}
+  - {id: grpc, label: gRPC, category: network, aliases: [grpc, "grpc api"]}
+  - {id: ebpf, label: eBPF, category: network, aliases: [ebpf, cilium, "extended berkeley packet filter"]}
+
+  # ============ 8. 可观测性（10）============
+  - {id: prometheus, label: Prometheus, category: observability, aliases: [prometheus, promql, prom]}
+  - {id: grafana, label: Grafana, category: observability, aliases: [grafana, "grafana dashboards"]}
+  - {id: datadog, label: Datadog, category: observability, aliases: [datadog, "data dog"]}
+  - {id: opentelemetry, label: OpenTelemetry, category: observability, aliases: [opentelemetry, otel, "open telemetry"]}
+  - {id: sentry, label: Sentry, category: observability, aliases: [sentry, "sentry sdk"]}
+  - {id: distributed-tracing, label: 分布式追踪, category: observability, aliases: ["distributed tracing", "distributed-tracing", 分布式追踪]}
+  - {id: pagerduty, label: PagerDuty, category: observability, aliases: [pagerduty, "pager duty"]}
+  - {id: observability, label: 可观测性, category: observability, aliases: [observability, 可观测性, "observability stack"]}
+  - {id: logging, label: 日志, category: observability, aliases: [logging, "log aggregation", "centralized logging", 日志, 日志聚合]}
+  - {id: elk-stack, label: ELK Stack, category: observability, aliases: [elk, "elastic stack", "elk stack", kibana, logstash]}
+
+  # ============ 9. 可靠性与应急（12）============
+  - {id: sre, label: SRE, category: reliability, aliases: [sre, "site reliability", "site reliability engineer", "production engineer", 站点可靠性, 可靠性工程]}
+  - {id: slo-sli, label: SLO/SLI, category: reliability, aliases: [slo, sli, "service level objective", "service level indicator", "service level objectives", 服务等级目标]}
+  - {id: error-budget, label: 错误预算, category: reliability, aliases: ["error budget", "error budgets", 错误预算]}
+  - {id: on-call, label: 值班值守, category: reliability, aliases: ["on-call", "on call", oncall, 值班, "on-call rotation"]}
+  - {id: incident-management, label: 事故管理, category: reliability, aliases: ["incident management", "incident response", "incident commander", incident, 事故响应, 故障处理]}
+  - {id: postmortem, label: 复盘, category: reliability, aliases: [postmortem, "post-mortem", "root cause analysis", rca, 复盘]}
+  - {id: chaos-engineering, label: 混沌工程, category: reliability, aliases: ["chaos engineering", "chaos testing", "chaos monkey", 混沌工程]}
+  - {id: capacity-planning, label: 容量规划, category: reliability, aliases: ["capacity planning", "capacity management", 容量规划]}
+  - {id: disaster-recovery, label: 灾备, category: reliability, aliases: ["disaster recovery", "disaster-recovery", "disaster recovery plan", "business continuity", 灾备, 容灾]}
+  - {id: multi-region, label: 多区域, category: reliability, aliases: ["multi-region", "multi region", multiregion, "multi-regional", 多区域, 多地域]}
+  - {id: high-availability, label: 高可用, category: reliability, aliases: ["high availability", "high-availability", "highly available", 高可用]}
+  - {id: runbook, label: 运维手册, category: reliability, aliases: [runbook, "run book", "operational runbook", 运维手册, 应急预案]}
+
+  # ============ 10. MLOps 与 AI 基础设施（23）============
+  - {id: mlops, label: MLOps, category: mlops, aliases: [mlops, "ml ops", "machine learning operations", "ml platform", "ml infrastructure", 机器学习平台]}
+  - {id: mlflow, label: MLflow, category: mlops, aliases: [mlflow, "ml flow"]}
+  - {id: kubeflow, label: Kubeflow, category: mlops, aliases: [kubeflow, "kube flow"]}
+  - id: ray
+    label: Ray
+    category: mlops
+    aliases: ["ray cluster", "ray serve", "ray tune", "ray.io"]
+    # 歧义：X-ray 不算 Ray；大写 Ray 单独出现视为分布式计算框架。
+    regex: |-
+      (?<![A-Za-z0-9_-])Ray(?![A-Za-z0-9_-])
+  - {id: sagemaker, label: SageMaker, category: mlops, aliases: [sagemaker, "sage maker", "amazon sagemaker"]}
+  - {id: vertex-ai, label: Vertex AI, category: mlops, aliases: ["vertex ai", "vertex-ai", "google vertex"]}
+  - {id: feature-store, label: 特征存储, category: mlops, aliases: ["feature store", "feature platform", 特征存储]}
+  - {id: model-serving, label: 模型服务, category: mlops, aliases: ["model serving", "model inference", "serving infrastructure", "inference optimization", quantization, 模型服务, 推理服务]}
+  - {id: vllm, label: vLLM, category: mlops, aliases: [vllm, "vllm inference"]}
+  - {id: triton, label: Triton, category: mlops, aliases: [triton, "triton inference server", "nvidia triton"]}
+  - {id: cuda, label: CUDA, category: mlops, aliases: [cuda, "cuda kernels", "nvidia cuda"]}
+  - {id: gpu, label: GPU, category: mlops, aliases: [gpu, gpus, "gpu cluster", "gpu infrastructure", "nvidia gpu", 显卡]}
+  - {id: distributed-training, label: 分布式训练, category: mlops, aliases: ["distributed training", "multi-gpu training", "training infrastructure", 分布式训练]}
+  - {id: llm, label: LLM, category: mlops, aliases: [llm, llms, "large language model", "large language models", 大模型, 大语言模型]}
+  - {id: rag, label: RAG, category: mlops, aliases: [rag, "retrieval augmented generation", "retrieval-augmented generation", 检索增强]}
+  - {id: vector-database, label: 向量数据库, category: mlops, aliases: ["vector database", "vector db", "vector store", "vector search", pgvector, 向量数据库]}
+  - {id: fine-tuning, label: 微调, category: mlops, aliases: ["fine-tuning", finetuning, "fine tuning", 微调]}
+  - {id: rlhf, label: RLHF, category: mlops, aliases: [rlhf, "reinforcement learning from human feedback", dpo, "preference optimization"]}
+  - {id: huggingface, label: HuggingFace, category: mlops, aliases: [huggingface, "hugging face"]}
+  - {id: pytorch, label: PyTorch, category: mlops, aliases: [pytorch, torch]}
+  - {id: tensorflow, label: TensorFlow, category: mlops, aliases: [tensorflow, "tensor flow"]}
+  - id: machine-learning
+    label: 机器学习
+    category: mlops
+    aliases: ["machine learning", 机器学习, "ml models", "ml model", "deep learning", 深度学习]
+    # 歧义：ML 只按独立词匹配，HTML/MLOps 里的 ml 不算。
+    regex: |-
+      (?i:(?<![A-Za-z0-9_])ml(?![A-Za-z0-9_]))
+  - id: ai
+    label: AI
+    category: mlops
+    aliases: ["artificial intelligence", genai, "generative ai", 人工智能]
+    # 歧义：只认独立 AI，OpenAI / Airtable 等词内不算。
+    regex: |-
+      (?i:(?<![A-Za-z0-9_])ai(?![A-Za-z0-9_]))
+
+  # ============ 11. 数据与流处理（14）============
+  - {id: sql, label: SQL, category: data, aliases: [sql, "structured query language"]}
+  - {id: postgresql, label: PostgreSQL, category: data, aliases: [postgresql, postgres, psql]}
+  - {id: mysql, label: MySQL, category: data, aliases: [mysql, mariadb]}
+  - {id: redis, label: Redis, category: data, aliases: [redis, "redis cluster"]}
+  - {id: kafka, label: Kafka, category: data, aliases: [kafka, "apache kafka", "kafka streams"]}
+  - {id: flink, label: Flink, category: data, aliases: [flink, "apache flink"]}
+  - id: spark
+    label: Spark
+    category: data
+    aliases: [apache spark, "spark sql"]
+    # 歧义：动词 spark 不命中；只认大写 Spark 或 Apache Spark。
+    regex: |-
+      (?<![A-Za-z0-9_-])Spark(?![A-Za-z0-9_-])
+  - {id: clickhouse, label: ClickHouse, category: data, aliases: [clickhouse, "click house"]}
+  - {id: elasticsearch, label: Elasticsearch, category: data, aliases: [elasticsearch, "elastic search"]}
+  - {id: airflow, label: Airflow, category: data, aliases: [airflow, "apache airflow"]}
+  - {id: dbt, label: dbt, category: data, aliases: [dbt, "data build tool"]}
+  - {id: etl, label: ETL, category: data, aliases: [etl, elt, "data pipeline", "data pipelines", 数据管道]}
+  - {id: data-warehouse, label: 数据仓库, category: data, aliases: ["data warehouse", "data warehousing", 数据仓库]}
+  - {id: timescaledb, label: TimescaleDB, category: data, aliases: [timescaledb, "time-series database", "timeseries database", 时序数据库]}
+
+  # ============ 12. 公链与协议（17）============
+  - {id: ethereum, label: Ethereum, category: crypto-chain, aliases: [ethereum, eth, 以太坊]}
+  - {id: evm, label: EVM, category: crypto-chain, aliases: [evm, "ethereum virtual machine", "evm-compatible", "evm chains", 以太坊虚拟机]}
+  - {id: solana, label: Solana, category: crypto-chain, aliases: [solana, sol, "solana svm"]}
+  - {id: bitcoin, label: Bitcoin, category: crypto-chain, aliases: [bitcoin, btc, 比特币]}
+  - {id: cosmos, label: Cosmos, category: crypto-chain, aliases: [cosmos, "cosmos sdk", "cosmos hub", tendermint]}
+  - {id: substrate, label: Substrate, category: crypto-chain, aliases: [substrate, "polkadot sdk", "substrate framework"]}
+  - id: l2
+    label: L2/Rollup
+    category: crypto-chain
+    aliases: ["layer 2", "layer-2", layer2, 二层, 二层网络]
+    # 歧义：L2 cache / L2 data 属于硬件缓存，不算二层网络。
+    regex: |-
+      (?i:(?<![A-Za-z0-9_])l2(?![A-Za-z0-9_])(?![ \t]+(?:cache|data|instruction|eviction)\b))
+  - {id: rollup, label: Rollup, category: crypto-chain, aliases: [rollup, rollups, "zk-rollup", "optimistic rollup", "rollup chain"]}
+  - {id: bridge, label: 跨链桥, category: crypto-chain, aliases: ["cross-chain bridge", "cross chain bridge", "blockchain bridge", "asset bridge", 跨链桥, 跨链]}
+  - id: oracle
+    label: 预言机
+    category: crypto-chain
+    aliases: ["oracle network", "price oracle", "oracle feeds", 预言机, 预言机网络]
+    # 歧义：Oracle 数据库/公司不算加密预言机，只认加密语境组合。
+    regex: |-
+      (?i:(?:price|data|chainlink)\s+oracles?\b|oracle\s+(?:network|node|operator|feeds?)\b)
+  - {id: chainlink, label: Chainlink, category: crypto-chain, aliases: [chainlink, "chain link", "chainlink node"]}
+  - {id: consensus-mechanism, label: 共识机制, category: crypto-chain, aliases: ["consensus algorithm", "consensus layer", "consensus client", "consensus protocol", 共识机制, 共识算法]}
+  - {id: p2p, label: P2P, category: crypto-chain, aliases: [p2p, "peer-to-peer", "peer to peer", "p2p networking", 点对点]}
+  - {id: mempool, label: 内存池, category: crypto-chain, aliases: [mempool, "memory pool", txpool, "transaction pool", 内存池]}
+  - {id: mev, label: MEV, category: crypto-chain, aliases: [mev, "maximal extractable value", "miner extractable value", 最大可提取价值]}
+  - {id: smart-contracts, label: 智能合约, category: crypto-chain, aliases: ["smart contract", "smart contracts", 智能合约]}
+  - {id: zero-knowledge, label: 零知识证明, category: crypto-chain, aliases: ["zero-knowledge", "zero knowledge", zk, "zk proofs", zkp, 零知识证明]}
+
+  # ============ 13. 节点与验证者运维（11）============
+  - {id: node-operations, label: 节点运维, category: crypto-node, aliases: ["node operations", "node operation", "node operator", "running nodes", "node infrastructure", 节点运维, 节点运营]}
+  - {id: validator, label: 验证者, category: crypto-node, aliases: [validator, validators, "validator node", "validator nodes", 验证者, 验证节点]}
+  - {id: staking, label: 质押, category: crypto-node, aliases: [staking, "staking infrastructure", "staking provider", 质押]}
+  - {id: rpc-node, label: RPC 节点, category: crypto-node, aliases: ["rpc node", "rpc endpoint", "rpc infrastructure", "rpc provider", "json-rpc", rpc, "rpc nodes"]}
+  - {id: archive-node, label: 归档节点, category: crypto-node, aliases: ["archive node", "archive nodes", "full node", "full nodes", "pruned node", 归档节点, 全节点]}
+  - {id: beacon-chain, label: 信标链, category: crypto-node, aliases: ["beacon chain", "beacon node", "beacon client", 信标链]}
+  - {id: execution-client, label: 执行客户端, category: crypto-node, aliases: ["execution client", "execution layer", "el client", 执行客户端, 执行层]}
+  - {id: slashing, label: 罚没, category: crypto-node, aliases: [slashing, "slashing protection", "slashing penalty", 罚没, 惩罚]}
+  - {id: indexer, label: 索引器, category: crypto-node, aliases: [indexer, indexers, "indexing service", "data indexer", 索引器, 区块链索引]}
+  - {id: subgraph, label: Subgraph, category: crypto-node, aliases: [subgraph, subgraphs, "the graph", thegraph]}
+  - {id: block-explorer, label: 区块浏览器, category: crypto-node, aliases: ["block explorer", "blockchain explorer", etherscan, 区块浏览器]}
+
+  # ============ 14. 交易与市场基础设施（8）============
+  - {id: matching-engine, label: 撮合引擎, category: crypto-trading, aliases: ["matching engine", "matching engines", "order matching", 撮合引擎, 撮合系统]}
+  - {id: low-latency, label: 低延迟, category: crypto-trading, aliases: ["low latency", "low-latency", "ultra low latency", "latency optimization", 低延迟]}
+  - {id: market-data, label: 行情数据, category: crypto-trading, aliases: ["market data", "market-data", "market data feeds", "market data infrastructure", 行情数据, 行情]}
+  - {id: hft, label: 高频交易, category: crypto-trading, aliases: [hft, "high frequency trading", "high-frequency trading", 高频交易]}
+  - {id: order-management, label: 订单管理, category: crypto-trading, aliases: ["order management", "order management system", oms, 订单管理]}
+  - {id: fix-protocol, label: FIX 协议, category: crypto-trading, aliases: ["fix protocol", "fix api", "fix engine", "financial information exchange", "fix协议"]}
+  - {id: colocation, label: 机房托管, category: crypto-trading, aliases: [colocation, colo, "co-location", "co location", 机房托管, 托管机房]}
+  - {id: trading-system, label: 交易系统, category: crypto-trading, aliases: ["trading system", "trading systems", "exchange infrastructure", "trading infrastructure", 交易系统, 交易所系统]}
+
+  # ============ 15. 托管与密钥安全（9）============
+  - {id: custody, label: 托管, category: crypto-custody, aliases: [custody, "digital asset custody", "crypto custody", "asset custody", 托管, 资产托管]}
+  - {id: hsm, label: HSM, category: crypto-custody, aliases: [hsm, "hardware security module", "hardware security modules", 硬件安全模块]}
+  - {id: fireblocks, label: Fireblocks, category: crypto-custody, aliases: [fireblocks, "fire blocks"]}
+  - {id: kms, label: KMS, category: crypto-custody, aliases: [kms, "key management service", "cloud kms"]}
+  - {id: cold-wallet, label: 冷钱包, category: crypto-custody, aliases: ["cold wallet", "cold wallets", "cold storage", 冷钱包, 冷存储]}
+  - {id: mpc, label: MPC 密钥, category: crypto-custody, aliases: [mpc, "multi-party computation", "mpc wallet", "threshold signature", tss]}
+  - {id: multi-sig, label: 多签, category: crypto-custody, aliases: ["multi-sig", multisig, "multi signature", "multisignature", 多签, 多重签名]}
+  - {id: key-management, label: 密钥管理, category: crypto-custody, aliases: ["key management", "key management system", "private key management", 密钥管理, 私钥管理]}
+  - {id: wallet, label: 钱包, category: crypto-custody, aliases: [wallet, wallets, "crypto wallet", "digital wallet", 钱包]}
+
+  # ============ 16. 安全与合规（15）============
+  - {id: appsec, label: 应用安全, category: security, aliases: ["application security", appsec, "software security", 应用安全]}
+  - {id: cloud-security, label: 云安全, category: security, aliases: ["cloud security", "infrastructure security", "network security", 云安全, 基础设施安全]}
+  - {id: soc2, label: SOC 2, category: security, aliases: ["soc 2", soc2, "soc ii", "soc2 type ii"]}
+  - {id: iso27001, label: ISO 27001, category: security, aliases: ["iso 27001", iso27001, "iso/iec 27001"]}
+  - {id: iam, label: IAM, category: security, aliases: [iam, "identity and access management", "identity access management", 身份与访问管理]}
+  - {id: vault, label: Vault, category: security, aliases: [vault, "hashicorp vault", "secret management", "secrets management", 机密管理]}
+  - {id: threat-modeling, label: 威胁建模, category: security, aliases: ["threat modeling", "threat modelling", "threat model", 威胁建模]}
+  - {id: penetration-testing, label: 渗透测试, category: security, aliases: ["penetration testing", "pen testing", pentest, "pen test", 渗透测试]}
+  - {id: siem, label: SIEM, category: security, aliases: [siem, splunk, "security information and event management"]}
+  - {id: zero-trust, label: 零信任, category: security, aliases: ["zero trust", "zero-trust", "zero trust architecture", 零信任]}
+  - {id: rbac, label: RBAC, category: security, aliases: [rbac, "role-based access control", "role based access control"]}
+  - {id: oauth, label: OAuth/OIDC, category: security, aliases: [oauth, oauth2, oidc, "openid connect"]}
+  - {id: tls, label: TLS, category: security, aliases: [tls, ssl, "tls certificate", mtls]}
+  - {id: security-audit, label: 安全审计, category: security, aliases: ["security audit", "security audits", "security review", "smart contract audit", 安全审计]}
+  - {id: cryptography, label: 密码学, category: security, aliases: [cryptography, cryptographic, "applied cryptography", 密码学]}
+  - {id: kyc-aml, label: KYC/AML, category: security, aliases: [kyc, aml, "know your customer", "anti-money laundering", 反洗钱, 客户身份识别]}
+  - {id: gdpr, label: GDPR, category: security, aliases: [gdpr, "general data protection regulation", 数据保护]}
+
+  # ============ 17. 质量与测试（4）============
+  - {id: load-testing, label: 压测, category: testing, aliases: ["load testing", "load test", "stress testing", "performance testing", 压测, 性能测试]}
+  - {id: test-automation, label: 自动化测试, category: testing, aliases: ["test automation", "automated testing", "test framework", 自动化测试]}
+  - {id: k6, label: k6, category: testing, aliases: [k6, "k6 load testing"]}
+  - {id: pytest, label: pytest, category: testing, aliases: [pytest, "py.test"]}
+
+  # ============ 18. 开发岗位补充：语言 / Web / 移动（2026-11-09 随开发岗位纳入）============
+  - {id: ruby, label: Ruby, category: language, aliases: [ruby, "ruby 3"]}
+  - {id: php, label: PHP, category: language, aliases: [php, "php 8"]}
+  - id: csharp
+    label: "C#"
+    category: language
+    aliases: ["c#", "c sharp", csharp]
+  - {id: kotlin, label: Kotlin, category: language, aliases: [kotlin]}
+  - id: swift
+    label: Swift
+    category: language
+    aliases: [swiftui, "swift language"]
+    # 歧义：SWIFT 支付网络是全大写，只认大小写正确的语言名 Swift。
+    regex: '(?<![A-Za-z0-9])Swift(?![A-Za-z0-9])'
+  - {id: scala, label: Scala, category: language, aliases: [scala]}
+  - {id: dart, label: Dart, category: language, aliases: [dart]}
+  - {id: elixir, label: Elixir, category: language, aliases: [elixir]}
+  - {id: haskell, label: Haskell, category: language, aliases: [haskell]}
+  - {id: wasm, label: WebAssembly, category: language, aliases: [webassembly, wasm, "web assembly"]}
+
+  - {id: nodejs, label: Node.js, category: webdev, aliases: ["node.js", nodejs, "node js"]}
+  - id: react
+    label: React
+    category: webdev
+    aliases: ["react.js", reactjs]
+    # 歧义：动词 react；只认大写 React（JD 里框架名通常大写）。
+    regex: '(?<![A-Za-z0-9])React(?:\.js)?(?![A-Za-z0-9])'
+  - id: vue
+    label: Vue
+    category: webdev
+    aliases: ["vue.js", vuejs, "vue 3"]
+    regex: '(?<![A-Za-z0-9])Vue(?:\.js)?(?![A-Za-z0-9])'
+  - {id: angular, label: Angular, category: webdev, aliases: [angular, angularjs]}
+  - {id: nextjs, label: Next.js, category: webdev, aliases: ["next.js", nextjs, "next js"]}
+  - {id: express, label: Express.js, category: webdev, aliases: ["express.js", expressjs, "express js"]}
+  - {id: nestjs, label: NestJS, category: webdev, aliases: [nestjs, "nest.js"]}
+  - {id: django, label: Django, category: webdev, aliases: [django]}
+  - {id: flask, label: Flask, category: webdev, aliases: [flask]}
+  - {id: fastapi, label: FastAPI, category: webdev, aliases: [fastapi, "fast api"]}
+  - {id: spring, label: Spring Boot, category: webdev, aliases: ["spring boot", "spring framework", "spring mvc"]}
+  - {id: rails, label: Ruby on Rails, category: webdev, aliases: ["ruby on rails", rails]}
+  - {id: dotnet, label: .NET, category: webdev, aliases: [".net", dotnet, ".net core", "asp.net"]}
+  - {id: laravel, label: Laravel, category: webdev, aliases: [laravel]}
+  - {id: graphql, label: GraphQL, category: webdev, aliases: [graphql, "graph ql"]}
+  - {id: rest-api, label: REST API, category: webdev, aliases: ["rest api", "rest apis", restful]}
+  - {id: websocket, label: WebSocket, category: webdev, aliases: [websocket, websockets, "web socket"]}
+  - {id: microservices, label: 微服务, category: webdev, aliases: [微服务, microservices, microservice, "micro services"]}
+  - {id: rabbitmq, label: RabbitMQ, category: webdev, aliases: [rabbitmq, "rabbit mq"]}
+
+  - {id: react-native, label: React Native, category: mobile, aliases: ["react native", "react-native"]}
+  - {id: flutter, label: Flutter, category: mobile, aliases: [flutter]}
+  - {id: ios, label: iOS, category: mobile, aliases: [ios, "ios development", "ios app"]}
+  - {id: android, label: Android, category: mobile, aliases: [android, "android development", "android app"]}
+
+  # ============ 19. 智能合约 / 链上开发工具 ============
+  - {id: hardhat, label: Hardhat, category: chaindev, aliases: [hardhat]}
+  - {id: foundry, label: Foundry, category: chaindev, aliases: [foundry, "foundry framework"]}
+  - {id: web3js, label: Web3.js, category: chaindev, aliases: ["web3.js", web3js]}
+  - {id: ethersjs, label: Ethers.js, category: chaindev, aliases: ["ethers.js", ethersjs, ethers]}
+  - {id: viem, label: Viem, category: chaindev, aliases: [viem]}
+  - {id: wagmi, label: Wagmi, category: chaindev, aliases: [wagmi]}
+  - {id: anchor-lang, label: anchor-lang, category: chaindev, aliases: ["anchor-lang", "anchor framework", "solana anchor", "anchor program"]}
+  - {id: cosmwasm, label: CosmWasm, category: chaindev, aliases: [cosmwasm, "cosmos wasm"]}
+  - {id: cairo-lang, label: cairo-lang, category: chaindev, aliases: ["cairo-lang", "cairo language", "starknet cairo"]}
+  - {id: ipfs, label: IPFS, category: chaindev, aliases: [ipfs]}
+  - {id: dapp, label: dApp, category: chaindev, aliases: [dapp, dapps, "d-app", "decentralized application", "decentralized applications"]}

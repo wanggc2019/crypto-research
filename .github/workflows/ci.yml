@@ -1,0 +1,181 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  hygiene: # 凭据/运行产物不得入库
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: No secrets / data / venv tracked
+        run: |
+          ! git ls-files | grep -E '(^|/)\.env$'
+          ! git ls-files | grep -E '(^|/)data/' | grep -vE '(^|/)tests/fixtures/'
+          ! git ls-files | grep -E '(^|/)\.venv/'
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+      - name: Install
+        run: pip install pyyaml ruff
+      - name: Lint
+        run: ruff check libs/crypto_core/src tools crypto-news/scripts crypto-news/tests crypto-price/scripts crypto-price/tests crypto-analyst/scripts crypto-analyst/tests crypto-x-kol/scripts crypto-x-kol/tests crypto-policy/scripts crypto-policy/tests crypto-jobs/scripts crypto-jobs/tests crypto-onchain/scripts crypto-onchain/tests crypto-knowledge/scripts crypto-knowledge/tests
+      - name: Tool tests (healthcheck)
+        run: PYTHONPATH=libs/crypto_core/src python -m unittest discover -s tools/tests -v
+
+  gate: # 通用质量门：自动发现 crypto-* 模块（ruff + 单测 + 内置回放 + 重复审计）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+      - name: Install
+        run: pip install pyyaml ruff
+      - name: Gate
+        run: make gate
+
+  libs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+      - name: Install
+        run: pip install pyyaml
+      - name: Unit tests
+        run: PYTHONPATH=libs/crypto_core/src python -m unittest discover -s libs/crypto_core/tests -v
+
+  crypto-news:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: crypto-news
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+      - name: Install
+        run: pip install pyyaml
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
+
+  crypto-price:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: crypto-price
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+      - name: Install
+        run: pip install pyyaml
+      - name: Unit tests (offline)
+        run: python -m unittest discover -s tests -v
+      - name: Offline fixture replay (no network)
+        run: |
+          for f in snapshot_normal snapshot_shock; do
+            python scripts/run.py --snapshot "tests/fixtures/$f.json" \
+              --data-dir "$RUNNER_TEMP/price-data" --dry-run --json >/dev/null
+          done
+
+
+  crypto-analyst:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: crypto-analyst
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+      - name: Install
+        run: pip install pyyaml
+      - name: Unit tests (offline)
+        run: python -m unittest discover -s tests -v
+      - name: Daily brief from fixtures (offline)
+        run: python scripts/daily_brief.py --fixtures tests/fixtures --date 2026-11-08 --dry-run >/dev/null
+      - name: Score dry-run (offline)
+        run: python scripts/score.py --dry-run --as-of 2026-11-08 >/dev/null
+
+  crypto-x-kol:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: crypto-x-kol
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+      - name: Install
+        run: pip install pyyaml
+      - name: Unit tests (offline)
+        run: python -m unittest discover -s tests -v
+      - name: End-to-end from fixtures (offline)
+        run: python scripts/e2e.py
+
+  crypto-jobs:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: crypto-jobs
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+      - name: Install
+        run: pip install pyyaml
+      - name: Unit tests (offline)
+        run: python -m unittest discover -s tests -v
+      - name: End-to-end from fixtures (offline)
+        run: python scripts/e2e.py
+
+  crypto-onchain:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: crypto-onchain
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+      - name: Install
+        run: pip install pyyaml
+      - name: Unit tests (offline)
+        run: python -m unittest discover -s tests -v
+      - name: Fixtures replay (offline, no network)
+        run: python scripts/run.py --fixtures tests/fixtures --data-dir "$RUNNER_TEMP/onchain-data" --dry-run --json >/dev/null
+
+  crypto-knowledge:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: crypto-knowledge
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+      - name: Install
+        run: pip install pyyaml
+      - name: Content check
+        run: python scripts/check_content.py
+      - name: Course index is up to date
+        run: python scripts/build_index.py --check
+      - name: Unit tests (offline)
+        run: python -m unittest discover -s tests -v

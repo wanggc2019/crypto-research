@@ -1,0 +1,487 @@
+schema_version: 1
+# crypto-jobs 招聘源注册表（采集层用，scripts/sources.py 读取）。
+#
+# 分层（tier）：
+#   T0 = 公司官方 ATS 公开接口（Greenhouse / Lever / Ashby），为「招聘嵌入」设计，免密钥，最权威。
+#   T1 = 加密垂直招聘站（RSS / HTML），只做线索补充，需遵守 robots.txt。
+#   T2 = 通用远程招聘站（带 crypto 关键词过滤），噪音最大，必须命中 crypto 语境或公司白名单才收录。
+#
+# 采集礼貌约定（scripts/sources.py 实现）：
+#   - 严格串行，每源每轮只请求 1 次；timeout 20s；失败重试 1 次；UA 用 crypto_core 默认浏览器 UA。
+#   - 单源失败只记 health.error，绝不抛整轮异常；不做登录 / 不破解反爬 / 不碰付费接口。
+#   - 不抓取 JD 详情页（ATS 接口已带回正文），避免放大请求量。
+#
+# type 取值（scripts/source_adapters.py 里的适配器）：
+#   greenhouse | lever | ashby | rss_jobs | web3career | remoteok | remotive | jobicy
+#
+# 每源字段：id / enabled / tier / type / name / company / company_slug / url / note / tos
+#   crypto_only: true 时套用 crypto 关键词 + 公司白名单过滤（只用于 T2 通用站）。
+#   keywords: 该源额外的 crypto 关键词（会与 app.yaml filters.crypto_keywords、companies.yaml 合并）。
+
+defaults:
+  timeout_seconds: 20
+  retries: 1
+  # 兜底值；实际以 app.yaml fetch.description_max_chars 为准
+  description_max_chars: 20000
+
+# T2 通用站补充关键词（app.yaml filters.crypto_keywords 之外再补几个强信号词）
+t2_keywords:
+  - web3
+  - cryptocurrencies
+  - smart contract
+  - tokenization
+  - layer 2
+  - crypto-native
+  - onchain
+  - digital asset
+
+sources:
+  # ============================ T0 · 交易所 ============================
+  - id: gh_coinbase
+    enabled: true
+    tier: T0
+    type: greenhouse
+    name: Coinbase · Greenhouse
+    company: Coinbase
+    company_slug: coinbase
+    url: https://boards-api.greenhouse.io/v1/boards/coinbase/jobs?content=true
+    note: 美国最大合规交易所；岗位量大，覆盖 SRE/平台/安全/数据。
+    tos: Greenhouse 公开 boards API，免密钥，为招聘嵌入设计；每轮 1 次请求。
+
+  - id: gh_okx
+    enabled: true
+    tier: T0
+    type: greenhouse
+    name: OKX · Greenhouse
+    company: OKX
+    company_slug: okx
+    url: https://boards-api.greenhouse.io/v1/boards/okx/jobs?content=true
+    note: 头部交易所/Web3 钱包；工程岗多。
+    tos: Greenhouse 公开 boards API，免密钥。
+
+  - id: gh_bybit
+    enabled: true
+    tier: T0
+    type: greenhouse
+    name: Bybit · Greenhouse
+    company: Bybit
+    company_slug: bybit
+    url: https://boards-api.greenhouse.io/v1/boards/bybit/jobs?content=true
+    note: 衍生品交易所；含 AI/数据/基础设施岗。
+    tos: Greenhouse 公开 boards API，免密钥。
+
+  - id: gh_binance
+    enabled: true
+    tier: T0
+    type: greenhouse
+    name: Binance · Greenhouse
+    company: Binance
+    company_slug: binance
+    url: https://boards-api.greenhouse.io/v1/boards/binance/jobs?content=true
+    note: 全球最大交易所；board 在 EU 区（job-boards.eu.greenhouse.io）。
+    tos: Greenhouse 公开 boards API，免密钥。
+
+  - id: gh_gemini
+    enabled: true
+    tier: T0
+    type: greenhouse
+    name: Gemini · Greenhouse
+    company: Gemini
+    company_slug: gemini
+    url: https://boards-api.greenhouse.io/v1/boards/gemini/jobs?content=true
+    note: 合规交易所（Winklevoss）；工程与安全岗。
+    tos: Greenhouse 公开 boards API，免密钥。
+
+  - id: lv_gate
+    enabled: true
+    tier: T0
+    type: lever
+    name: Gate.io · Lever
+    company: Gate.io
+    company_slug: gate
+    url: https://api.lever.co/v0/postings/gate?mode=json
+    note: 老牌交易所；远程岗位为主。
+    tos: Lever 公开 postings API，免密钥（mode=json）。
+
+  - id: as_kraken
+    enabled: true
+    tier: T0
+    type: ashby
+    name: Kraken · Ashby
+    company: Kraken
+    company_slug: kraken.com
+    url: https://api.ashbyhq.com/posting-api/job-board/kraken.com?includeCompensation=true
+    note: 交易所；Ashby slug 带点（kraken.com），岗位百余个。
+    tos: Ashby 公开 job board posting API，免密钥；含薪酬字段。
+
+  # ============================ T0 · 托管 / 安全 ============================
+  - id: gh_fireblocks
+    enabled: true
+    tier: T0
+    type: greenhouse
+    name: Fireblocks · Greenhouse
+    company: Fireblocks
+    company_slug: fireblocks
+    url: https://boards-api.greenhouse.io/v1/boards/fireblocks/jobs?content=true
+    note: 机构级数字资产托管/MPC 钱包基础设施。
+    tos: Greenhouse 公开 boards API，免密钥。
+
+  - id: lv_anchorage
+    enabled: true
+    tier: T0
+    type: lever
+    name: Anchorage Digital · Lever
+    company: Anchorage Digital
+    company_slug: anchorage
+    url: https://api.lever.co/v0/postings/anchorage?mode=json
+    note: 联邦特许加密银行/托管。
+    tos: Lever 公开 postings API，免密钥。
+
+  - id: gh_bitgo
+    enabled: true
+    tier: T0
+    type: greenhouse
+    name: BitGo · Greenhouse
+    company: BitGo
+    company_slug: bitgo
+    url: https://boards-api.greenhouse.io/v1/boards/bitgo/jobs?content=true
+    note: 机构托管/钱包；安全与平台岗多。
+    tos: Greenhouse 公开 boards API，免密钥。
+
+  - id: as_ledger
+    enabled: true
+    tier: T0
+    type: ashby
+    name: Ledger · Ashby
+    company: Ledger
+    company_slug: ledger
+    url: https://api.ashbyhq.com/posting-api/job-board/ledger?includeCompensation=true
+    note: 硬件钱包；嵌入式/安全/基础设施岗。
+    tos: Ashby 公开 posting API，免密钥。
+
+  - id: lv_certik
+    enabled: true
+    tier: T0
+    type: lever
+    name: CertiK · Lever
+    company: CertiK
+    company_slug: certik
+    url: https://api.lever.co/v0/postings/certik?mode=json
+    note: 智能合约审计/链上安全。
+    tos: Lever 公开 postings API，免密钥。
+
+  - id: as_elliptic
+    enabled: true
+    tier: T0
+    type: ashby
+    name: Elliptic · Ashby
+    company: Elliptic
+    company_slug: elliptic
+    url: https://api.ashbyhq.com/posting-api/job-board/elliptic?includeCompensation=true
+    note: 链上合规/反洗钱数据（区块链分析）。
+    tos: Ashby 公开 posting API，免密钥。
+
+  - id: as_trm-labs
+    enabled: true
+    tier: T0
+    type: ashby
+    name: TRM Labs · Ashby
+    company: TRM Labs
+    company_slug: trm-labs
+    url: https://api.ashbyhq.com/posting-api/job-board/trm-labs?includeCompensation=true
+    note: 链上风险/合规数据；岗位量大（数据/平台）。
+    tos: Ashby 公开 posting API，免密钥。
+
+  - id: gh_openzeppelin
+    enabled: true
+    tier: T0
+    type: greenhouse
+    name: OpenZeppelin · Greenhouse
+    company: OpenZeppelin
+    company_slug: openzeppelin
+    url: https://boards-api.greenhouse.io/v1/boards/openzeppelin/jobs?content=true
+    note: 智能合约安全标准/审计。
+    tos: Greenhouse 公开 boards API，免密钥。
+
+  # ============================ T0 · 基础设施 / 中间件 ============================
+  - id: as_alchemy
+    enabled: true
+    tier: T0
+    type: ashby
+    name: Alchemy · Ashby
+    company: Alchemy
+    company_slug: alchemy
+    url: https://api.ashbyhq.com/posting-api/job-board/alchemy?includeCompensation=true
+    note: Web3 开发者平台/RPC、节点基础设施。
+    tos: Ashby 公开 posting API，免密钥。
+
+  - id: as_quicknode
+    enabled: true
+    tier: T0
+    type: ashby
+    name: QuickNode · Ashby
+    company: QuickNode
+    company_slug: quicknode
+    url: https://api.ashbyhq.com/posting-api/job-board/quicknode?includeCompensation=true
+    note: 多链 RPC/CDN 基础设施。
+    tos: Ashby 公开 posting API，免密钥。
+
+  - id: as_blockdaemon
+    enabled: true
+    tier: T0
+    type: ashby
+    name: Blockdaemon · Ashby
+    company: Blockdaemon
+    company_slug: blockdaemon
+    url: https://api.ashbyhq.com/posting-api/job-board/blockdaemon?includeCompensation=true
+    note: 节点/质押基础设施（validator 运维）。
+    tos: Ashby 公开 posting API，免密钥。
+
+  - id: as_helius
+    enabled: true
+    tier: T0
+    type: ashby
+    name: Helius · Ashby
+    company: Helius
+    company_slug: helius
+    url: https://api.ashbyhq.com/posting-api/job-board/helius?includeCompensation=true
+    note: Solana RPC/indexing 基础设施。
+    tos: Ashby 公开 posting API，免密钥。
+
+  # ============================ T0 · 协议 / DeFi / 支付 ============================
+  - id: gh_ripple
+    enabled: true
+    tier: T0
+    type: greenhouse
+    name: Ripple · Greenhouse
+    company: Ripple
+    company_slug: ripple
+    url: https://boards-api.greenhouse.io/v1/boards/ripple/jobs?content=true
+    note: XRP Ledger/跨境支付；工程岗多。
+    tos: Greenhouse 公开 boards API，免密钥。
+
+  - id: gh_consensys
+    enabled: true
+    tier: T0
+    type: greenhouse
+    name: Consensys · Greenhouse
+    company: Consensys
+    company_slug: consensys
+    url: https://boards-api.greenhouse.io/v1/boards/consensys/jobs?content=true
+    note: MetaMask/Infura/Linea；Ethereum 生态基础设施。
+    tos: Greenhouse 公开 boards API，免密钥。
+
+  - id: gh_aptoslabs
+    enabled: true
+    tier: T0
+    type: greenhouse
+    name: Aptos Labs · Greenhouse
+    company: Aptos Labs
+    company_slug: aptoslabs
+    url: https://boards-api.greenhouse.io/v1/boards/aptoslabs/jobs?content=true
+    note: Move 语言公链 Aptos 核心团队。
+    tos: Greenhouse 公开 boards API，免密钥。
+
+  - id: as_mystenlabs
+    enabled: true
+    tier: T0
+    type: ashby
+    name: Mysten Labs · Ashby
+    company: Mysten Labs
+    company_slug: mystenlabs
+    url: https://api.ashbyhq.com/posting-api/job-board/mystenlabs?includeCompensation=true
+    note: Sui 公链核心团队。
+    tos: Ashby 公开 posting API，免密钥。
+
+  - id: lv_offchainlabs
+    enabled: true
+    tier: T0
+    type: lever
+    name: Offchain Labs · Lever
+    company: Offchain Labs
+    company_slug: offchainlabs
+    url: https://api.lever.co/v0/postings/offchainlabs?mode=json
+    note: Arbitrum L2 核心团队。
+    tos: Lever 公开 postings API，免密钥。
+
+  - id: as_matter-labs
+    enabled: true
+    tier: T0
+    type: ashby
+    name: Matter Labs · Ashby
+    company: Matter Labs
+    company_slug: matter-labs
+    url: https://api.ashbyhq.com/posting-api/job-board/matter-labs?includeCompensation=true
+    note: zkSync（ZK Stack）核心团队；岗位少但为 L2 样本。
+    tos: Ashby 公开 posting API，免密钥。
+
+  - id: as_uniswap
+    enabled: true
+    tier: T0
+    type: ashby
+    name: Uniswap Labs · Ashby
+    company: Uniswap Labs
+    company_slug: uniswap
+    url: https://api.ashbyhq.com/posting-api/job-board/uniswap?includeCompensation=true
+    note: 头部 DEX 协议团队。
+    tos: Ashby 公开 posting API，免密钥。
+
+  - id: as_safe
+    enabled: true
+    tier: T0
+    type: ashby
+    name: Safe · Ashby
+    company: Safe
+    company_slug: safe
+    url: https://api.ashbyhq.com/posting-api/job-board/safe?includeCompensation=true
+    note: 多签钱包/账户抽象基础设施。
+    tos: Ashby 公开 posting API，免密钥。
+
+  - id: as_paxos
+    enabled: true
+    tier: T0
+    type: ashby
+    name: Paxos · Ashby
+    company: Paxos
+    company_slug: paxos
+    url: https://api.ashbyhq.com/posting-api/job-board/paxos?includeCompensation=true
+    note: 稳定币/托管（USDP、USDG）；工程与合规岗。
+    tos: Ashby 公开 posting API，免密钥。
+
+  - id: as_circle
+    enabled: true
+    tier: T0
+    type: ashby
+    name: Circle · Ashby
+    company: Circle
+    company_slug: circle
+    url: https://api.ashbyhq.com/posting-api/job-board/circle?includeCompensation=true
+    note: USDC 发行方；支付/基础设施岗。
+    tos: Ashby 公开 posting API，免密钥。
+
+  - id: as_morpho
+    enabled: true
+    tier: T0
+    type: ashby
+    name: Morpho · Ashby
+    company: Morpho
+    company_slug: morpho
+    url: https://api.ashbyhq.com/posting-api/job-board/morpho?includeCompensation=true
+    note: DeFi 借贷协议（Morpho Blue）。
+    tos: Ashby 公开 posting API，免密钥。
+
+  - id: lv_gauntlet
+    enabled: true
+    tier: T0
+    type: lever
+    name: Gauntlet · Lever
+    company: Gauntlet
+    company_slug: gauntlet
+    url: https://api.lever.co/v0/postings/gauntlet?mode=json
+    note: DeFi 风险建模/经济安全。
+    tos: Lever 公开 postings API，免密钥。
+
+  - id: lv_immutable
+    enabled: true
+    tier: T0
+    type: lever
+    name: Immutable · Lever
+    company: Immutable
+    company_slug: immutable
+    url: https://api.lever.co/v0/postings/immutable?mode=json
+    note: Web3 游戏 L2（Immutable zkEVM）。
+    tos: Lever 公开 postings API，免密钥。
+
+  # ============================ T1 · 加密垂直招聘站 ============================
+  - id: cjl_rss
+    enabled: true
+    tier: T1
+    type: rss_jobs
+    name: CryptoJobsList · RSS
+    company: CryptoJobsList
+    company_slug: cryptojobslist
+    url: https://api.cryptojobslist.com/jobs.rss
+    note: 加密垂直招聘站官方 RSS（100 条/轮，含公司、地点、JD 正文）；RSS 无发布日期，posted_at 留空。
+    tos: 官方公开 RSS；robots.txt 允许 /jobs.rss 与 /jobs/，禁止其站内 /api/ 路径（本适配器不访问）。
+
+  - id: web3career
+    enabled: true
+    tier: T1
+    type: web3career
+    name: Web3.career · 首页
+    company: Web3.career
+    company_slug: web3career
+    url: https://web3.career/
+    note: 加密垂直招聘站首页（JSON-LD JobPosting + 列表行配对，含 JD 正文与发布日期）。
+    tos: robots.txt 仅禁 /metrics*，其余允许；每轮只抓首页 1 次，按行解析公开 JobPosting 数据。
+
+  # ============================ T2 · 通用远程招聘站（必须 crypto 过滤） ============================
+  - id: remoteok
+    enabled: true
+    tier: T2
+    type: remoteok
+    name: RemoteOK · API
+    company: RemoteOK
+    company_slug: remoteok
+    url: https://remoteok.com/api
+    crypto_only: true
+    note: 通用远程岗位；只保留命中 crypto 关键词或公司白名单的岗位。
+    tos: 官方 API 要求署名并链回 RemoteOK（https://remoteok.com，follow 链接）；本模块仅本地统计不做模型训练。
+
+  - id: remotive
+    enabled: true
+    tier: T2
+    type: remotive
+    name: Remotive · API（search=crypto）
+    company: Remotive
+    company_slug: remotive
+    url: https://remotive.com/api/remote-jobs?search=crypto&limit=100
+    crypto_only: true
+    note: 通用远程岗位（已按 search=crypto 预筛）；再套关键词/白名单过滤。
+    tos: Remotive 公开 API，要求署名 Remotive 为来源；仅本地统计使用。
+
+  - id: jobicy
+    enabled: true
+    tier: T2
+    type: jobicy
+    name: Jobicy · API（tag=crypto）
+    company: Jobicy
+    company_slug: jobicy
+    url: https://jobicy.com/api/v2/remote-jobs?count=50&tag=crypto
+    crypto_only: true
+    note: 通用远程岗位（tag=crypto 预筛）；再套关键词/白名单过滤。
+    tos: Jobicy 公开 API，要求显著署名并链回 Jobicy；仅本地统计使用。
+
+  # ============================ T0 · DEX / DEX 聚合器（2026-11-09 补源） ============================
+  - id: as_0x
+    enabled: true
+    tier: T0
+    type: ashby
+    name: 0x / Matcha · Ashby
+    company: 0x
+    company_slug: 0x
+    url: https://api.ashbyhq.com/posting-api/job-board/0x
+    note: DEX 聚合器（Matcha）；岗位少但均为远程，补齐 DEX 对比样本。
+    tos: Ashby 公开 posting API，免密钥。
+
+  - id: as_dodo
+    enabled: true
+    tier: T0
+    type: ashby
+    name: DODO · Ashby
+    company: DODO
+    company_slug: dodo
+    url: https://api.ashbyhq.com/posting-api/job-board/dodo
+    note: DEX（PMM 做市协议）；旧金山团队，含 ML/平台岗。
+    tos: Ashby 公开 posting API，免密钥。
+
+  - id: lv_1inch
+    enabled: true
+    tier: T0
+    type: lever
+    name: 1inch · Lever
+    company: 1inch
+    company_slug: 1inch
+    url: https://api.lever.co/v0/postings/1inch?mode=json
+    note: DEX 聚合器；中东/波兰团队，含 iOS/数据岗。
+    tos: Lever 公开 postings API，免密钥。

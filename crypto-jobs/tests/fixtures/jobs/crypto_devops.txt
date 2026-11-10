@@ -1,0 +1,36 @@
+DevOps Engineer, Node Infrastructure
+Helix Protocol — Berlin / Remote
+
+About Helix
+Helix Protocol builds validator and staking infrastructure for Ethereum and Cosmos. We run a fleet of validator nodes and public RPC endpoints for institutional staking providers. Our team values ownership and a hands-on go-to-market mindset; we are an R&D-driven, C-suite-led company.
+
+Responsibilities
+- Automate validator and archive node deployments with Terraform, Ansible and Helm.
+- Operate Kubernetes clusters on AWS and GCP; manage Helm charts and Argo CD GitOps pipelines.
+- Build and maintain GitLab CI pipelines, Docker images and release automation.
+- Run Linux hardening, DNS, load balancing, Nginx and Envoy at the edge.
+- Operate Postgres, Redis, Kafka and ClickHouse for chain data and indexers.
+- Maintain observability with Prometheus, Grafana and Datadog; own SLOs and capacity planning.
+- Implement IAM, Vault, KMS, HSM and key management controls for validator keys.
+- Support SOC 2 and ISO 27001 audits, disaster recovery and multi-region failover.
+- Ship subgraphs and block explorers for on-chain analytics.
+
+任职要求：
+- 5 年以上 DevOps / 平台工程经验
+- 精通 Kubernetes 容器编排 与 Helm
+- 熟悉 Terraform、Ansible 等基础设施即代码工具
+- 有节点运维经验（Ethereum 执行客户端 / 信标链 / 归档节点）
+- 熟悉可观测性体系（Prometheus、Grafana、OpenTelemetry）
+- 熟悉云平台（AWS / GCP）与 Linux 网络
+- 熟悉 Vault、IAM、KMS 等密钥与访问管理
+- 有金融/加密行业合规经验（SOC 2、ISO 27001、KYC/AML）
+
+加分项：
+- 质押（staking）与验证者（validator）运维
+- 低延迟交易系统、撮合引擎
+- Rust 或 Go 开发经验
+
+Benefits
+- Relocation support to Berlin, remote-friendly setup and a hardware budget
+- Regular team offsites and a yearly protocol retreat
+- Equity in the protocol treasury

@@ -1,0 +1,87 @@
+# 规则与阈值（rules）—— "要不要打扰你"的判断全部收敛到这个文件；改阈值不改代码。
+# M1 阶段只做影子评估（只落盘、不推送），阈值用于标注"本会触发什么级别"。
+# 口径：bps_tvl = 净流 / 交易所 TVL × 10000；USD 金额为等值美元。
+
+schema_version: 1
+updated: "2026-11-09"
+
+# ---------------------------------------------------------------- 逐笔主动卖压
+# 数据：Binance 现货 aggTrades（isBuyerMaker → taker 方向），回补窗口见 app.yaml。
+# 判据必须"占比 + 大单笔数 + 样本量"三条件同时成立，避免小样本噪声。
+taker:
+  window_seconds: 300          # 主窗口 5m（15m 只记录不判级）
+  p1_ratio: 0.58               # 主动卖占比 ≥ 58%
+  p0_ratio: 0.65
+  large_trade_usd:             # 单笔"大单"门槛（按资产流动性分层）
+    BTC: 5000000
+    ETH: 2000000
+    BNB: 1000000
+  p1_min_large_sells: 3        # 5m 内大额卖单笔数 ≥ 3
+  p0_min_large_sells: 6
+  # 5m 成交额低于该值视为样本不足，不判级（按资产分层，防 BNB 因流动性小永不触发）
+  min_window_quote_usd:
+    BTC: 2000000
+    ETH: 1000000
+    BNB: 200000
+  require_price_direction: true # 价格 24h 方向不一致时只记"潜在卖压"，不判 P 级
+
+# ---------------------------------------------------------------- 交易所储备净流
+# 数据：DefiLlama /cexs（全币种聚合 USD）。只能回答"交易所储备在流出"，不能断言币种。
+cex_flow:
+  p1_net_24h_bps_tvl: 50       # 24h 净流 / TVL ≥ 50bps（0.50%）
+  p0_net_24h_bps_tvl: 150
+  p1_net_1w_bps_tvl: 400       # 1 周净流 / TVL ≥ 4%（慢变量，只 P1）
+  min_tvl_usd: 1000000000      # TVL < 10 亿美元的交易所不参评（样本小、抖动大）
+  require_price_direction: true
+
+# ---------------------------------------------------------------- 清算（仅 OKX 口径）
+# 数据：OKX /api/v5/public/liquidation-orders（免 key，单次最多 100 条）。
+# 覆盖时长随行情变化，sample_coverage_minutes 会显式记录；覆盖不足则降级为"仅记录"。
+liquidations:
+  window_minutes: 15
+  p1_usd:
+    BTC: 30000000
+    ETH: 15000000
+    BNB: 8000000
+  p0_usd:
+    BTC: 100000000
+    ETH: 50000000
+    BNB: 25000000
+  long_bias_ratio: 0.6         # 多头被爆占比 ≥ 60% → 归因为"多头强平"
+  min_coverage_minutes: 5      # 样本覆盖 < 5 分钟时降级，防止拿 30 秒数据下结论
+
+# ---------------------------------------------------------------- 稳定币净增发
+# 数据：DefiLlama stablecoins（circulating - circulatingPrevDay），零成本。
+stablecoin:
+  symbols: [USDT, USDC, USDe, FDUSD]
+  p1_net_issue_24h_usd: -500000000      # 24h 净赎回 ≥ 5 亿美元
+  p0_net_issue_24h_usd: -1500000000
+  p0_requires_btc_drop_pct: 3.0          # 仅当 BTC 24h 跌幅 ≥ 3% 才升 P0
+
+# ---------------------------------------------------------------- 影子期校准参数
+shadow:
+  target_precision: 0.60         # 信号出现后 1h 同向 ≥0.5% 的比例
+  target_daily_candidates: 3     # 日均候选条数上限
+  eval_horizon_minutes: 60
+  eval_direction_move_pct: 0.5
+
+# ---------------------------------------------------------------- 归因引擎（M2）
+# 类别判定复用上面 taker / cex_flow / liquidations / stablecoin 的主阈值；
+# 这里只放归因特有的辅助参数（OI 显著度、历史窗口）。
+attribution:
+  enabled: true
+  oi_significant_pct: 2.0      # 15m OI 变化 ≥2% 视为显著加仓/减仓
+  oi_window_minutes: 15        # OI 变化窗口（对应 crypto-price 的 OI 快照）
+  oi_history_hours: 24         # 本地 OI 历史保留时长（跨轮状态）
+
+# ---------------------------------------------------------------- 送达（M3 才启用，需 2 周影子校准达标）
+delivery:
+  mode: shadow                   # shadow=只落盘；live=M3 校准达标后打开
+  quiet_hours: ""                # 空 = 全天即时（与 app.yaml 一致；设计约束无夜间静默）
+  quiet_exception: []
+  daily_cap_p1: 5
+  cooldown_minutes:
+    taker: 30
+    cex_flow: 240
+    liquidation: 30
+    stablecoin: 720

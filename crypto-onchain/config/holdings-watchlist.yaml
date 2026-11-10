@@ -1,0 +1,68 @@
+# 已知地址持仓监控（holdings）—— 只监控**人工写进本文件的地址**。
+#
+# 边界（务必先读）：
+# - 本文件是地址标签的唯一来源：地址与归属只能人工填写，并写清 source_note（标签来源/确认方式）。
+# - 程序不做地址发现/聚类/归属推断，不抓 Arkham/Nansen 等标签库。
+# - label 只是我们给地址起的名字，不是链上事实；第三方标签已明确标注，未经官方核实。
+# - 支持 chain: btc / eth / erc20；erc20 必须给 token（合约地址、symbol、decimals）。
+# - threshold_pct：单地址余额变化（相对上一次实际采集）绝对值 ≥ 该值才产生告警事件；
+#   事件默认 P2（只进每日摘要），条目可加 severity: P0/P1 并在 app.yaml 打开
+#   holdings.alerts.push 才即时推送。
+# - 可选 price_usd：固定价格（如稳定币 1.0）；不给则读 crypto-price exports，再不行用 Binance 公开价。
+#
+# 地址来源（2026-11-10 核实）：
+# - BTC：BitInfoCharts「Top 100 Richest Bitcoin Addresses」钱包标签（第三方标签，非官方披露）；
+#   余额用 Blockstream API 实测核对。
+# - ETH：vitalik.eth（Etherscan/ENS 公开地址），公共 RPC 实测核对。
+
+schema_version: 1
+updated: "2026-11-10"
+
+entries:
+  # ---------- 机构 / 政府 / 知名巨鲸（BTC）----------
+  - chain: btc
+    address: "bc1qjasf9z3h7w3jspkhtgatgpyvvzgpa2wwd2lr0eh5tx44reyn2k7sfc27a4"
+    label: "Tether 储备地址（BitInfoCharts 标签）"
+    source_note: "BitInfoCharts 钱包标签『Tether』（2026-11-10 查询）；第三方标签，非 Tether 官方披露；余额 96,932 BTC"
+    threshold_pct: 2.0
+
+  - chain: btc
+    address: "bc1qa5wkgaew2dkv56kfvj49j0av5nml45x9ek9hz6"
+    label: "美国政府（Silk Road 没收）地址（BitInfoCharts 标签）"
+    source_note: "BitInfoCharts 钱包标签『SilkRoad-FBI-Confiscated』（2026-11-10）；美国司法部 2020 年没收约 69,370 BTC 的公开报道可佐证；余额 69,370 BTC"
+    threshold_pct: 1.0
+
+  - chain: btc
+    address: "bc1q7ydrtdn8z62xhslqyqtyt38mm4e2c4h3mxjkug"
+    label: "英国政府没收地址（BitInfoCharts 标签）"
+    source_note: "BitInfoCharts 钱包标签『UK-Gov-Confiscated』（2026-11-10）；第三方标签，非官方披露；余额 36,000 BTC"
+    threshold_pct: 1.0
+
+  - chain: btc
+    address: "1Ay8vMC7R1UbyCCZRVULMV7iQpHSAbguJP"
+    label: "Mr.100（匿名巨鲸，BitInfoCharts 标签）"
+    source_note: "BitInfoCharts 钱包标签『Mr.100』（2026-11-10）；匿名地址，未核实身份；余额 75,735 BTC"
+    threshold_pct: 5.0
+
+  - chain: btc
+    address: "bc1qazcm763858nkj2dj986etajv6wquslv8uxwczt"
+    label: "Bitfinex 被盗资金追回地址（BitInfoCharts 标签）"
+    source_note: "BitInfoCharts 钱包标签『Bitfinex-Hack-Recovery』（2026-11-10）；第三方标签，未核实；余额 94,643 BTC"
+    threshold_pct: 2.0
+
+  - chain: btc
+    address: "1FeexV6bAHb8ybZjqQMjJrcCrHGW9sb6uF"
+    label: "Mt.Gox 相关地址（BitInfoCharts 标签）"
+    source_note: "BitInfoCharts 钱包标签『MtGox-Hack』（2026-11-10）；第三方标签，未核实；余额 79,957 BTC"
+    threshold_pct: 2.0
+
+  # ---------- 知名个人巨鲸（ETH）----------
+  - chain: eth
+    address: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045"
+    label: "Vitalik Buterin（vitalik.eth）"
+    source_note: "Etherscan/ENS vitalik.eth（0xd8dA…），公开可查；2026-11-10 公共 RPC 核实余额约 5.79 ETH"
+    threshold_pct: 20.0
+
+  # 备注：贝莱德（BlackRock）的 IBIT/ETHA 持仓在 Coinbase Prime 托管，具体归属地址需
+  # Arkham/Nansen 等付费标签；免费无法可靠核实，因此不在此处配置。其官方 ETF 每日持仓
+  # 见 iShares 产品页，适合单独做「机构持仓披露」数据源，而不是地址监控。

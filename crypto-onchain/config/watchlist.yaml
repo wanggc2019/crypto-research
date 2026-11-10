@@ -1,0 +1,33 @@
+# 关注标的（watchlist）—— BTC / ETH / BNB（与 crypto-price 一致；不追山寨）。
+# 这里只放"看什么、怎么换算"；阈值一律在 rules.yaml。
+# OKX 合约面值 ctVal 已核实（2026-11-09）：BTC 0.01、ETH 0.1、BNB 0.01。
+# 面值若被 OKX 调整，清算金额会整体偏差，需同步改这里并记录到 data/state/calibration.jsonl。
+
+schema_version: 1
+updated: "2026-11-09"
+
+assets:
+  BTC:
+    binance: BTCUSDT
+    okx_inst: BTC-USDT-SWAP
+    okx_uly: BTC-USDT
+    contract_value: 0.01       # OKX BTC-USDT-SWAP ctVal（单位：BTC/张）
+    chart_url: "https://www.binance.com/zh-CN/trade/BTC_USDT?type=spot"
+
+  ETH:
+    binance: ETHUSDT
+    okx_inst: ETH-USDT-SWAP
+    okx_uly: ETH-USDT
+    contract_value: 0.1        # 单位：ETH/张
+    chart_url: "https://www.binance.com/zh-CN/trade/ETH_USDT?type=spot"
+
+  BNB:
+    binance: BNBUSDT
+    okx_inst: BNB-USDT-SWAP
+    okx_uly: BNB-USDT
+    contract_value: 0.01       # 单位：BNB/张
+    chart_url: "https://www.binance.com/zh-CN/trade/BNB_USDT?type=spot"
+
+# 关注哪些 CEX 的储备净流（DefiLlama /cexs 的 name 字段；全部币种聚合 USD）。
+# 只用于"交易所级总量背景"，不能据此断言某个币种的进出。
+cex_watch: [Binance, OKX, Coinbase, Bybit, Kraken, Bitfinex]

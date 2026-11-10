@@ -1,0 +1,45 @@
+schema_version: 1
+# crypto-knowledge：每天 3 节 10–15 分钟课程（概念课 / 理论或实践课 / 睡前复盘课）。
+# 内容在 config/curriculum/stage*.yaml；凭据只用仓库根 .env 的 Telegram。
+enabled: true
+
+# healthcheck 用来推导 stale 阈值（2 × poll_seconds = 24h）；本模块是日历触发，不轮询。
+poll_seconds: 43200
+
+# 时段定义：launchd 在 13:00 / 19:00 / 23:00（本地时区）各触发一次；
+# collect.sh 按当前小时选 slot，同日同 slot 只发一次（data/state/progress.json）。
+slots:
+  "13":
+    kind: concept
+    label: 概念卡
+    emoji: "🔑"
+  "19":
+    kind: lesson
+    label: 理论 / 实践
+    emoji: "📖"
+  "21":
+    kind: recap
+    label: 今日回顾与总结
+    emoji: "🌆"
+  "23":
+    kind: review
+    label: 睡前复盘
+    emoji: "🌙"
+
+# 间隔复习：条目首次出现后，第 1/3/7/14/30/60 天各复习一次（近似 SM-2 的固定间隔版）。
+srs_days: [1, 3, 7, 14, 30, 60]
+# 23:00 最多复习几条（太多会变成负担）。
+review_max_items: 2
+
+# 每周日 21:00 把「今日回顾与总结」升级为「本周回顾与总结」（不新增时段）。
+weekly:
+  enabled: true
+  weekday: 7      # ISO 周几：7 = 周日
+
+message:
+  brand: "crypto-knowledge"
+  # Telegram 单条上限 4096，留出标签余量。
+  max_chars: 3800
+
+delivery:
+  

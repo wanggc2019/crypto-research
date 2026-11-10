@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>__LABEL__</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>__MODULE_DIR__/scripts/collect.sh</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>__MODULE_DIR__</string>
+  <!-- 价格监控是巡检型任务：每轮跑完即退出，机器唤醒后 launchd 自动补跑，
+       不需要 KeepAlive（避免进程被系统挂起后"假活"）。
+       __INTERVAL__ 由 tools/render_launchd.py 按 config/app.yaml 的 poll_seconds 填充（默认 60）。 -->
+  <key>StartInterval</key>
+  <integer>__INTERVAL__</integer>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>__LOG_DIR__/launchd.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>__LOG_DIR__/launchd.err.log</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>CRYPTO_JOB_LABEL</key>
+    <string>__LABEL__</string>
+    <key>PATH</key>
+    <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>LANG</key>
+    <string>zh_CN.UTF-8</string>
+  </dict>
+</dict>
+</plist>

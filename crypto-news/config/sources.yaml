@@ -1,0 +1,436 @@
+# 信源清单（sources）—— 当前范围：BTC / ETH / BNB
+# 约定：
+#   type:         rss | json_api | html_diff | statuspage | market_api
+#   tier:         T0 一手 / T1 专业媒体 / T2 社交 / T3 聚合
+#   verified:     2026-11-07 本机实测是否连通
+#   poll_seconds: 建议轮询间隔（零成本方案下不要低于 60s）
+#
+# SOL / ASTER 专属信源已移除，需要时从 git 历史或方案文档附录恢复。
+
+version: 8
+updated: "2026-11-10"
+default_user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) crypto-intel/0.4 (contact: me@example.com)"
+
+sources:
+  # ---------- T0 交易所公告 ----------
+  - id: binance_ann
+    name: Binance 公告
+    type: json_api
+    tier: T0
+    url: "https://www.binance.com/bapi/composite/v1/public/cms/article/list/query?type=1&pageNo=1&pageSize=20"
+    poll_seconds: 60
+    verified: true
+    filter:
+      keep_catalogs: [48, 161, 157, 49]   # 48 上币 161 下架 157 维护 49 官方新闻
+      drop_catalogs: [93, 128, 51]        # 93 活动 128 空投 51 API 更新
+      listing_watchlist_only: true        # 上币类只保留 BTC/ETH/BNB
+    notes: 网页版有 JS 挑战（202），必须走 CMS JSON
+
+  - id: okx_ann
+    name: OKX 公告
+    type: json_api
+    tier: T0
+    url: "https://www.okx.com/api/v5/support/announcements"
+    poll_seconds: 120
+    verified: true
+    notes: 不要带 annType 参数，带了会报 51000
+
+  - id: bybit_ann
+    name: Bybit 公告
+    type: json_api
+    tier: T0
+    url: "https://api.bybit.com/v5/announcements/index?locale=en-US&limit=20"
+    poll_seconds: 120
+    verified: true
+    notes: retCode=0 为正常；可按 type 筛 new_crypto
+
+  - id: kraken_blog
+    name: Kraken 博客
+    type: rss
+    tier: T0
+    url: "https://blog.kraken.com/feed"
+    poll_seconds: 300
+    verified: true
+
+  - id: tg_binance_ann
+    name: Binance 公告 Telegram（备用通道）
+    type: html_diff
+    tier: T2
+    url: "https://t.me/s/binance_announcements"
+    poll_seconds: 300
+    verified: true
+    notes: 与 binance_ann API 互为备份；公开频道预览页，无需 bot 权限
+
+  # ---------- T0 监管 / 宏观 ----------
+  - id: sec_press
+    name: SEC 新闻稿
+    type: rss
+    tier: T0
+    url: "https://www.sec.gov/news/pressreleases.rss"
+    poll_seconds: 300
+    verified: true
+    headers:
+      User-Agent: "crypto-intel/0.4 (contact: me@example.com)"  # 不带合规 UA 会 403
+
+  - id: sec_litigation
+    name: SEC 执法文告
+    type: rss
+    tier: T0
+    url: "https://www.sec.gov/enforcement-litigation/litigation-releases/rss"
+    poll_seconds: 600
+    verified: false
+    headers:
+      User-Agent: "crypto-intel/0.4 (contact: me@example.com)"
+
+  - id: cftc_press
+    name: CFTC 新闻
+    type: rss
+    tier: T0
+    url: "https://www.cftc.gov/PressRoom/PressReleases/rss"
+    poll_seconds: 600
+    verified: true
+
+  - id: fed_press
+    name: 美联储新闻
+    type: rss
+    tier: T0
+    url: "https://www.federalreserve.gov/feeds/press_all.xml"
+    poll_seconds: 900
+    verified: true
+
+  - id: ofac_actions
+    name: OFAC 近期行动
+    type: html_diff
+    tier: T0
+    url: "https://ofac.treasury.gov/recent-actions"
+    poll_seconds: 1800
+    verified: false
+    notes: 无 RSS，只能页面 diff；变化频率低，30 分钟一次足够
+
+  # ---------- T1 专业媒体 ----------
+  - id: coindesk
+    name: CoinDesk
+    type: rss
+    tier: T1
+    url: "https://www.coindesk.com/arc/outboundfeeds/rss/"
+    poll_seconds: 300
+    verified: true
+    follow_redirects: true   # 实测 308，需跟随重定向
+
+  - id: theblock
+    name: The Block
+    type: rss
+    tier: T1
+    url: "https://www.theblock.co/rss.xml"
+    poll_seconds: 300
+    verified: true
+
+  - id: cointelegraph
+    name: Cointelegraph
+    type: rss
+    tier: T1
+    url: "https://cointelegraph.com/rss"
+    poll_seconds: 300
+    verified: true
+
+  - id: blockworks
+    name: Blockworks
+    type: rss
+    tier: T1
+    url: "https://blockworks.co/feed"
+    poll_seconds: 300
+    verified: true
+
+  - id: dlnews
+    name: DL News
+    type: rss
+    tier: T1
+    url: "https://www.dlnews.com/arc/outboundfeeds/rss/"
+    poll_seconds: 300
+    verified: true
+
+  - id: wublock
+    name: 吴说区块链
+    type: rss
+    tier: T1
+    url: "https://www.wublock123.com/rss"
+    poll_seconds: 600
+    verified: true
+
+  # ---------- T2 高管发声（X 主页经 r.jina.ai 代理，零成本、免 API key）----------
+  - id: x_cz
+    name: CZ（@cz_binance）
+    type: html_diff
+    tier: T2
+    url: "https://r.jina.ai/https://x.com/cz_binance"
+    poll_seconds: 300
+    verified: true
+    notes: 只保留本人原创；转发/点赞丢弃。涉及 BNB/上币/监管/安全 → P1，一般市场观点 → P2
+
+  - id: x_yihe
+    name: 何一（@heyibinance）
+    type: html_diff
+    tier: T2
+    url: "https://r.jina.ai/https://x.com/heyibinance"
+    poll_seconds: 300
+    verified: true
+    notes: 同上；中文表态常被二次解读，优先看原文
+
+  - id: x_brian_armstrong
+    name: Brian Armstrong（@brian_armstrong）
+    type: html_diff
+    tier: T2
+    url: "https://r.jina.ai/https://x.com/brian_armstrong"
+    poll_seconds: 600
+    verified: true
+
+  - id: x_benbybit
+    name: Ben Zhou（@benbybit）
+    type: html_diff
+    tier: T2
+    url: "https://r.jina.ai/https://x.com/benbybit"
+    poll_seconds: 600
+    verified: true
+
+  - id: x_jespow
+    name: Jesse Powell（@jespow）
+    type: html_diff
+    tier: T2
+    url: "https://r.jina.ai/https://x.com/jespow"
+    poll_seconds: 900
+    verified: true
+
+  - id: gnews_people_cn
+    name: Google News（高管姓名·中文）
+    type: rss
+    tier: T3
+    url: "https://news.google.com/rss/search?q=%E8%B5%B5%E9%95%BF%E9%B9%8F+OR+%E4%BD%95%E4%B8%80+OR+%E5%BE%90%E6%98%8E%E6%98%9F&hl=zh-CN&gl=CN&ceid=CN:zh-Hans"
+    poll_seconds: 900
+    verified: true
+    notes: 媒体转述，用于交叉确认；不如本人主页快
+
+  - id: gnews_people_en
+    name: Google News（高管姓名·英文）
+    type: rss
+    tier: T3
+    url: "https://news.google.com/rss/search?q=%22Changpeng+Zhao%22+OR+%22Yi+He%22+OR+%22Brian+Armstrong%22+OR+%22Ben+Zhou%22&hl=en-US&gl=US&ceid=US:en"
+    poll_seconds: 900
+    verified: true
+
+  # 中文媒体无公开 RSS 的，用 Google News 站点检索做代理（零成本）
+  - id: gnews_cn_media
+    name: 中文媒体（Google News 代理）
+    type: rss
+    tier: T1
+    url: "https://news.google.com/rss/search?q=site:panewslab.com+OR+site:theblockbeats.info+OR+site:techflowpost.com+OR+site:foresightnews.pro&hl=zh-CN&gl=CN&ceid=CN:zh-Hans"
+    poll_seconds: 600
+    verified: true
+
+  # ---------- 组织动向（员工/裁员/高管离职）——只做 P2 线索，媒体证实才可能升 P1 ----------
+  - id: gnews_layoffs_en
+    name: Google News（交易所裁员/重组/高管离职·英文）
+    type: rss
+    tier: T3
+    url: "https://news.google.com/rss/search?q=(Binance+OR+Coinbase+OR+OKX+OR+Bybit+OR+Kraken+OR+Bitget)+AND+(layoffs+OR+%22laid+off%22+OR+restructuring+OR+%22steps+down%22+OR+resigns+OR+severance)&hl=en-US&gl=US&ceid=US:en"
+    poll_seconds: 900
+    verified: true
+    notes: 组织动向量；只作线索（默认 P2），需 T1 媒体/官方证实才可能升 P1，永不单源 P0
+
+  - id: gnews_layoffs_cn
+    name: Google News（交易所裁员/重组/高管离职·中文）
+    type: rss
+    tier: T3
+    url: "https://news.google.com/rss/search?q=(%E5%B8%81%E5%AE%89+OR+Coinbase+OR+OKX+OR+Bybit+OR+Kraken)+AND+(%E8%A3%81%E5%91%98+OR+%E9%87%8D%E7%BB%84+OR+%E7%A6%BB%E8%81%8C+OR+%E8%BE%9E%E8%81%8C+OR+%E9%81%A3%E6%95%A3)&hl=zh-CN&gl=CN&ceid=CN:zh-Hans"
+    poll_seconds: 900
+    verified: true
+    notes: 组织动向量；只作线索（默认 P2），需 T1 媒体/官方证实才可能升 P1，永不单源 P0
+
+  # ---------- WARN 裁员备案（美国州政府公开数据，T0 一手）----------
+  - id: warn_ca
+    name: 加州 EDD WARN 裁员备案
+    type: warn
+    warn_format: ca
+    tier: T0
+    url: "https://edd.ca.gov/siteassets/files/jobs_and_training/warn/warn_report1.xlsx"
+    poll_seconds: 3600
+    verified: true
+    notes: 官方 xlsx；只保留交易所雇主（Coinbase/Kraken/Crypto.com 等）相关备案；P1 线索上限
+
+  - id: warn_ny
+    name: 纽约州 DOL WARN 裁员备案
+    type: warn
+    warn_format: ny
+    tier: T0
+    url: "https://dol.ny.gov/warn-notices"
+    poll_seconds: 3600
+    verified: true
+    notes: 官方 HTML 表格；只保留交易所雇主相关备案；P1 线索上限
+
+  # ---------- 公开社区线索（Reddit 直连 429/403，改用 Google News 站内检索，稳定）----------
+  - id: gnews_reddit_labor_en
+    name: Google News（Reddit 社区·裁员/重组·英文）
+    type: rss
+    tier: T3
+    url: "https://news.google.com/rss/search?q=site%3Areddit.com+(binance+OR+coinbase+OR+okx+OR+bybit)+AND+(layoffs+OR+%22laid+off%22+OR+restructuring)&hl=en-US&gl=US&ceid=US:en"
+    poll_seconds: 900
+    verified: true
+    notes: 公开社区帖（经 Google News 索引，免登录免抓取）；只作线索，不单源 P0
+
+  - id: gnews_reddit_labor_zh
+    name: Google News（Reddit 社区·裁员/重组·中文）
+    type: rss
+    tier: T3
+    url: "https://news.google.com/rss/search?q=site%3Areddit.com+(%E5%B8%81%E5%AE%89+OR+Coinbase+OR+OKX)+AND+(%E8%A3%81%E5%91%98+OR+%E9%87%8D%E7%BB%84)&hl=zh-CN&gl=CN&ceid=CN:zh-Hans"
+    poll_seconds: 900
+    verified: true
+    notes: 公开社区帖（经 Google News 索引）；只作线索，不单源 P0
+
+  # ---------- 美股 / 宏观（只保留市场级事件，个股日常不告警）----------
+  - id: cnbc_top
+    name: CNBC 头条
+    type: rss
+    tier: T1
+    url: "https://www.cnbc.com/id/100003114/device/rss/rss.html"
+    poll_seconds: 600
+    verified: true
+    notes: 美股头条；仅保留市场级/加密相关（score.is_macro_news 过滤）
+
+  - id: marketwatch_top
+    name: MarketWatch 头条
+    type: rss
+    tier: T1
+    url: "https://feeds.content.dowjones.io/public/rss/mw_topstories"
+    poll_seconds: 900
+    verified: true
+    notes: 美股头条；仅保留市场级/加密相关
+
+  - id: gnews_us_macro
+    name: Google News（美股/宏观 × 加密）
+    type: rss
+    tier: T3
+    url: "https://news.google.com/rss/search?q=(%22stock+market%22+OR+Nasdaq+OR+%22S%26P+500%22)+AND+(bitcoin+OR+crypto+OR+%22crypto+stocks%22)&hl=en-US&gl=US&ceid=US:en"
+    poll_seconds: 600
+    verified: true
+    notes: 美股与加密联动；T3 只作线索
+
+  # ---------- T3 中文媒体（无官方 RSS，用 Google News 站内检索）----------
+  - id: gnews_odaily
+    name: Google News（Odaily 星球日报）
+    type: rss
+    tier: T3
+    url: "https://news.google.com/rss/search?q=site%3Aodaily.news+when%3A7d&hl=zh-CN&gl=CN&ceid=CN:zh-Hans"
+    poll_seconds: 600
+    verified: true
+    notes: Odaily 官网无 RSS；用 Google News 站内检索，T3 只作线索，不单源 P0
+
+  # ---------- T3 聚合 / 查漏 ----------
+  - id: gnews_btc_eth
+    name: Google News（BTC/ETH + ETF/SEC）
+    type: rss
+    tier: T3
+    url: "https://news.google.com/rss/search?q=(bitcoin+OR+ethereum)+AND+(ETF+OR+SEC+OR+Fed)&hl=en-US&gl=US&ceid=US:en"
+    poll_seconds: 600
+    verified: true
+
+  - id: gnews_bnb
+    name: Google News（BNB / BNB Chain）
+    type: rss
+    tier: T3
+    url: "https://news.google.com/rss/search?q=(BNB+OR+%22BNB+Chain%22)+AND+(burn+OR+Binance+OR+BSC)&hl=en-US&gl=US&ceid=US:en"
+    poll_seconds: 600
+    verified: true
+
+  # ---------- T1 ETF 资金流（零成本：r.jina.ai 代理 Farside，直连 403）----------
+  - id: farside_btc
+    name: BTC ETF 资金流（Farside 代理）
+    type: html_diff
+    tier: T1
+    url: "https://r.jina.ai/https://farside.co.uk/btc/"
+    poll_seconds: 3600
+    verified: true
+    notes: 返回 Markdown 表格，含每日净流入与合计；免费但限速，1 小时一次足够
+
+  - id: farside_eth
+    name: ETH ETF 资金流（Farside 代理）
+    type: html_diff
+    tier: T1
+    url: "https://r.jina.ai/https://farside.co.uk/eth/"
+    poll_seconds: 3600
+    verified: true
+    notes: 同上
+
+  # ---------- T0 项目 / 生态（BNB Chain）----------
+  - id: bnbchain_blog
+    name: BNB Chain 博客
+    type: html_diff
+    tier: T0
+    url: "https://www.bnbchain.org/en/blog"
+    poll_seconds: 3600
+    verified: false
+    notes: 站点是 SPA（/rss.xml 返回 HTML 不是真 RSS），只能页面 diff；官方 X 为 @BNBChain；2026-11-11：SPA 页面 diff 只会产生 CSS/JSON 垃圾 P1，已停用
+
+  - id: bnbchain_docs
+    name: BNB Chain 文档索引（变更探测）
+    type: html_diff
+    tier: T0
+    url: "https://docs.bnbchain.org/llms.txt"
+    poll_seconds: 3600
+    verified: true
+    notes: 文档全站索引，升级/规则变更通常先体现在这里
+
+  - id: defillama_bsc_tvl
+    name: BSC 链 TVL
+    type: market_api
+    tier: T0
+    url: "https://api.llama.fi/v2/historicalChainTvl/BSC"
+    poll_seconds: 900
+    verified: true
+    notes: 用于 BSC 生态异常骤降；当前约 $50 亿量级
+
+  - id: binance_funding_bnb
+    name: Binance BNB 资金费率
+    type: market_api
+    tier: T0
+    url: "https://fapi.binance.com/fapi/v1/premiumIndex?symbol=BNBUSDT"
+    poll_seconds: 300
+    verified: true
+
+  # ---------- T0 市场 / 链上数据 ----------
+  - id: binance_funding_btc
+    name: Binance BTC 资金费率
+    type: market_api
+    tier: T0
+    url: "https://fapi.binance.com/fapi/v1/premiumIndex?symbol=BTCUSDT"
+    poll_seconds: 300
+    verified: true
+
+  - id: binance_funding_eth
+    name: Binance ETH 资金费率
+    type: market_api
+    tier: T0
+    url: "https://fapi.binance.com/fapi/v1/premiumIndex?symbol=ETHUSDT"
+    poll_seconds: 300
+    verified: true
+
+  - id: defillama_stablecoins
+    name: DefiLlama 稳定币
+    type: market_api
+    tier: T0
+    url: "https://stablecoins.llama.fi/stablecoins?includePrices=true"
+    poll_seconds: 300
+    verified: true
+
+  - id: binance_price
+    name: Binance 现货价格
+    type: market_api
+    tier: T0
+    url: "https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT"
+    poll_seconds: 60
+    verified: true
+    notes: ETH 用 symbol=ETHUSDT 再配一条即可
+
+# ---------- 待接入（需账号/付费，先不用）----------
+# - X API List：按量计费，$0.005/条起，需设消费上限
+# - CoinGlass：清算/OI 数据，需 key
+# - SoSoValue：ETF 流数据，Cloudflare + CAPTCHA（Farside 已用 r.jina.ai 解决）
+# - Glassnode / CryptoQuant：链上指标，$29–799/月

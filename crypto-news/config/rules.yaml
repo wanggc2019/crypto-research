@@ -1,0 +1,101 @@
+# 过滤与防噪规则（rules）
+# 目标：先砍掉 70% 噪音，再谈评分。
+
+version: 1
+updated: "2026-11-07"
+
+# ---------- 白名单 ----------
+whitelist:
+  # 只有这些来源可以单独触发告警；其余只能作为线索
+  can_trigger_alone: [T0]
+  # T1 需要至少 2 个独立来源，或 1 个 T1 + 官方确认
+  T1_min_independent_sources: 2
+  T2_min_independent_sources: 3
+
+# ---------- 交易所公告过滤（关键，砍掉绝大部分噪音）----------
+exchange_announcements:
+  binance:
+    keep_catalogs: [48, 161, 157, 49]
+    drop_catalogs: [93, 128, 51]
+    # 上币类：只有下列标的才放行
+    listing_watchlist_only: [BTC, ETH, BNB]
+    # 维护/下架：涉及任一 watchlist 标的才放行
+    maintenance_watchlist_only: [BTC, ETH, BNB]
+  okx:
+    listing_watchlist_only: [BTC, ETH, BNB]
+  bybit:
+    listing_watchlist_only: [BTC, ETH, BNB]
+  # 其他交易所同理
+
+# ---------- 广告 / 喊单识别 ----------
+spam:
+  phrase_blacklist:
+    - 保本
+    - 稳赚
+    - 必涨
+    - 百倍
+    - 千倍
+    - 100x
+    - 内部消息
+    - 限时额度
+    - 官方客服
+    - 领空投
+    - 快上车
+    - 最后机会
+    - 财富密码
+    - guaranteed profit
+    - risk-free
+  # 命中 2 条以上或「目标价 + 时限」组合 → 直接丢弃
+  drop_threshold: 2
+  price_target_pattern: true
+
+# ---------- 交易所营销活动（直接丢弃，不进评分）----------
+promo:
+  keywords: [campaign, rewards, reward, tournament, compete, giveaway, airdrop,
+             voucher, promotion, "share up to", "earn up to", "lucky draw",
+             活动, 空投, 奖励, 抽奖, 大赛, 返佣, 瓜分, 领券]
+  # 命中即丢；维护/下架/上币类公告不受影响
+  exempt_keywords: [maintenance, maintenance update, delist, delisting, will list, 维护, 下架, 上线]
+
+# ---------- 假公告 / 钓鱼识别 ----------
+phishing:
+  official_domain_required: true          # 公告链接必须落在官方域名白名单
+  official_sources_required: 2            # 官网 + 官方 X 双发才算
+  screenshot_not_evidence: true
+  shortener_domains: [bit.ly, t.co, tinyurl.com, goo.gl, cutt.ly]
+  suspicious_tld: [.top, .xyz, .click, .gq, .tk, .ml, .cf]
+  homoglyph_check: true                   # 同形字 a/а、0/O
+  domain_age_days_min: 90
+
+# ---------- 去重与聚类 ----------
+dedup:
+  url_normalize: [lowercase_host, strip_utm, strip_ref, strip_fbclid, strip_trailing_slash]
+  hash: sha256
+  simhash:
+    enabled: true
+    shingle: 3
+    hamming_max: 3
+  title_similarity:
+    method: char_3gram_jaccard
+    threshold: 0.8
+  embedding:
+    enabled: false          # 零成本阶段先关，纯规则够用
+    model: bge-small-zh
+    cosine_threshold: 0.85
+    window_hours: 24
+  event_window_hours: 24
+
+# ---------- 高管发声过滤（KOL 已明确不监控）----------
+people:
+  only_original_posts: true
+  drop_reposts_and_likes: true
+  dedupe_by_tweet_id: true
+  official_account_trust: high     # 官方认证账号本人原创 → 按一手信源权重
+  require_second_channel_for: [legal_or_scandal, personnel_change]
+  excluded_account_types: [kol, influencer, 喊单号, 财经博主]
+
+# ---------- 降温与升级 ----------
+dedup_behavior:
+  same_event_push_once: true
+  update_push_allowed: true       # 重大进展可"更新推送"
+  conflict_rule: "C=0 并降一级"    # 来源互相矛盾时

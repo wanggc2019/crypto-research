@@ -1,0 +1,72 @@
+schema_version: 1
+# 政策雷达：低频（6 小时）扫权威源，只对「新且相关」的法规/案例建卡。
+enabled: true
+poll_seconds: 3600           # 1 小时；由 tools/render_launchd.py 读取（发现新政策更快）
+max_new_per_source: 20       # 单源单轮最多处理的新条目
+detail_fetch_limit: 24       # 单轮最多抓多少个详情页
+max_detail_per_source: 5     # 单源单轮详情上限（防止某个源吃光预算）
+backfill_per_source: 2       # 单源单轮补抓正文上限（旧条目只入库不推送）
+push_max_age_days: 540       # 超过 540 天的旧文件只入库、不推送（避免把历史文件当新闻）
+body_max_chars: 20000
+
+topics:
+  - 虚拟货币
+  - 稳定币
+  - 加密资产
+  - 加密货币
+  - 数字资产
+  - 现实世界资产代币化
+  - RWA
+  - 挖矿
+  - 矿机
+  - 比特币
+  - 以太币
+  - 泰达币
+  - USDT
+  - 代币发行
+  - 非法金融活动
+  - 非法经营
+  - 洗钱
+  - 变相买卖外汇
+  - 资金支付结算
+  # 英文主题（国外监管源）
+  - crypto
+  - digital asset
+  - digital currency
+  - virtual asset
+  - stablecoin
+  - stablecoins
+  - blockchain
+  - defi
+  - tokenization
+  - tokenisation
+  - cbdc
+  - mica
+  - dlt
+  - nft
+  - web3
+  - bitcoin
+  - payment token
+  - e-money token
+  - asset-referenced token
+  - crypto-asset
+  - crypto-assets
+  - cryptoassets
+  - crypto asset
+  - crypto assets
+  - digital token
+  - digital assets
+  - virtual assets
+  - security token
+  - utility token
+  - vasp
+  - casp
+  - virtual asset service provider
+  - crypto-asset service provider
+  - distributed ledger
+
+delivery:
+  # 按设计约束：政策消息 24/7 即时发送，不设静默时段（全天即时发送）
+  ignore_quiet_hours: true
+  quiet_hours: "22:30-07:30"   # 仅当 ignore_quiet_hours=false 时生效
+  max_card_items: 5

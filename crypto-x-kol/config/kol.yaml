@@ -1,0 +1,249 @@
+# KOL 白名单（crypto-x-kol）
+#
+# ★ 这是「起始名单」：把 enabled 按你的口味开关，或直接替换 accounts。
+#   handle 不带 @；抓取失败只记录在 data/state/kol-<handle>.json 的 last_error，不影响整轮。
+#   2026-11-08 用 r.jina.ai 匿名实测过全部 handle：除 saylor（匿名登录墙）外均可读。
+#
+# ⚠️ 账号边界（避免和 crypto-news 双推）：
+#   crypto-news 的 T2「高管发声」已监控 cz_binance、heyibinance、brian_armstrong、benbybit、jespow；
+#   不要把这 5 个 handle 加进本文件——同一条推文会被两个模块各推一次。
+#   tools/tests/test_account_overlap.py 会自动检查两边账号集合不重叠。
+#
+# tier：T1 = 一手/研究/高信噪比；T2 = 交易/中文/补充。日报与推送按「高信号 → tier → 首次发现时间」排序。
+# tags：仅用于报告展示。
+version: 1
+updated: "2026-11-08"
+
+defaults:
+  enabled: true
+  tier: T2
+
+accounts:
+  # ---------- 一手 / 机构 / 宏观 ----------
+  - id: saylor
+    name: Michael Saylor
+    role: Strategy（原 MicroStrategy）执行主席
+    handle: saylor
+    tier: T1
+    enabled: false   # 实测：匿名访问只返回登录墙（帖子区为空），r.jina.ai 读不到；需要官方 API 才能开
+    tags: [BTC, 机构]
+    why: Strategy 执行主席；机构 BTC 买盘与「增持」叙事的直接来源
+
+  - id: vitalik
+    name: Vitalik Buterin
+    role: 以太坊联合创始人
+    handle: VitalikButerin
+    tier: T1
+    tags: [ETH, 协议]
+    why: 以太坊路线图/协议变更的一手信号
+
+  - id: timbeiko
+    name: Tim Beiko
+    role: 以太坊核心开发者（AllCoreDevs 协调人）
+    handle: TimBeiko
+    tier: T1
+    tags: [ETH, 升级]
+    why: 以太坊核心开发者会议协调人，升级时间线最准
+
+  - id: sassal
+    name: Anthony Sassano
+    role: 以太坊生态研究者 / The Daily Gwei 主理人
+    handle: sassal0x
+    tier: T1
+    tags: [ETH, 生态]
+    why: 以太坊生态高信噪比布道者，常提前汇总 EIP/升级信息
+
+  - id: ryanadams
+    name: Ryan Sean Adams
+    role: Bankless 联合创始人
+    handle: RyanSAdams
+    tier: T1
+    tags: [ETH, 研究]
+    why: Bankless 主理人，ETH 叙事与宏观交叉视角
+
+  - id: willywoo
+    name: Willy Woo
+    role: 独立链上分析师
+    handle: willywoo
+    tier: T1
+    tags: [BTC, 链上]
+    why: 链上数据派代表，BTC 周期/资金流观点影响面大
+
+  - id: planb
+    name: PlanB
+    role: 量化分析师 / S2F 模型作者
+    handle: 100trillionUSD
+    tier: T1
+    tags: [BTC, 模型]
+    why: S2F 模型作者；观点有争议但传播广，适合做情绪观察
+
+  - id: raoulpal
+    name: Raoul Pal
+    role: Real Vision 创始人 / 宏观投资者
+    handle: RaoulGMI
+    tier: T1
+    tags: [宏观, 流动性]
+    why: 全球宏观 + 加密流动性框架，常影响风险偏好叙事
+
+  - id: lynalden
+    name: Lyn Alden
+    role: 独立宏观分析师 / Lyn Alden Investment Strategy 创始人
+    handle: LynAldenContact
+    tier: T1
+    tags: [宏观, BTC]
+    why: 独立宏观研究，偏长期与流动性/财政视角
+
+  - id: dylanleclair
+    name: Dylan LeClair
+    role: BTC 链上研究员
+    handle: dylanleclair
+    tier: T1
+    tags: [BTC, 链上]
+    why: BTC 链上与矿业数据，常做定量拆解
+
+  - id: hasu
+    name: Hasu
+    role: Flashbots 战略负责人 / 独立研究员
+    handle: hasufl
+    tier: T1
+    tags: [研究, 市场结构]
+    why: 机制设计与市场结构研究，观点密度高
+
+  - id: light
+    name: Light
+    role: 加密市场结构观察者（匿名）
+    handle: lightcrypto
+    tier: T1
+    tags: [市场结构, 交易]
+    why: 老牌市场结构观察者，常给反向视角
+
+  - id: arthurhayes
+    name: Arthur Hayes
+    role: BitMEX 联合创始人
+    handle: CryptoHayes
+    tier: T1
+    tags: [宏观, 交易]
+    why: BitMEX 创始人；宏观/流动性交易框架，影响短期情绪
+
+  - id: aantonop
+    name: Andreas Antonopoulos
+    role: 比特币安全研究者 / 作家
+    handle: aantonop
+    tier: T1
+    tags: [教育, 安全]
+    why: 比特币安全教育者；安全/自托管话题权威
+
+  - id: balajis
+    name: Balaji Srinivasan
+    role: 投资人 / 前 Coinbase CTO
+    handle: balajis
+    tier: T1
+    tags: [宏观, 科技]
+    why: 科技/加密交叉的长期叙事，常出圈影响情绪
+
+  - id: voorhees
+    name: Erik Voorhees
+    role: ShapeShift 创始人
+    handle: ErikVoorhees
+    tier: T1
+    tags: [BTC, 监管]
+    why: ShapeShift 创始人；监管与自由市场视角
+
+  - id: pomp
+    name: Anthony Pompliano
+    role: 投资人 / Pomp Investments 创始人
+    handle: APompliano
+    tier: T1
+    tags: [BTC, 机构]
+    why: 机构资金/BTC 叙事的高频评论者
+
+  - id: preston
+    name: Preston Pysh
+    role: 投资人 / The Investor's Podcast 联合创始人
+    handle: PrestonPysh
+    tier: T1
+    tags: [BTC, 硬资产]
+    why: BTC 硬资产/宏观投资者，常与 Saylor 叙事交叉
+
+  - id: cobie
+    name: Cobie
+    role: 加密行业观察者（匿名）
+    handle: cobie
+    tier: T1
+    tags: [行业观察]
+    why: 行业老人；项目/交易所/市场结构的圈内视角
+
+  # ---------- 交易 / 中文 ----------
+  - id: justinsun
+    name: Justin Sun
+    role: TRON 创始人 / HTX 顾问
+    handle: justinsuntron
+    tier: T2
+    tags: [TRON, 交易所]
+    why: 高频发言且常带资金/上所动作；争议大但市场影响真实存在
+
+  - id: wublockchain
+    name: 吴说区块链
+    role: 吴说区块链创始人
+    handle: WuBlockchain
+    tier: T2
+    tags: [中文, 快讯]
+    why: 中文一手快讯，常先于英文媒体
+
+  - id: phyrex
+    name: 倪大（Phyrex）
+    role: 中文链上分析师
+    handle: PhyrexNi
+    tier: T2
+    tags: [中文, 链上]
+    why: 中文链上/资金流分析，适合做交叉验证
+
+  - id: techflow
+    name: 深潮 TechFlow
+    role: 深潮 TechFlow 媒体
+    handle: TechFlowPost
+    tier: T2
+    tags: [中文, 媒体]
+    why: 中文行业媒体，覆盖一级市场与项目动态
+
+  - id: hsaka
+    name: Hsaka
+    role: 匿名交易员
+    handle: hsakatrades
+    tier: T2
+    tags: [交易]
+    why: 短线市场结构/情绪，适合做拥挤度参考
+
+  - id: pentoshi
+    name: Pentoshi
+    role: 匿名交易员
+    handle: Pentosh1
+    tier: T2
+    tags: [交易]
+    why: 高关注度交易员，观点常成市场情绪锚
+
+  - id: kaleo
+    name: Kaleo
+    role: 匿名交易员
+    handle: CryptoKaleo
+    tier: T2
+    tags: [交易]
+    why: 山寨/情绪交易代表，用于观察风险偏好
+
+  - id: cred
+    name: Cred
+    role: 匿名交易员 / 交易教育者
+    handle: CryptoCred
+    tier: T2
+    tags: [交易, 教育]
+    why: 交易/风控教育型 KOL，内容偏方法论而非喊单
+
+  # ---------- 可选：SOL 生态（仓库主线是 BTC/ETH/BNB，需要再开）----------
+  - id: mert
+    name: Mert
+    role: Solana 生态开发者 / Helius 联合创始人
+    handle: 0xMert_
+    tier: T2
+    enabled: false
+    tags: [SOL, 生态]
+    why: Solana 生态核心发声者；只在关注 SOL 时打开

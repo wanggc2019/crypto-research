@@ -1,0 +1,36 @@
+Site Reliability Engineer, Trading Platform
+Nexa Digital Assets — Remote (EU / US)
+
+About Nexa
+Nexa Digital Assets is a crypto exchange and custodial platform serving institutional clients. Our R&D team ships order books, wallets and on-chain settlement in a fast-moving, go-to-market driven environment. We are led by a C-suite with deep traditional finance experience and we care about craft over process.
+
+What you'll do
+- Own reliability of our matching engine, market data feeds and internal trading APIs.
+- Operate multi-region Kubernetes clusters on AWS and bare metal colocation sites.
+- Build observability with Prometheus, Grafana and OpenTelemetry; define SLOs and error budgets.
+- Lead incident response, write postmortems and maintain runbooks and on-call rotations (24/7).
+- Automate infrastructure with Terraform and Ansible; improve CI/CD pipelines.
+- Run Ethereum execution clients, beacon nodes and RPC infrastructure for our settlement layer.
+
+Requirements
+- 5+ years of SRE, production engineering or platform engineering experience
+- Deep Kubernetes and Docker experience running production workloads
+- Strong Linux fundamentals and TCP/IP networking (DNS, load balancing, Nginx)
+- Terraform, Ansible and infrastructure as code on AWS
+- Prometheus, Grafana, OpenTelemetry and distributed tracing
+- Experience with incident management, on-call and postmortem culture
+- Python or Go for tooling and automation
+- Hands-on with Ethereum validator nodes, staking and archive node operations
+
+Nice to have
+- Rust
+- Solana validator operations
+- MEV and low latency trading infrastructure
+- HSM, Fireblocks or custody integrations
+
+Benefits
+- Competitive compensation, remote-first culture and annual offsites
+- Learning budget for certifications and conferences
+- Four weeks of paid time off plus local public holidays
+
+Nexa is an equal opportunity employer. We celebrate diversity and are committed to creating an inclusive environment for all employees.

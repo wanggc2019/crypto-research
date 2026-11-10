@@ -1,0 +1,175 @@
+# 运行配置（app）—— 数据源端点、回补窗口、影子模式开关、日志。
+# 凭据只放仓库根 .env；本模块 M1 阶段所有数据源全部免 key（零成本）。
+# 约定见 ../docs/conventions.md 与 ../docs/crypto-onchain/requirement.md。
+
+schema_version: 1
+updated: "2026-11-09"
+
+# M2 开推送前可降到 60–120 秒；launchd 模板的 StartInterval 与此一致。
+poll_seconds: 300
+
+# 阶段：shadow 只约束「4 类卖压归因」候选（只落盘不推送）；链上大额转账告警（walletflow.alerts）
+# 是独立事件流，已上线（P0/P1 全天即时；日限额 + 特殊期解除），不受本开关影响。
+mode: shadow
+
+sources:
+  binance:
+    enabled: true
+    base: "https://api.binance.com"
+    futures_base: "https://fapi.binance.com"   # 官方 OI 历史用的 USD-M 域名
+    # 每轮回补多少秒的逐笔成交（>= 最大指标窗口 900s 即可，不要超过 3600）
+    window_seconds: 900
+    request_limit: 1000        # /api/v3/aggTrades 单次最大 1000（已核实 2026-11-09）
+    max_pages: 12              # 每币对每轮最多 12 页 = 权重 48；3 币对 144 < 6000/min
+    # 官方 OI 历史（免 key）：15m 周期取 3 个点，不受本机休眠导致的采样断点影响
+    oi_hist:
+      period: "15m"
+      limit: 3
+    timeout_seconds: 8
+  okx:
+    enabled: true
+    base: "https://www.okx.com"
+    liquidation_limit: 100     # /api/v5/public/liquidation-orders 单次最多 100
+    timeout_seconds: 8
+  defillama:
+    enabled: true
+    cexs_url: "https://api.llama.fi/cexs"
+    stablecoins_url: "https://stablecoins.llama.fi/stablecoins?includePrices=true"
+    timeout_seconds: 12
+  price_exports:
+    # 跨模块只读契约：crypto-price 的最新行情快照（缺失/过期时降级，不阻塞本轮）
+    path: "../crypto-price/data/exports/latest.json"
+    max_age_seconds: 900
+
+# 影子模式产物（相对模块 data/）
+shadow:
+  enabled: true
+  snapshot_file: "state/shadow-latest.json"
+  candidates_file: "state/shadow-candidates.jsonl"
+  # 每条候选都记：信号、资产、指标值、阈值、方向对齐、时间戳（供 2 周后回算精确率）
+
+# 链上大额转账监控（免费）：公共 RPC 扫 ERC20 Transfer 日志（USDT/USDC，ETH 主网）。
+# 不依赖 Etherscan key；只回答"发生了什么大额转账"，不回答"地址属于谁"。
+# 地址标签可手填 walletflow.labels（0x地址: {name, type: cex}），命中后仅标注入所/出所方向。
+walletflow:
+  enabled: true
+  min_usd: 10000000          # 单笔等值 ≥ 1000 万美元才记录（链级可用 min_usd 覆盖）
+  include_mint_burn: false   # 默认排除稳定币增发/销毁（占大额 Transfer 大头，不是钱包行为）
+  timeout_seconds: 25
+  # 事件驱动告警：每轮新增的大额转账，达到阈值才发；聚合为一条消息，受日限额约束。
+  # 日限额：常规 ≤daily_cap 条/天；当天大额笔数超过 daily_cap×burst_trigger_ratio 后按笔数扩容，
+  # 上限 burst_cap（大量大笔交易的日子允许多发，但仍封顶）。
+  # 分级：P0 = 单笔 ≥p0_usd 或 转入交易所且 ≥p0_cex_in_usd；其余 P1。
+  # only_p0=true：P1 不推送（记 suppressed，仍存在于明细/摘要）；quiet_hours 默认空=全天即时。
+  alerts:
+    # B 模式（2026-11-10 用户选择）：只发极少数重大异常，其余靠每日 21:00 链上情报分析
+    #   - 单笔单向未知 ≥ rare.min_usd（默认 $500M）
+    #   - 近 1 小时交易所净流入 > 7 日同时段均值 × rare.flow_anomaly_ratio（默认 3 倍）且 ≥ flow_min_usd
+    # 想完全安静：rare_only: false + enabled: false；想恢复逐笔告警：rare_only: false
+    enabled: true
+    rare_only: true
+    rare:
+      min_usd: 500000000        # 单向未知单笔门槛
+      flow_anomaly_ratio: 3     # 1h 净流入 / 7日同时段均值
+      flow_min_usd: 100000000   # 1h 净流入绝对值下限
+      daily_cap: 2              # 每天最多 2 条异常提醒
+    only_p0: true              # 只推 P0（P1 落盘/进摘要不推送）；P0 常规 ≤daily_cap 条/天，特殊期解除
+    min_usd: 10000000          # 告警阈值（可与记录阈值不同）
+    p0_usd: 50000000
+    p0_cex_in_usd: 25000000
+    daily_cap: 10              # 常规每日消息条数上限（only_p0 时即 P0 上限；特殊期解除）
+    whale_usd: 100000000       # 巨鲸：单笔 ≥$100M 不受常规 10 条限制
+    whale_cex_in_usd: 50000000 # 巨鲸：转入交易所 ≥$50M 同样不受限
+    whale_daily_cap: 5         # 巨鲸额外消息上限/天 → 极端日总上限 = 10 + 5
+    burst_trigger_ratio: 2     # 当日大额笔数 > daily_cap × 该倍数 才扩容
+    burst_cap: 30              # 扩容后的硬上限（也是 P0 的当日上限）
+    max_per_round: 5           # 单条消息内最多列几笔
+    quiet_hours: ""            # 空 = 全天即时发送（由接收端自行处理，不需要静默）
+    guess: true                # 允许在 unknown 后用括号标注"推测"（明确标注、不当结论）
+    # 智能判断：结合价格/新闻/资金面决定是否打扰；没有上下文的大额转账只记 suppressed
+    smart:
+      enabled: true
+      min_score: 2
+      stress_move_24h_pct: 3.0      # |BTC/ETH/BNB 24h| ≥3% → +2
+      news_lookback_hours: 6        # P0/P1 新闻 6 小时内且命中关键词 → +2/+3
+      cex_outflow_bps: 100          # CEX 24h 净流出 ≥100bps → +1
+      stablecoin_outflow_usd: 500000000  # 稳定币净赎回 ≥5 亿 → +1
+    enrich:
+      etherscan_tags: true     # 告警时给未知地址补 Etherscan name tag（带缓存；失败忽略）
+      timeout_seconds: 6
+      cache_days: 30
+    # 特殊时期（牛市/熊市/黑天鹅）：命中任一条件即**解除日限额**（仍保留去重与单轮 ≤max_per_round）
+    special:
+      enabled: true
+      manual: false                # 手工强制特殊期（true = 立即解除限额，便于观察/应急）
+      p0_transfers_today: 600      # 当日 P0 笔数 ≥600 → 特殊期（普通活跃日不算）
+      max_messages: 30             # 特殊期最多 30 条/天（防极端日刷屏）
+      btc_move_24h_pct: 6.0        # |BTC 24h 涨跌幅| ≥6% → 特殊期
+      cex_outflow_bps: 150         # CEX 24h 净流出 ≥150bps TVL → 特殊期
+      stablecoin_outflow_usd: -1500000000  # 稳定币 24h 净赎回 ≥15 亿美元 → 特殊期
+
+  # 交易所地址标签（2026-11-09 生成；来源：交易所官方地址清单 + Etherscan name tag 交叉核对）：
+  #   - 官方来源：Binance 透明度页（2022-11 快照，Cold Wallet 7/20/28 已排除，只留热钱包）、
+  #     Bitfinex 官方 wallets.txt（github.com/bitfinexcom/pub，只留 hot wallet）、
+  #   - 数据驱动补充：对我们自己抓到的大额转账对手方逐个查 Etherscan name tag，
+  #     命中交易所标签的才收录（Binance 129/151/Deposit、Coinbase 29/Prime 1、Kraken 4/5、OKX 217、Deribit 9）。
+  #   - Jump Trading 标为 mm（做市商，不参与 cex_in/cex_out 方向判定）。
+  # 地址会轮换/新增；失效标签可按同一方法更新。热钱包 ≠ 冷钱包：冷钱包入所多为托管划转，不代表即将卖出。
+  labels:
+    "0xce43851485f437005ef3c1821e250c4d3c53b946": {name: "Binance 129", type: cex}
+    "0x28c6c06298d514db089934071355e5743bf21d60": {name: "Binance 14", type: cex}
+    "0x21a31ee1afc51d94c2efccaa2092ad1028285549": {name: "Binance 15", type: cex}
+    "0x690c3eebf6ee237f00fc96f9766282f096c191cc": {name: "Binance 151", type: cex}
+    "0xdfd5293d8e347dfe59e90efd55b2956a1343963d": {name: "Binance 16", type: cex}
+    "0x56eddb7aa87536c09ccc2793473599fd21a8b17f": {name: "Binance 17", type: cex}
+    "0x9696f59e4d72e237be84ffd425dcad154bf96976": {name: "Binance 18", type: cex}
+    "0x4976a4a02f38326660d17bf34b431dc6e2eb2327": {name: "Binance 20", type: cex}
+    "0xa344c7ada83113b3b56941f6e85bf2eb425949f3": {name: "Binance 27", type: cex}
+    "0xb0e12fa8531d2712e2767609c603293eb4542a03": {name: "Binance Deposit", type: cex}
+    "0xed89da9dd83a0d703991ee833969489278b260e7": {name: "Binance Deposit", type: cex}
+    "0xea59bb2a900558a8c459fad77b72327ab892a524": {name: "Binance Deposit", type: cex}
+    "0x189736e4ef463f00ad33840fba682f810933754a": {name: "Bitfinex Deposit", type: cex}
+    "0x77134cbc06cb00b66f4c7e623d5fdbf6777635ec": {name: "Bitfinex: Hot Wallet", type: cex}
+    "0x18e296053cbdf986196903e889b7dca7a73882f6": {name: "ByBit: Hot Wallet 5", type: cex}
+    "0x28c5b0445d0728bc25f143f8eba5c5539fae151a": {name: "Coinbase 29", type: cex}
+    "0xcd531ae9efcce479654c4926dec5f6209531ca7b": {name: "Coinbase Prime 1", type: cex}
+    "0x77021d475e36b3ab1921a0e3a8380f069d3263de": {name: "Deribit 9", type: cex}
+    "0x05ff6964d21e5dae3b1010d5ae0465b3c450f381": {name: "Kraken: Hot Wallet 4", type: cex}
+    "0xaa8ba7d4611437141192e7ceced531bc0a133efb": {name: "Kraken: Hot Wallet 5", type: cex}
+    "0x3b98b9e9cb75c1cb1729aab8f09ced2936505e4f": {name: "OKX 217", type: cex}
+    "0x55fe002aeff02f77364de339a1292923a15844b8": {name: "Circle (USDC issuer)", type: issuer}
+    "0xf584f8728b874a6a5c7a8d4d387c9aae9172d621": {name: "Jump Trading", type: mm}
+  chains:
+    - name: ethereum
+      rpc_url: "https://ethereum-rpc.publicnode.com"
+      scan_blocks_init: 120      # 首轮回看块数（ETH ~12s/块 ≈ 24 分钟）
+      max_blocks_per_round: 120  # 单轮最多扫多少块（跨休眠缺口；超出记 skipped_blocks）
+      chunk_blocks: 30           # 单次 eth_getLogs 区块范围（公共 RPC 实测稳定）
+      tokens:
+        - {symbol: USDT, address: "0xdAC17F958D2ee523a2206206994597C13D831ec7", decimals: 6}
+        - {symbol: USDC, address: "0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", decimals: 6}
+    - name: bsc
+      rpc_url: "https://bsc-rpc.publicnode.com"
+      min_usd: 5000000           # BSC 阈值 500 万（深度小于 ETH）；USDT/USDC 均 18 位小数
+      scan_blocks_init: 900      # BSC ~0.75–1s/块 ≈ 12–15 分钟
+      max_blocks_per_round: 900
+      chunk_blocks: 300          # 实测 300 块/次 ~16k logs；400+ 会被节点拒绝（返回空）
+      tokens:
+        - {symbol: USDT, address: "0x55d398326f99059fF775485246999027B3197955", decimals: 18}
+        - {symbol: USDC, address: "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d", decimals: 18}
+
+# 每日影跑摘要（M2 影子期）：只是"今天观察到什么"的汇总，**不是告警通道**。
+# 到点后首个 collect 轮次发送；今天已发过则跳过（状态 data/state/digest.json）。
+digest:
+  enabled: true
+  time: "21:00"                # 本地时区；机器休眠则在唤醒后的首个轮次补发
+  start_date: "2026-11-09"     # 校准 Day 1（影子期起点）
+  calibration_days: 14
+
+# 跨模块只读导出（M2）：契约 onchain/pressure/v1，供 crypto-analyst 等下游消费
+exports:
+  file: "exports/onchain-pressure.json"
+  schema: "onchain/pressure/v1"
+
+logging:
+  file: "onchain.log"

@@ -1,0 +1,60 @@
+# 关注清单（watchlist）
+# 当前范围：BTC / ETH / BNB。
+# SOL、ASTER 暂时冻结——配置保留在 paused 段，恢复时移回 assets 即可。
+
+version: 3
+updated: "2026-11-07"
+
+assets:
+  - symbol: BTC
+    name: Bitcoin
+    aliases: [bitcoin, btc, xbt, 比特币, 大饼]
+    tier: core
+    watch:
+      - ETF 净流出入 / 发行商动向
+      - 美联储 / CPI / 非农 / 流动性
+      - SEC / CFTC 监管动作
+      - 减半 / 算力 / 矿工抛压
+      - 交易所储备与巨鲸转账
+      - 稳定币脱锚（系统性风险）
+    ignore: [小币种上币, 空投活动, 喊单, 山寨联动]
+
+  - symbol: ETH
+    name: Ethereum
+    aliases: [ethereum, eth, ether, 以太坊]
+    tier: core
+    watch:
+      - ETF 净流出入
+      - 质押 / 验证者 / 质押 ETF 进展
+      - EIP 与升级（硬分叉、blob、L2 扩容）
+      - 基金会 / 核心开发者动向
+      - 交易所储备与巨鲸转账
+    ignore: [小币种上币, 空投活动, 喊单, 山寨联动]
+
+  - symbol: BNB
+    name: BNB
+    aliases: [bnb, binance coin, 币安币, bsc, bnb chain]
+    tier: core_platform   # 平台币：与 Binance 生态强绑定，风险结构不同于 BTC/ETH
+    watch:
+      - Binance 监管/执法/合规进展（会直接打到 BNB）
+      - BNB Chain 主网升级 / opBNB / 出块异常
+      - 季度自动销毁（auto-burn）与销毁量
+      - BSC DeFi TVL 与链上活跃度
+      - Binance 上币/下架与产品调整
+      - 交易所储备与巨鲸转账
+    ignore: [小币种上币, 空投活动, 喊单, 山寨联动]
+
+# 冻结标的：不采集、不告警、不进评分。恢复时把对应条目移回 assets。
+paused:
+  - symbol: SOL
+    name: Solana
+    reason: 暂时不关注
+  - symbol: ASTER
+    name: Aster
+    reason: 暂时不关注
+
+# 稳定币：不做交易，只作为系统性风险指标（BTC/ETH/BNB 的黑天鹅传导路径）
+stablecoins: [USDT, USDC, USDe, FDUSD]
+
+# 其他所有资产：默认不告警
+default_policy: drop

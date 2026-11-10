@@ -1,0 +1,57 @@
+# crypto-x-kol 运行配置
+# 只放运行参数；KOL 名单在 kol.yaml，关键词/推送策略在 rules.yaml。
+schema_version: 1
+updated: "2026-11-08"
+
+poll_seconds: 300
+
+fetch:
+  # r.jina.ai 前缀：拼接后为 https://r.jina.ai/https://x.com/<handle>
+  jina_prefix: "https://r.jina.ai/"
+  timeout_seconds: 30
+  retries: 1
+  backoff_seconds: 2
+  # 账号之间的最小间隔（秒）。匿名 r.jina.ai 限速 20 请求/分钟；
+  # 一次跑 26 个号如果 1 分钟内打完会触发限流（表现为间歇性登录墙/空页），
+  # 4 秒 ≈ 15 次/分钟，留出余量。用 JINA_API_KEY（500 RPM）时可调到 0.5。
+  min_interval_seconds: 4
+  max_accounts_per_run: 30
+  # 解析失败（登录墙/空页/页面改版）时的额外重试次数；匿名 jina 偶尔会返回登录墙
+  page_retries: 2
+  page_retry_backoff_seconds: 2
+  # 只消费页面里能看到的前 N 条（X 主页一般 20 条上下；这里只作护栏）
+  max_posts_per_account: 30
+  # 告警时按需抓一次 HTML 还原「原帖链接」（Markdown 不含 status id）；失败回退主页
+  tweet_link: true
+  tweet_link_timeout_seconds: 60
+  tweet_link_retries: 1
+
+  # 是否带 JINA_API_KEY 请求。
+  # 默认 false：匿名 r.jina.ai 20 RPM 免费、不消耗 token，对本模块（30 号 / 5 分钟）足够。
+  # 打开后限速 20 → 500 RPM，但免费 key 只有一次性 10M token，用完 $0.05/百万 token；
+  # 结论：除非账号数/频率明显变大，否则别开。key 不会改善页面内容（登录墙/无互动数据照旧）。
+  use_api_key: false
+  # 额外请求头（会合并进 r.jina.ai 请求），例如降低噪音：
+  #   {"X-Retain-Images": "none", "X-Retain-Links": "none"}
+  # 注意：这两个头会改变返回的 Markdown 结构，开启前先跑 --only 一个账号观察解析结果。
+  request_headers: {}
+
+# 中文翻译 + 一句话总结（DeepSeek；无 key 时优雅降级为原文）
+analysis:
+  enabled: true
+  provider: deepseek
+  base_url: "https://api.deepseek.com"
+  model: "deepseek-chat"
+  api_key_env: "DEEPSEEK_API_KEY"   # .env 没有时自动回退 ~/.dsh/.credentials.yaml 的 refs
+  batch_size: 8
+  timeout_seconds: 60
+  retries: 1
+  max_tweet_chars: 1500
+
+digest:
+  enabled: true
+  # 单条推文在 Telegram 里的截断长度（字符）；每轮推几条/每天上限在 rules.yaml 的 alert.caps
+  text_chars: 140
+  # 设计约束：消息及时发，不设夜间静默（全天即时发送）
+  quiet_hours: "22:00-07:00"
+  quiet_hold: false
