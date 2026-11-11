@@ -94,6 +94,9 @@ def _quality_events(snapshot, assets, qualities, ts):
         snippets = [str(text)[:60] for text in snippets if text]
         if snippets:
             detail.append("错误 %d 条：%s" % (len(errors), "；".join(snippets)))
+            joined = " ".join(snippets).lower()
+            if "certificate" in joined or "ssl" in joined:
+                detail.append("提示：TLS 证书校验失败，通常是 VPN/代理证书拦截或系统根证书异常")
         event = _emit("data_quality", "ALL", "flat", "P0", "行情全源不可用，监控中断", ts, 100.0,
                       detail, {"sources_ok": 0, "sources_total": total, "errors": len(errors)},
                       snapshot=snapshot, key="price:ALL:data_quality:flat")

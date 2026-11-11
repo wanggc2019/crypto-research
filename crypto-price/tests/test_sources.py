@@ -275,7 +275,7 @@ class TestDegrade(SourcesTestBase):
         self.assertEqual(snap["sources_ok"], 6)
         self.assertEqual(snap["sources_total"], 9)
         self.assertTrue(any(e["source"] == "okx" for e in snap["errors"]))
-        self.assertTrue(all(e["error"] == "TimeoutError" for e in snap["errors"] if e["source"] == "okx"))
+        self.assertTrue(all(e["error"].startswith("TimeoutError") for e in snap["errors"] if e["source"] == "okx"))
 
     def test_binance_down_stats_and_candles_fall_back_to_okx(self):
         snap = self.fetch(make_fake(fail_sources=("binance",)))
