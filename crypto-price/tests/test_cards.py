@@ -4,6 +4,7 @@
 import os
 import sys
 import unittest
+from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "scripts"))
@@ -89,6 +90,11 @@ class TestFormat(unittest.TestCase):
         ))
         self.assertIn("<b>现价</b>：2,190.21 USDT", text)
         self.assertIn("<b>变动</b>：-1.27%（-27.82 USDT）", text)
+
+    def test_job_label_prefers_launchd_env(self):
+        with mock.patch.dict(os.environ, {"CRYPTO_JOB_LABEL": "com.crypto-research.crypto-price"}):
+            text = cards.format_price_alert(alert())
+        self.assertIn("com.crypto-research.crypto-price", text)
 
     def test_source_status_3_of_3(self):
         text = cards.format_price_alert(alert(

@@ -176,9 +176,9 @@ def job_name(module="crypto-price"):
     if label:
         return label
     job = os.environ.get("XPC_SERVICE_NAME") or ""
-    if not job or job == "0":
-        return "%s（手动运行）" % module
-    return job
+    if job.startswith("com.crypto-research"):
+        return job
+    return "%s（手动运行）" % module
 
 
 def set_data_override(base):

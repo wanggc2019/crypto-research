@@ -77,7 +77,9 @@ class TestAlertMessage(unittest.TestCase):
         alerts = evaluated([post("a", "ETF hack", "T1"), post("b", "ETF approved", "T1"),
                             post("c", "上币 announcement", "T1")])
         alerts = [p for p in alerts if p["level"] in ("P0", "P1")]
-        text = digest.build_alert_message(alerts, RULES, 60, 2, "data/reports/x.md")
+        text = digest.build_alert_message(alerts, RULES, 60, 2, "/" + "Users/someone/crypto-x-kol/data/reports/x.md")
+        self.assertIn("完整日报：data/reports/x.md", text)
+        self.assertNotIn("Users/", text)
         self.assertIn("高价值推文", text)
         self.assertIn("@a", text)
         self.assertIn("P0", text)

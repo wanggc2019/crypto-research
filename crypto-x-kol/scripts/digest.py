@@ -180,6 +180,12 @@ def build_report(posts, date, rules, generated_at, cache=None):
     return "\n".join(lines)
 
 
+def _report_label(report_path):
+    """消息里只显示相对路径（不暴露本机家目录/用户名）。"""
+    base = os.path.basename(str(report_path or ""))
+    return "data/reports/%s" % base if base else "data/reports/"
+
+
 def build_alert_message(alerts, rules, text_chars, max_per_message, report_path, cache=None):
     """只包含 P0/P1 的 Telegram HTML 文本（外文已翻成中文 + 一句话总结）。"""
     cache = cache or {}
@@ -212,7 +218,7 @@ def build_alert_message(alerts, rules, text_chars, max_per_message, report_path,
         lines.append("")
         lines.append("另有 %d 条高分推文见日报（每日上限 %s 条）。" % (rest, "见配置"))
     lines.append("")
-    lines.append("完整日报：%s" % html.escape(report_path, quote=False))
+    lines.append("完整日报：%s" % html.escape(_report_label(report_path), quote=False))
     lines.append("🏷 任务：%s" % html.escape(job_name(), quote=False))
     text = "\n".join(lines)
     if len(text) > MAX_LEN:
@@ -370,10 +376,11 @@ def run(args):
     elif args.dry_run:
         print("（dry-run：跳过翻译/总结，不调用 DeepSeek）")
 
-    report_path = os.path.join(paths["reports"], "%s.md" % date)
+    report_file = os.path.join(paths["reports"], "%s.md" % date)
+    report_display = "data/reports/%s" % os.path.basename(report_file)
     markdown = build_report(posts, date, rules, ts_iso(), cache=analysis_cache) if posts else ""
     if markdown and not args.dry_run:
-        with open(report_path, "w", encoding="utf-8") as f:
+        with open(report_file, "w", encoding="utf-8") as f:
             f.write(markdown)
 
     pushed = load_pushed(paths, date)
@@ -383,7 +390,7 @@ def run(args):
         "date": date, "posts": len(posts), "pending": len(pending),
         "alerts": len(alerts), "p0": counts.get("P0", 0), "p1": counts.get("P1", 0),
         "p2": counts.get("P2", 0), "mute": counts.get("MUTE", 0),
-        "analyzed": len(analysis_cache), "report": report_path,
+        "analyzed": len(analysis_cache), "report": report_display,
     }
 
     if not posts:
@@ -396,7 +403,7 @@ def run(args):
     if not args.notify:
         print("今日新帖 %d 条（P0 %d / P1 %d / P2 %d / MUTE %d），待告警 %d 条；报告：%s" % (
             len(posts), counts.get("P0", 0), counts.get("P1", 0),
-            counts.get("P2", 0), counts.get("MUTE", 0), len(alerts), report_path))
+            counts.get("P2", 0), counts.get("MUTE", 0), len(alerts), report_display))
         quiet = bool(digest_cfg.get("quiet_hold", True)) and in_quiet_hours(
             now_dt=now_dt, span=digest_cfg.get("quiet_hours") or "22:00-07:00")
         if alerts and args.dry_run:
@@ -409,7 +416,7 @@ def run(args):
                 print(build_alert_message(preview, rules,
                                           int(digest_cfg.get("text_chars") or 140),
                                           int(caps.get("max_per_message") or 5),
-                                          report_path, cache=analysis_cache))
+                                          report_display, cache=analysis_cache))
             else:
                 print("（静默时段：本轮无 P0，P1 留待次日）")
         elif alerts:
@@ -425,9 +432,9 @@ def run(args):
             save_pushed(paths, date, pushed)
         if pending:
             print("本轮待处理 %d 条均未达到告警阈值（今日共 %d 条），已进日报；报告：%s" % (
-                len(pending), len(posts), report_path))
+                len(pending), len(posts), report_display))
         else:
-            print("今日新帖已全部处理完毕（无待推送）；报告：%s" % report_path)
+            print("今日新帖已全部处理完毕（无待推送）；报告：data/reports/%s" % os.path.basename(report_file))
         if args.json:
             print(json.dumps(summary, ensure_ascii=False))
         return 0
@@ -439,7 +446,7 @@ def run(args):
         candidates = [p for p in alerts if p.get("level") == "P0"] if policy.get("p0_pierce_quiet") else []
         if not candidates:
             print("静默时段（%s），%d 条 P1 留待次日；报告：%s" % (
-                digest_cfg.get("quiet_hours") or "22:00-07:00", len(alerts), report_path))
+                digest_cfg.get("quiet_hours") or "22:00-07:00", len(alerts), report_display))
             if args.json:
                 print(json.dumps(summary, ensure_ascii=False))
             return 0
@@ -450,7 +457,7 @@ def run(args):
     chosen = select_alerts(candidates, sent_today, caps)
     if not chosen:
         print("今日告警已达上限（%d 条），%d 条高分推文只进日报；报告：%s" % (
-            per_day, len(alerts), report_path))
+            per_day, len(alerts), report_display))
         mark(pushed, pending, "digest")
         if not args.dry_run:
             save_pushed(paths, date, pushed)
@@ -464,7 +471,7 @@ def run(args):
 
     message = build_alert_message(chosen, rules,
                                   int(digest_cfg.get("text_chars") or 140),
-                                  max_msg, report_path, cache=analysis_cache)
+                                  max_msg, report_display, cache=analysis_cache)
     if args.dry_run:
         print(message)
         return 0
@@ -484,12 +491,12 @@ def run(args):
     if quiet:
         print("✅ 已推送 %d 条告警（P0 %d / P1 %d）；%d 条 P1 留待静默结束；报告：%s" % (
             len(chosen), sum(1 for p in chosen if p["level"] == "P0"),
-            sum(1 for p in chosen if p["level"] == "P1"), held, report_path))
+            sum(1 for p in chosen if p["level"] == "P1"), held, report_display))
     else:
         print("✅ 已推送 %d 条告警（P0 %d / P1 %d）；其余 %d 条进日报；报告：%s" % (
             len(chosen), sum(1 for p in chosen if p["level"] == "P0"),
             sum(1 for p in chosen if p["level"] == "P1"),
-            max(0, len(pending) - len(chosen)), report_path))
+            max(0, len(pending) - len(chosen)), report_display))
     if args.json:
         summary["sent"] = len({p["id"] for p in chosen})
         print(json.dumps(summary, ensure_ascii=False))

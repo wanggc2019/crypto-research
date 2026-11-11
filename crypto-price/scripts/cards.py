@@ -215,8 +215,9 @@ def format_price_alert(alert):
     urls = alert.get("urls") or []
     if urls:
         lines.append('🔗 <a href="%s">查看行情</a>' % html.escape(str(urls[0]), quote=True))
-    job = alert.get("job") or os.environ.get("XPC_SERVICE_NAME") or ""
-    if not job or job == "0":
+    job = (alert.get("job") or os.environ.get("CRYPTO_JOB_LABEL")
+           or os.environ.get("XPC_SERVICE_NAME") or "")
+    if not job.startswith("com.crypto-research"):
         job = "crypto-price（手动运行）"
     if alert.get("simulated"):
         job += "（模拟测试）"

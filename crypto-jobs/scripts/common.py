@@ -120,6 +120,6 @@ def job_name():
     if label:
         return label
     job = os.environ.get("XPC_SERVICE_NAME") or ""
-    if not job or job == "0":
-        return "crypto-jobs（手动运行）"
-    return job
+    if job.startswith("com.crypto-research"):
+        return job
+    return "crypto-jobs（手动运行）"

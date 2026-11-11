@@ -332,7 +332,7 @@ def _job_label(module="crypto-analyst.weekly"):
     if label:
         return label
     job = os.environ.get("XPC_SERVICE_NAME") or ""
-    if job and job != "0":
+    if job.startswith("com.crypto-research"):
         return job
     return "%s（手动运行）" % module
 

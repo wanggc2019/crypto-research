@@ -153,7 +153,7 @@ class _Fetcher:
         except Exception as e:  # noqa: BLE001 - 单源失败不能拖垮整轮
             if not optional:
                 self.failed_sources.add(source)
-                self.error(source, asset, type(e).__name__)
+                self.error(source, asset, "%s: %s" % (type(e).__name__, str(e)[:160]))
             return None
 
     def error(self, source, asset, message):
