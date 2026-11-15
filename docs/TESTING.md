@@ -9,7 +9,7 @@
 |---|---|---|---|---|
 | L1 静态 | ruff、YAML/JSON 可解析、schema_version、配置交叉校验 | `make lint` / `make test` 中的 config 测试 | 否 | ✅ |
 | L2 单元 | libs 解析器/工具；模块的指标、规则、送达、卡片、报告、状态容错 | `make test` | 否 | ✅ |
-| L3 回放 E2E | 固定快照/fixtures 跑完整链路，断言事件、退出码、落盘、去重、静默、锁 | `make verify` 里的端到端段 | 否 | ✅ |
+| L3 回放 E2E | 固定快照/fixtures 跑完整链路，断言事件、退出码、落盘、去重、静默、锁 | `make gate` 自动执行各模块 `scripts/e2e.py`（临时 data 目录） | 否 | ✅ |
 | L3.5 重复审计 | 发送记录中同一 dedupe_key 短时间重复；launchd 同一脚本被多个 Label 加载 | `make gate`（内置 `tools/audit_duplicates.py`） | 否（读本地 state/plist） | ✅（无数据时自动通过） |
 | L4 联网冒烟 | 真实交易所/新闻源可达性、三源报价、价差、源状态 | `crypto-price/scripts/verify.sh --with-network`、`run.py --dry-run` | 是 | ❌（本地/按需） |
 | L5 推送验证 | Telegram 通道、卡片渲染、模拟告警 | `run.py --test`、`--test-alert` | 是 | ❌（手动，见 §3） |
@@ -36,8 +36,8 @@ make hooks
 
 **判定标准**：`gate` 退出码 0 且打印 `✅ 测试通过：N 步全绿` 才算完成；任何 `❌` 都继续修，不提交。
 
-`make gate` 与 `make verify` 的区别：`verify` 保留原来的 CI/人工入口；`gate` 是新的统一入口，
-会逐步汇总所有步骤、失败不中断、默认用临时目录跑 E2E，不写生产状态。
+`make gate` 是**唯一**质量门（本地、pre-push、CI 跑的是同一个命令）：逐步汇总所有步骤、失败不中断、
+E2E 用临时目录，不写生产状态。`make verify` 只是兼容别名，等同 `make gate`。
 
 ### 新增模块如何自动接入 gate
 
@@ -46,11 +46,11 @@ make hooks
 1. 目录名 `crypto-<领域词>`，带 `scripts/` 或 `tests/`；
 2. `tests/` 放离线 unittest（自动 `discover`）；
 3. `scripts/` 自动纳入 ruff；
-4. 需要端到端时，提供 `scripts/e2e.py`，退出码 0 即通过；
+4. 提供 `scripts/e2e.py`（脚手架默认生成），退出码 0 即通过；gate 不再内置任何模块的回放命令；
 5. 重复消息审计自动扫描 `data/state/alerts-*.json`（有 `delivery.decision` 列表格式的模块）。
 
-`Makefile` 的 `MODULES`/`LINT_DIRS` 和 CI 的 `gate` job 也按 `crypto-*/` 自动发现。
-并行开发中的 WIP 模块可在 `tools/gate.json` 的 `exclude_modules` 临时排除，稳定后删掉该项即自动纳入。
+`Makefile` 的 `MODULES`/`LINT_DIRS` 和 CI 的 `gate` job 也按 `crypto-*/` 自动发现；CI 只有 hygiene + gate 两个 job，不再按模块逐个写 job。
+并行开发中的 WIP 模块可在 `tools/gate.json` 的 `exclude_modules` 临时排除（被排除即 CI 也不覆盖）；`tools/tests/test_gate.py` 要求带 `deploy/` 的生产模块必须进 gate。
 
 ## 3. 日常命令
 
@@ -59,7 +59,7 @@ cd ~/vscode/crypto-research
 
 make lint                 # 只跑 ruff（libs/tools/所有模块）
 make test                 # 全部离线单测（libs + tools + 各模块）
-make verify               # 提交前质量门：lint + test + 两个回放 E2E
+make gate                 # 提交前唯一质量门：lint + test + 各模块 e2e 回放 + 审计
 
 # 单模块
 cd crypto-price && ./scripts/verify.sh                 # 离线
@@ -88,7 +88,7 @@ cd crypto-analyst && ../.venv/bin/python -m unittest discover -s tests -v
 ## 5. 新功能/修复的测试顺序
 
 1. **先写一个会失败的测试**（单元或 fixture 回放）→ 2. 实现 → 3. `make test` 全绿；
-4. 更新/新增 fixtures，补端到端断言；5. `make verify` 全绿；
+4. 更新/新增 fixtures，补端到端断言；5. `make gate` 全绿；
 6. 联网 `run.py --dry-run`（看源状态/价差/事件是否符合预期）；
 7. 必要时 `--test` / `--test-alert` 验证推送；
 8. 改调度/配置后 `make launchd … action=status` + 观察一轮 `collect.log`；

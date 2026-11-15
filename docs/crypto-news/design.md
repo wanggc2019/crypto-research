@@ -105,7 +105,7 @@
 
 ## 7. 测试与运维
 
-- 52 项离线单测（配置/采集解析/聚类/评分/分级/卡片/去重），`make verify` + CI 全绿。
+- 52 项离线单测（配置/采集解析/聚类/评分/分级/卡片/去重），`make gate` + CI 全绿。
 - 端到端：对当日 raw 重跑 `score.py`（不联网也可验证）。
 - 调度：launchd 600s → `collect.sh`（锁）→ fetch → score → notify；每轮末尾内嵌 healthcheck（自愈/诊断/AI 按需）。
 - 失败模式：单源失败继续（rc=1）、全源失败 rc=3；锁残留 30 分钟后 healthcheck 自动清；凭据错误 rc=2。

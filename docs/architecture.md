@@ -14,7 +14,7 @@
 - **共性按"第二个使用者出现才抽"分批下沉**：先 `notify / events / dedupe / store / env`（两个模块都必然要用），再 `http / sources / market`，最后 `report / launchd 生成器 / prune`。
 - **统一运行时**：Python 3.9 标准库为主；单根 `.venv`（没有也能跑）；凭据只在根 `.env`。
 - **每个模块自带**：README、配置示例、单测、`data/` 产物目录、launchd 模板、离线回放能力。
-- **新需求 30 分钟起步**：`docs/_template/` 五件套模板 + `tools/new_module.py` 脚手架（同时生成代码与文档）+ `make verify` + 一键装调度。
+- **新需求 30 分钟起步**：`docs/_template/` 五件套模板 + `tools/new_module.py` 脚手架（同时生成代码与文档）+ `make gate` + 一键装调度。
 
 ---
 
@@ -548,18 +548,16 @@ new-module:       ## make new-module name=crypto-price desc="价格告警"
 | 契约测试 | `alert/v1` 字段、`exports/*.json` 结构、配置 `schema_version` | unittest + golden 文件 |
 | 离线全链路 | `--fixtures` 回放一天数据，产出报告/推送内容（不联网、不推送） | unittest 或脚本 |
 
-**硬性规定**：任何模块的 `make verify` 必须能在**断网**下全绿；联网冒烟只做可选步骤（`--with-network`）。
+**硬性规定**：任何模块在 `make gate` 中必须能在**断网**下全绿；联网冒烟只做可选步骤（`--with-network`）。
 
 ### 10.2 CI
 
-当前实现见 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)，四个 job：
+当前实现见 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)，两个 job：
 
 - `hygiene`：`.env` / `data/` / `.venv/` 不得入库
-- `lint`：ruff 检查 libs / tools / 各模块
-- `libs`：crypto_core 单测（离线）
-- `crypto-news`：模块单测（离线；fixtures 回放 P2 补）
+- `gate`：`make gate`，与本地 / pre-push 完全一致（ruff + libs/tools/各模块单测 + 各模块 `scripts/e2e.py` 离线回放 + 审计）
 
-新增模块时：`jobs` 加一个 job + `MODULES` 加一项 + 根 README 模块表加一行（脚手架会打印这三件事）。
+新增模块时 CI 无需改动：gate 自动发现 `crypto-*/` 的 `tests/` 与 `scripts/e2e.py`（脚手架默认生成）；只需在根 README 模块表加一行。
 
 ---
 

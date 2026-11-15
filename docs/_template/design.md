@@ -32,7 +32,7 @@
 ## 6. 测试方案
 
 - 单测（离线，fixtures）：
-- 端到端：`make verify` / `scripts/verify.sh`
+- 端到端：`make gate` / `scripts/verify.sh`
 - 联网冒烟（可选）：
 
 ## 7. 失败模式与对策

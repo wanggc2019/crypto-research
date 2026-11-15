@@ -83,7 +83,6 @@ TELEGRAM_CHAT_ID=<your_chat_id>
 
 ```bash
 make setup                 # 建根 .venv（可选；没有 venv 也能跑）
-make verify                # 全仓质量门：ruff + libs 单测 + 模块单测 + 端到端
 make gate                  # 统一质量门（每次修改后跑；全绿才打印「测试通过」）
 make hooks                 # 安装 pre-push 钩子：push 前自动 make gate
 make test                  # 只跑单测

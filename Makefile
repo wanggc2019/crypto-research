@@ -4,8 +4,8 @@
 #   make setup     # 建根 .venv（可选；没有 venv 也能跑，脚本会回退 python3）
 #   make lint      # ruff 静态检查（libs / tools / 各模块）
 #   make test      # libs 单测 + 各模块单测（全部离线）
-#   make verify    # lint + test + crypto-news 端到端评分 + crypto-price 离线回放（提交前跑这个）
-#   make gate      # 统一质量门：ruff + 全部单测 + 回放 E2E，全绿才打印「测试通过」
+#   make verify    # 兼容别名 = make gate
+#   make gate      # 唯一质量门（提交前跑这个）：ruff + 全部单测 + 各模块 scripts/e2e.py 回放，全绿才打印「测试通过」
 #   make gate online=1 strict=1   # 额外联网冒烟（strict 时外部失败也算失败）
 #   make gate push=1              # 额外发一条静默 Telegram 测试消息（谨慎）
 #   make hooks     # 安装 git pre-push 钩子：每次 push 前自动 make gate
@@ -44,22 +44,7 @@ test:
 		$(PY) -m unittest discover -s $(REPO)/$$m/tests -v; \
 	done
 
-verify: lint test
-	@echo "== crypto-news 端到端（离线重评分）=="
-	@$(PY) $(REPO)/crypto-news/scripts/score.py
-	@echo "== crypto-price 端到端（离线快照回放）=="
-	@TMP=$$(mktemp -d); \
-	for f in snapshot_normal snapshot_shock; do \
-		$(PY) $(REPO)/crypto-price/scripts/run.py \
-			--snapshot $(REPO)/crypto-price/tests/fixtures/$$f.json \
-			--data-dir $$TMP --dry-run --json >/dev/null || exit 1; \
-	done; rm -rf $$TMP
-	@echo "== crypto-analyst 每日简报（离线 fixtures 回放）=="
-	@$(PY) $(REPO)/crypto-analyst/scripts/daily_brief.py \
-		--fixtures $(REPO)/crypto-analyst/tests/fixtures --date 2026-11-08 --dry-run >/dev/null
-	@$(PY) $(REPO)/crypto-analyst/scripts/weekly.py \
-		--fixtures $(REPO)/crypto-analyst/tests/fixtures --date 2026-11-08 --dry-run >/dev/null
-	@echo "=== 全部通过 ✅ ==="
+verify: gate  ## 兼容旧入口：等同 make gate（唯一质量门，模块回放由 <module>/scripts/e2e.py 自动发现）
 
 gate:
 	@$(PY) $(REPO)/tools/gate.py \

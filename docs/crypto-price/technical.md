@@ -76,7 +76,7 @@ launchd(60s) → collect.sh（锁） → run.py --once
 
 - 154 项离线单测：解析器（三所）、指标、规则（含红队/对抗用例）、送达/冷却/限额、卡片、编排、报告、模拟告警。
 - `fixtures/` 回放：`run.py --fixtures <dir>` 完全不联网。
-- `make verify` 全绿；联网冒烟仅本地手动。
+- `make gate` 全绿；联网冒烟仅本地手动。
 
 ## 8. 失败模式
 

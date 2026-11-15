@@ -40,7 +40,7 @@
 - **架构进度**：P0 ✅ 基础件、P1 ✅ 告警共性、P2 ✅ 抓取/行情原语、P3 ✅ 工具化、**P4 ✅ 首个新模块 crypto-price**；架构验证完成，后续新需求只加模块
 - **代码位置**：`crypto-news/scripts/`、`crypto-price/scripts/`（业务）+ `libs/crypto_core/src/crypto_core/`（共享）
 - **环境**：根 `.venv`（Python 3.9 + ruff/PyYAML）；模块不再自带 venv；无 venv 时脚本回退 `python3`
-- **质量门**：`make verify` = ruff + libs 72 项 + tools 17 项 + crypto-news 42 项 + crypto-price 154 项（含 22 项红队对抗用例）+ crypto-analyst 35 项 + 各模块端到端，**全绿**；CI 不联网
+- **质量门**：`make gate`（唯一入口，本地/pre-push/CI 同一命令）= ruff + libs/tools/各模块单测 + 各模块 `scripts/e2e.py` 离线回放 + 公开信息/重复审计 + launchd 检查；CI 不联网
 - **定时任务 1（news）**：launchd `com.crypto-research.crypto-news`，每 10 分钟跑 `crypto-news/scripts/collect.sh`
 - **定时任务 2（price）**：launchd `com.crypto-research.crypto-price`，每 60 秒跑 `crypto-price/scripts/collect.sh`；单实例锁 + 每轮健康检查 + 每日 prune
 - **定时任务 3（weekly）**：launchd `com.crypto-research.crypto-analyst.weekly`，每周日 22:00 生成并推送行情分析周报（数据表 + 场景 + 复盘）；原 crypto-analyst 与 20:05 DSH AI 复盘已退役（收口到 crypto-analyst）
@@ -69,7 +69,7 @@ make setup                  # 建根 venv（可选）
 make gate                   # 统一质量门（每次修改后跑；全绿才打印「测试通过」）
 make gate online=1          # 额外联网冒烟（外部失败默认警告）
 make hooks                  # 安装 pre-push 钩子：push 前自动 make gate
-make verify                 # 原全仓质量门（保留兼容）
+make verify                 # 兼容别名 = make gate
 make test                   # 只跑单测（离线）
 make lint                   # 只跑 ruff
 
