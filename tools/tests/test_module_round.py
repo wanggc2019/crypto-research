@@ -33,20 +33,21 @@ class ModuleRoundTest(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
-    def _collect(self, body, opts=""):
+    def _collect(self, body, opts="", extra=""):
         path = os.path.join(self.mod, "scripts", "collect.sh")
         with open(path, "w") as f:
             f.write('#!/usr/bin/env bash\nsource "$(dirname "$0")/../../tools/lib/module_round.sh"\n'
-                    "body() {\n%s\n}\nround_main body %s\n" % (body, opts))
+                    "body() {\n%s\n}\n%s\nround_main body %s\n" % (body, extra, opts))
         os.chmod(path, 0o755)
         return path
 
-    def _run(self, path, env_extra=None):
+    def _run(self, path, env_extra=None, cwd=None):
         env = {k: v for k, v in os.environ.items() if k != "CRYPTO_JOB_LABEL"}
         env["ROUND_TEST_OUT"] = self.tmp
         env.update(env_extra or {})
         # 从别的 cwd 调用，验证骨架自己 cd 到模块目录（launchd 的 cwd 不可控）
-        return subprocess.run(["bash", path], cwd=self.tmp, env=env, capture_output=True, text=True, timeout=30)
+        return subprocess.run(["bash", path], cwd=cwd or self.tmp, env=env, capture_output=True, text=True,
+                              timeout=30)
 
     def _log(self):
         with open(os.path.join(self.mod, "data", "logs", "collect.log")) as f:
@@ -108,6 +109,32 @@ class ModuleRoundTest(unittest.TestCase):
             f.write("import sys\nsys.exit(2)\n")
         proc = self._run(self._collect("return 0"))
         self.assertEqual(proc.returncode, 0)
+
+
+    def test_relative_path_invocation(self):
+        self._collect('echo "in $(basename "$PWD")"')
+        proc = self._run(os.path.join("scripts", "collect.sh"), cwd=self.mod)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("in crypto-fake", self._log())
+
+    def test_after_hook_runs_after_health_and_prune(self):
+        extra = 'after() { echo "AFTER_HOOK $(wc -l < "$ROUND_TEST_OUT/healthcheck.calls")"; return 7; }'
+        proc = self._run(self._collect("return 0", extra=extra))
+        self.assertEqual(proc.returncode, 0, "after 失败不影响 rc")
+        log = self._log()
+        self.assertRegex(log, r"AFTER_HOOK\s+1")
+        self.assertLess(log.index("done (rc=0)"), log.index("AFTER_HOOK"))
+
+    def test_refuses_non_module_directory(self):
+        bad = os.path.join(self.repo, "notamodule", "scripts")
+        os.makedirs(bad)
+        path = os.path.join(bad, "collect.sh")
+        with open(path, "w") as f:
+            f.write('source "$(dirname "$0")/../../tools/lib/module_round.sh"\nbody() { true; }\nround_main body\n')
+        proc = self._run(path)
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn("crypto-*", proc.stderr)
+        self.assertFalse(os.path.exists(os.path.join(self.repo, "notamodule", "data")), "不应在错误目录写任何东西")
 
 
 class AllCollectScriptsUseRoundTest(unittest.TestCase):

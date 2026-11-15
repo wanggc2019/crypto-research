@@ -9,6 +9,10 @@
 #   }
 #   round_main body [--no-lock] [--health-args "--agent"]
 #
+#   body 最后一条命令的退出码即本轮 rc；有多条命令时用 `local rc=$?` 紧跟主命令取值再 `return "$rc"`。
+#   可选 after()：在 healthcheck + prune 之后执行（输出进 collect.log，失败不影响 rc），
+#   用于依赖 healthcheck --fix 结果的步骤（如仓库级 launchd 检查、每日摘要）。
+#
 # round_main 统一负责：
 #   1. cd 到模块目录，设置 REPO_ROOT / PY / MODULE / CRYPTO_JOB_LABEL（未注入时补默认 Label）
 #   2. 单实例锁 data/state/collect.lock（mkdir 原子锁；上一轮未结束 → 记 skip 并 exit 0）
@@ -16,13 +20,29 @@
 #   3. collect.log 写 `===== <ts> start =====` / `===== <ts> done (rc=N) =====`（healthcheck 依赖此格式）
 #   4. 完整一轮之后跑 healthcheck（--quiet --notify --fix [+ --health-args]），输出到 data/logs/healthcheck.out.log
 #   5. 当天首轮跑 prune（data/state/.prune-<date> 标记，幂等）
-#   6. exit 本轮 rc（healthcheck/prune 失败不影响 rc）
+#   6. 若定义了 after()，执行之
+#   7. exit 本轮 rc（healthcheck/prune/after 失败不影响 rc）
+#   --health-args 只接受空格分隔的简单 flag（不做引号解析）。
 set -uo pipefail
 
-_ROUND_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[1]}")" && pwd)"   # <module>/scripts
-cd "$_ROUND_SCRIPT_DIR/.." || exit 1
+# 调用方（<module>/scripts/collect.sh）的位置决定模块目录；定位后立即自检，调用方式不对就大声失败，
+# 绝不静默在错误目录里加锁/写日志。
+_ROUND_CALLER="${BASH_SOURCE[1]:-}"
+_ROUND_SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+if [ -z "$_ROUND_CALLER" ] || ! cd "$(dirname "$_ROUND_CALLER")/.." 2>/dev/null; then
+  echo "module_round.sh: 必须由 <repo>/crypto-*/scripts/collect.sh 以 source 方式加载" >&2
+  exit 2
+fi
 REPO_ROOT="$(cd .. && pwd)"
 MODULE="$(basename "$PWD")"
+case "$MODULE" in
+  crypto-*) ;;
+  *) echo "module_round.sh: 模块目录名应为 crypto-*，实际 $PWD" >&2; exit 2 ;;
+esac
+if [ "$REPO_ROOT/tools/lib/module_round.sh" != "$_ROUND_SELF" ]; then
+  echo "module_round.sh: 调用方 $PWD 与骨架 $_ROUND_SELF 不在同一仓库" >&2
+  exit 2
+fi
 PY="$REPO_ROOT/.venv/bin/python"
 [ -x "$PY" ] || PY=python3
 export PYTHONDONTWRITEBYTECODE=1
@@ -78,6 +98,10 @@ round_main() {
     echo "--- maintenance $(round_ts) ---" >> "$ROUND_LOG"
     "$PY" "$REPO_ROOT/tools/prune.py" --module "$MODULE" --apply >> "$ROUND_HEALTH_LOG" 2>&1 || true
     touch "$stamp"
+  fi
+
+  if declare -F after >/dev/null; then
+    after >> "$ROUND_LOG" 2>&1 || true
   fi
 
   exit "$rc"

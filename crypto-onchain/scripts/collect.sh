@@ -6,10 +6,11 @@ source "$(dirname "$0")/../../tools/lib/module_round.sh"
 
 body() {
   ./scripts/run.sh
-  local rc=$?
-  # 每日摘要（21:00 后首个轮次；失败不影响本轮 rc）
-  "$PY" scripts/digest.py --if-due --notify || true
-  return "$rc"
+}
+
+# 每日摘要（21:00 后首个轮次；在 healthcheck/prune 之后，失败不影响本轮 rc）
+after() {
+  "$PY" scripts/digest.py --if-due --notify
 }
 
 round_main body
