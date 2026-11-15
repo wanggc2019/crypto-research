@@ -16,11 +16,11 @@
 
 | 模块 | 内容 |
 |---|---|
-| `paths` | `repo_root()` / `module_root(name)` / `find_repo_root()` / `ensure_dirs()` |
-| `env` | 根 `.env` 定位与读写（模块内 `.env` 可覆盖）、`get()` |
-| `config` | YAML（PyYAML/Ruby 兜底）/ JSON 加载、`check_schema_version()` |
-| `timeutil` | `now/today_str/ts_iso`、静默时段、`age_hours()`、`decay()` |
-| `store` | JSON 原子读写、JSONL 追加/读取、目录创建 |
+| `paths` | `repo_root()` / `module_root(name)` / `find_repo_root()` / `ensure_dirs()` / `data_layout(root)`（模块 data/ 标准布局） |
+| `env` | 根 `.env` 定位与读写（模块内 `.env` 可覆盖）、`get()`、`resolve_bot_env(raw, token_keys, chat_keys)`（模块专用 Bot 优先，token/chat 各自回退共享 Bot） |
+| `config` | YAML（PyYAML/Ruby 兜底）/ JSON 加载、`check_schema_version()`、`ConfigCache(module_dir)`（进程内缓存，`get/clear`） |
+| `timeutil` | `now/today_str/ts_iso`、静默时段、`age_hours()`、`decay()`、`apply_timezone(name)` |
+| `store` | JSON 原子读写、JSONL 追加/读取、目录创建、`append_log_line()`（可读日志行，失败不抛） |
 | `text` | `clean_text` / `norm_url` / `sha256` / `contains_any` / `norm_title` |
 | `events` | `alert/v1` 事件模型 `Alert`、`severity_of()`、`event_key()`（去重键） |
 | `dedupe` | `DailyKeys`（按天去重，兼容既有 notified.json）、`Cooldown`（分钟级冷却） |

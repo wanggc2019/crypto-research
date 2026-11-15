@@ -22,6 +22,7 @@ from crypto_core import paths as _paths  # noqa: E402
 from crypto_core import store as _store  # noqa: E402
 from crypto_core import text as _text  # noqa: E402
 from crypto_core import timeutil as _timeutil  # noqa: E402
+from crypto_core.notify import telegram as _tg  # noqa: E402
 
 CONFIG_DIR = os.path.join(ROOT, "config")
 DATA_DIR = os.path.join(ROOT, "data")
@@ -46,17 +47,17 @@ ts_iso = _timeutil.ts_iso
 age_hours = _timeutil.age_hours
 in_quiet_hours = _timeutil.in_quiet_hours
 
-_CFG_CACHE = {}
-
 
 def ensure_dirs():
     _paths.ensure_dirs(RAW_DIR, STATE_DIR, REPORT_DIR, LOG_DIR, DOC_DIR, INDEX_DIR, EXPORT_DIR)
 
 
+_CONFIG = _config.ConfigCache(ROOT)
+
+
 def load_config(name):
-    if name not in _CFG_CACHE:
-        _CFG_CACHE[name] = _config.load_config(ROOT, name)
-    return _CFG_CACHE[name]
+    """读 config/<name>（.yaml/.yml/.json 自动识别；PyYAML 缺失时共享库回退 ruby）；进程内缓存，非 dict 视为 {}。"""
+    return _CONFIG.get(name)
 
 
 def load_env():
@@ -80,12 +81,5 @@ def read_jsonl(path):
 
 
 def job_name():
-    """调度任务名：优先 CRYPTO_JOB_LABEL（launchd plist 注入；launchd 会把 XPC 覆盖成 0），
-    其次 XPC_SERVICE_NAME，最后回退手动标记。"""
-    label = os.environ.get("CRYPTO_JOB_LABEL") or ""
-    if label:
-        return label
-    job = os.environ.get("XPC_SERVICE_NAME") or ""
-    if job.startswith("com.crypto-research"):
-        return job
-    return "crypto-policy（手动运行）"
+    """调度任务名（launchd Label / 手动运行标记），统一由 crypto_core.notify.telegram.job_label 解析。"""
+    return _tg.job_label("crypto-policy")

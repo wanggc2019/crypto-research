@@ -32,7 +32,7 @@ STATE_DIR = os.path.join(DATA_DIR, "state")
 REPORT_DIR = os.path.join(DATA_DIR, "reports")
 LOG_DIR = os.path.join(DATA_DIR, "logs")
 
-_CFG_CACHE = {}
+_CONFIG = _config.ConfigCache(ROOT)
 
 
 def ensure_dirs():
@@ -40,12 +40,8 @@ def ensure_dirs():
 
 
 def load_config(name):
-    """读 config/<name>（YAML；PyYAML 缺失时用系统 Ruby 兜底）。"""
-    if name in _CFG_CACHE:
-        return _CFG_CACHE[name]
-    data = _config.load_yaml(os.path.join(CONFIG_DIR, name))
-    _CFG_CACHE[name] = data
-    return data
+    """读 config/<name>（YAML；PyYAML 缺失时用系统 Ruby 兜底）；进程内缓存，非 dict 视为 {}。"""
+    return _CONFIG.get(name)
 
 
 def now():

@@ -22,6 +22,7 @@ from crypto_core import paths as _paths  # noqa: E402
 from crypto_core import store as _store  # noqa: E402
 from crypto_core import text as _text  # noqa: E402
 from crypto_core import timeutil as _timeutil  # noqa: E402
+from crypto_core.notify import telegram as _tg  # noqa: E402
 
 CONFIG_DIR = os.path.join(ROOT, "config")
 DATA_DIR = os.path.join(ROOT, "data")
@@ -46,18 +47,17 @@ today_str = _timeutil.today_str
 ts_iso = _timeutil.ts_iso
 in_quiet_hours = _timeutil.in_quiet_hours
 
-_CFG_CACHE = {}
-
 
 def ensure_dirs(*extra):
     _paths.ensure_dirs(RAW_DIR, STATE_DIR, REPORT_DIR, EXPORT_DIR, LOG_DIR, *extra)
 
 
+_CONFIG = _config.ConfigCache(ROOT)
+
+
 def load_config(name):
-    """读 config/<name>.yaml|json；缺失返回 {}。"""
-    if name not in _CFG_CACHE:
-        _CFG_CACHE[name] = _config.load_config(ROOT, name)
-    return _CFG_CACHE[name]
+    """读 config/<name>.yaml|json；缺失返回 {}（进程内缓存）。"""
+    return _CONFIG.get(name)
 
 
 def load_env():
@@ -75,27 +75,10 @@ _JOBS_CHAT_KEYS = (
 )
 
 
-def _first_value(raw, keys):
-    for key in keys:
-        value = raw.get(key)
-        if value:
-            return value
-    return ""
-
-
 def load_bot_env():
-    """crypto-jobs 专用 Bot 凭据优先，否则回退根 .env 的通用 TELEGRAM_*。
-
-    支持 TELEGRAM_JOBS_BOT_TOKEN / TELEGRAM_JOB_BOT_TOKEN 等命名，
-    方便用户按自己的习惯命名；这样本模块报告可以单独用独立 Bot 发送，不影响其他模块。
-    """
-    raw = load_env()
-    return {
-        "TELEGRAM_BOT_TOKEN": _first_value(raw, _JOBS_TOKEN_KEYS)
-        or raw.get("TELEGRAM_BOT_TOKEN", ""),
-        "TELEGRAM_CHAT_ID": _first_value(raw, _JOBS_CHAT_KEYS)
-        or raw.get("TELEGRAM_CHAT_ID", ""),
-    }
+    """crypto-jobs 专用 Bot 凭据优先（TELEGRAM_JOBS_* 等别名），否则回退根 .env 的通用 TELEGRAM_*。"""
+    info = _env.resolve_bot_env(load_env(), _JOBS_TOKEN_KEYS, _JOBS_CHAT_KEYS)
+    return {k: info[k] for k in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID")}
 
 
 def safe_json_load(path, default):
@@ -115,11 +98,5 @@ def read_jsonl(path):
 
 
 def job_name():
-    """调度任务名：优先 CRYPTO_JOB_LABEL（launchd plist 注入），其次 XPC_SERVICE_NAME。"""
-    label = os.environ.get("CRYPTO_JOB_LABEL") or ""
-    if label:
-        return label
-    job = os.environ.get("XPC_SERVICE_NAME") or ""
-    if job.startswith("com.crypto-research"):
-        return job
-    return "crypto-jobs（手动运行）"
+    """调度任务名（launchd Label / 手动运行标记），统一由 crypto_core.notify.telegram.job_label 解析。"""
+    return _tg.job_label("crypto-jobs")
