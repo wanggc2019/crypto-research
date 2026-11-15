@@ -6,6 +6,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "scripts"))
@@ -42,6 +43,23 @@ class TestConfigs(unittest.TestCase):
         self.assertEqual(app["poll_seconds"], 60)
         for src in ("binance", "okx", "coinbase"):
             self.assertIn(src, app["sources"])
+
+
+class TestPriceBotEnv(unittest.TestCase):
+    def test_price_bot_overrides_shared_bot(self):
+        env = {"TELEGRAM_BOT_TOKEN": "shared", "TELEGRAM_CHAT_ID": "1",
+               "TELEGRAM_PRICE_BOT_TOKEN": "price", "TELEGRAM_PRICE_CHAT_ID": "2"}
+        with mock.patch.object(common._env, "load_env", return_value=dict(env)):
+            loaded = common.load_env()
+        self.assertEqual(loaded["TELEGRAM_BOT_TOKEN"], "price")
+        self.assertEqual(loaded["TELEGRAM_CHAT_ID"], "2")
+
+    def test_price_bot_falls_back_to_shared(self):
+        env = {"TELEGRAM_BOT_TOKEN": "shared", "TELEGRAM_CHAT_ID": "1"}
+        with mock.patch.object(common._env, "load_env", return_value=dict(env)):
+            loaded = common.load_env()
+        self.assertEqual(loaded["TELEGRAM_BOT_TOKEN"], "shared")
+        self.assertEqual(loaded["TELEGRAM_CHAT_ID"], "1")
 
 
 class TestPaths(unittest.TestCase):
