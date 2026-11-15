@@ -121,6 +121,11 @@ class ModuleRoundTest(unittest.TestCase):
         self.assertEqual(self._calls("healthcheck"), [], "watchdog 活着时本轮不应重复健康检查")
         self.assertEqual(len(self._calls("prune")), 1, "prune 仍由本轮负责")
 
+    def test_bad_stale_setting_falls_back_to_default(self):
+        self._heartbeat(age_min=1)
+        self._run(self._collect("return 0"), {"ROUND_WATCHDOG_STALE_MIN": "abc"})
+        self.assertEqual(self._calls("healthcheck"), [])
+
     def test_stale_watchdog_falls_back_to_self_check(self):
         self._heartbeat(age_min=30)
         self._run(self._collect("return 0"))

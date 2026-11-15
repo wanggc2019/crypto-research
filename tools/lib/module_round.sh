@@ -55,6 +55,7 @@ export REPO_ROOT MODULE PY
 ROUND_LOG="data/logs/collect.log"
 ROUND_WATCHDOG_STATE="$REPO_ROOT/data/state/watchdog.json"
 ROUND_WATCHDOG_STALE_MIN="${ROUND_WATCHDOG_STALE_MIN:-15}"
+case "$ROUND_WATCHDOG_STALE_MIN" in ""|*[!0-9]*) ROUND_WATCHDOG_STALE_MIN=15 ;; esac   # 非数字一律回退默认
 ROUND_HEALTH_LOG="data/logs/healthcheck.out.log"
 
 round_ts() { date '+%F %T'; }
