@@ -68,8 +68,8 @@ gate:
 
 hooks:
 	@git config core.hooksPath .githooks
-	@chmod +x .githooks/pre-push
-	@echo "✅ 已启用 .githooks：push 前自动运行 make gate"
+	@chmod +x .githooks/pre-push .githooks/pre-commit
+	@echo "✅ 已启用 .githooks：commit 前 gitleaks，push 前 make gate"
 
 keep-awake:
 	@$(PY) $(REPO)/tools/keep_awake.py --install
