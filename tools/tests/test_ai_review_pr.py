@@ -26,17 +26,26 @@ class TestTrimDiff(unittest.TestCase):
 
 class TestReviewResponse(unittest.TestCase):
     def test_valid_content(self):
-        data = {"choices": [{"message": {"content": "  LGTM  "}}]}
-        self.assertEqual(ai_review_pr.parse_review_response(data), "LGTM")
+        self.assertEqual(ai_review_pr.require_review_content("  LGTM  "), "LGTM")
 
-    def test_empty_choices_raises(self):
+    def test_empty_content_raises(self):
         with self.assertRaises(RuntimeError):
-            ai_review_pr.parse_review_response({"choices": []})
+            ai_review_pr.require_review_content("   ")
 
     def test_null_content_raises(self):
         with self.assertRaises(RuntimeError):
-            ai_review_pr.parse_review_response(
-                {"choices": [{"message": {"content": None}}]})
+            ai_review_pr.require_review_content(None)
+
+    def test_llm_error_mapped_to_runtime_error(self):
+        with mock.patch.dict(os.environ, {"DEEPSEEK_API_KEY": "k"}), \
+                mock.patch.object(ai_review_pr.llm, "chat", side_effect=ai_review_pr.llm.LLMError("HTTP 401: bad key")):
+            with self.assertRaisesRegex(RuntimeError, "DeepSeek HTTP 401"):
+                ai_review_pr.review("diff")
+
+    def test_review_returns_stripped_content(self):
+        with mock.patch.dict(os.environ, {"DEEPSEEK_API_KEY": "k"}), \
+                mock.patch.object(ai_review_pr.llm, "chat", return_value=" ok "):
+            self.assertEqual(ai_review_pr.review("diff"), "ok")
 
 
 class TestCommentDedup(unittest.TestCase):

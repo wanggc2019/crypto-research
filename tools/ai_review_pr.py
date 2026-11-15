@@ -16,7 +16,9 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-API_URL = "https://api.deepseek.com/chat/completions"
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "libs", "crypto_core", "src"))
+from crypto_core import llm  # noqa: E402
+
 GITHUB_API = "https://api.github.com"
 MAX_DIFF = 40000
 MAX_COMMENT = 60000
@@ -82,13 +84,8 @@ def get_diff(base, head, base_ref=None):
     return trim_diff(diff)
 
 
-def parse_review_response(data):
-    """从 DeepSeek 响应中安全取出 content。"""
-    choices = data.get("choices") if isinstance(data, dict) else None
-    if not isinstance(choices, list) or not choices:
-        raise RuntimeError("DeepSeek 响应缺少 choices")
-    message = choices[0].get("message") if isinstance(choices[0], dict) else None
-    content = message.get("content") if isinstance(message, dict) else None
+def require_review_content(content):
+    """模型返回的 content 必须是非空字符串（choices 结构由 crypto_core.llm.chat 校验）。"""
     if not isinstance(content, str) or not content.strip():
         raise RuntimeError("DeepSeek 响应缺少 message.content")
     return content.strip()
@@ -114,28 +111,12 @@ LGTM 或 需要修改
 
 DIFF_JSON（JSON 字符串，避免代码围栏被 diff 内容破坏）:
 %s""" % json.dumps(diff, ensure_ascii=False)
-    payload = {
-        "model": "deepseek-chat",
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.2,
-        "max_tokens": 3000,
-    }
-    req = urllib.request.Request(
-        API_URL,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"},
-        method="POST",
-    )
     try:
-        with urllib.request.urlopen(req, timeout=90) as resp:
-            return parse_review_response(json.loads(resp.read().decode("utf-8")))
-    except urllib.error.HTTPError as e:
-        raise RuntimeError("DeepSeek HTTP %s: %s" % (
-            e.code, e.read().decode("utf-8", "ignore")[:300]))
-    except urllib.error.URLError as e:
-        raise RuntimeError("DeepSeek 网络错误：%s" % e)
-    except ValueError as e:
-        raise RuntimeError("DeepSeek 响应不是合法 JSON：%s" % e)
+        content = llm.chat([{"role": "user", "content": prompt}], key, timeout=90,
+                           temperature=0.2, max_tokens=3000)
+    except llm.LLMError as e:
+        raise RuntimeError("DeepSeek %s" % e)
+    return require_review_content(content)
 
 
 def _github(method, path, token, payload=None, timeout=30):

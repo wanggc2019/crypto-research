@@ -18,25 +18,19 @@ import json
 import os
 import sys
 import time
-import urllib.request
 
 API = "https://api.binance.com/api/v3/klines"
 DEFAULT_SYMBOLS = ["BTC", "ETH", "BNB", "SOL"]
 DEFAULT_START = "2019-01-01"
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT_DIR = os.path.join(HERE, "data", "raw", "klines")
+sys.path.insert(0, os.path.join(os.path.dirname(HERE), "libs", "crypto_core", "src"))
+from crypto_core import http as _http  # noqa: E402
 
 
 def http_json(url, tries=4):
-    for i in range(tries):
-        try:
-            req = urllib.request.Request(url, headers={"User-Agent": "crypto-research/1.0"})
-            with urllib.request.urlopen(req, timeout=20) as resp:
-                return json.loads(resp.read().decode())
-        except Exception:
-            if i == tries - 1:
-                raise
-            time.sleep(1.5 * (i + 1))
+    """GET JSON；失败按退避重试（共 tries 次），最后一次失败抛出。"""
+    return json.loads(_http.get(url, timeout=20, ua="crypto-research/1.0", retries=tries - 1, backoff=1.5).decode())
 
 
 def fetch(symbol, start_ms):

@@ -17,11 +17,10 @@ import json
 import os
 import re
 import sys
-import urllib.error
-import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import load_config, load_env, ts_iso  # noqa: E402
+from crypto_core import llm  # noqa: E402
 
 CJK_RE = re.compile(r"[\u4e00-\u9fff]")
 DEFAULT_ANALYSIS = {
@@ -53,19 +52,8 @@ def analysis_config(cfg):
 def load_api_key(cfg, env=None):
     """读 DeepSeek key：先 .env/环境变量，再 ~/.dsh/.credentials.yaml 的 refs。"""
     env = env if env is not None else load_env()
-    key = (env.get(cfg.get("api_key_env") or "DEEPSEEK_API_KEY") or "").strip()
-    if key:
-        return key
-    path = os.path.expanduser("~/.dsh/.credentials.yaml")
-    if os.path.isfile(path):
-        try:
-            import yaml
-
-            data = yaml.safe_load(open(path, "r", encoding="utf-8")) or {}
-            return str(((data.get("refs") or {}).get(cfg.get("api_key_env") or "DEEPSEEK_API_KEY")) or "").strip()
-        except (OSError, ValueError, ImportError):
-            return ""
-    return ""
+    name = cfg.get("api_key_env") or "DEEPSEEK_API_KEY"
+    return llm.find_api_key(env=env, names=(name,), use_os_environ=False)
 
 
 def is_chinese(text, ratio=0.3):
@@ -133,18 +121,16 @@ def parse_response(content):
 
 def call_deepseek(posts, cfg, api_key):
     """真实网络调用；失败抛异常（由 analyze 捕获并降级）。"""
-    url = (cfg.get("base_url") or DEFAULT_ANALYSIS["base_url"]).rstrip("/") + "/chat/completions"
-    body = json.dumps(build_request(posts, cfg), ensure_ascii=False).encode("utf-8")
-    req = urllib.request.Request(
-        url, data=body,
-        headers={"Content-Type": "application/json", "Authorization": "Bearer " + api_key})
+    body = build_request(posts, cfg)
+    params = {k: v for k, v in body.items() if k not in ("model", "messages")}
     last_err = None
     for attempt in range(int(cfg.get("retries") or 0) + 1):
         try:
-            with urllib.request.urlopen(req, timeout=float(cfg.get("timeout_seconds") or 60)) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-            return parse_response(data["choices"][0]["message"]["content"])
-        except Exception as exc:  # noqa: BLE001 - 统一记录后重试
+            content = llm.chat(body["messages"], api_key, model=body["model"],
+                               base_url=cfg.get("base_url") or DEFAULT_ANALYSIS["base_url"],
+                               timeout=float(cfg.get("timeout_seconds") or 60), **params)
+            return parse_response(content)
+        except Exception as exc:  # noqa: BLE001 - 网络/解析失败统一记录后重试
             last_err = exc
     raise last_err
 

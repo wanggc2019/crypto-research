@@ -25,7 +25,8 @@
 | `events` | `alert/v1` 事件模型 `Alert`、`severity_of()`、`event_key()`（去重键） |
 | `dedupe` | `DailyKeys`（按天去重，兼容既有 notified.json）、`Cooldown`（分钟级冷却） |
 | `notify` | `check_credentials` / `send_message(..., silent=)` / `discover_chat_id` / `format_alert` / 模板与 HTML 转义 |
-| `http` | 统一 UA、308 重定向、超时/重试/退避的 GET / GET-text / GET-json |
+| `http` | GET（UA/超时/重试，补 308 跟随但仅 GET/HEAD）、`post_json()`、`json_rpc()`（公共 RPC）——**模块不要再直接 `urllib.request.urlopen`** |
+| `llm` | OpenAI 兼容 chat/completions（默认 DeepSeek）：`find_api_key()`（.env → 环境变量 → ~/.dsh refs）、`chat()`（`LLMError` 含 HTTP 码）、`extract_json()`；提示词/缓存/降级留在调用方 |
 | `sources.*` | RSS/Atom 解析、Binance/OKX/Bybit 公告解析、Telegram 预览页、页面指纹与纯文本 |
 | `market.*` | Binance 资金费率/24h ticker/K 线/持仓量、OKX ticker/K 线、Coinbase 24h stats/ticker、DefiLlama 稳定币脱锚（全部免 key、坏数据返 None/[]） |
 | `events` 展示词表 | `category_cn()` / `hard_cn()` / `impact_cn()` / `action_cn()`（中文类别、硬条件、影响、动作参考） |

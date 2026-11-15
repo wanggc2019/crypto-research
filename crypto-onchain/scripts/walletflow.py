@@ -16,7 +16,9 @@
 """
 import json
 import os
-import urllib.request
+
+import common  # noqa: F401  # isort: skip  # 必须先导入：common 负责把 libs/crypto_core 加入 sys.path
+from crypto_core import http as _http  # noqa: E402
 
 TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
 BLOCK_SECONDS = 12  # 以太坊主网平均出块
@@ -25,18 +27,7 @@ ZERO_ADDR = "0x" + "0" * 40
 
 # ---------------------------------------------------------------- RPC
 def rpc_call(url, method, params, timeout=25):
-    body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).encode()
-    req = urllib.request.Request(
-        url, data=body,
-        headers={"Content-Type": "application/json", "User-Agent": "crypto-research/1.0"},
-    )
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        data = json.loads(r.read().decode("utf-8", "ignore"))
-    if not isinstance(data, dict):
-        raise ValueError("rpc 响应不是对象")
-    if data.get("error"):
-        raise RuntimeError("rpc error: %s" % str(data["error"])[:160])
-    return data.get("result")
+    return _http.json_rpc(url, method, params, timeout=timeout)
 
 
 def latest_block(rpc_url, timeout=25):
@@ -58,12 +49,7 @@ def block_timestamps(rpc_url, blocks, timeout=25):
         for i, bn in enumerate(blocks)
     ]
     try:
-        req = urllib.request.Request(
-            rpc_url, data=json.dumps(payload).encode(),
-            headers={"Content-Type": "application/json", "User-Agent": "crypto-research/1.0"},
-        )
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            data = json.loads(r.read().decode("utf-8", "ignore"))
+        data = _http.post_json(rpc_url, payload, timeout=timeout, ua="crypto-research/1.0")
         if not isinstance(data, list):
             raise ValueError("batch 响应不是列表")
         out = {}
