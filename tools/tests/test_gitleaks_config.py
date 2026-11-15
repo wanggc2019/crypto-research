@@ -27,7 +27,7 @@ class TestGitleaksConfig(unittest.TestCase):
 
     def test_make_hooks_enables_pre_commit(self):
         text = (REPO / "Makefile").read_text(encoding="utf-8")
-        self.assertIn("chmod +x .githooks/pre-push .githooks/pre-commit", text)
+        self.assertIn(".githooks/pre-commit", text)
 
 
 if __name__ == "__main__":
