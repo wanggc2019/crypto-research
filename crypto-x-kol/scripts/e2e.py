@@ -5,11 +5,16 @@
 由 `make gate` 自动发现并执行；退出码 0 = 通过。
 覆盖：首次抓取建基线 → 主页出现新帖 → 增量抓取 → 生成日报。
 """
+import json
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                                "libs", "crypto_core", "src"))
+from crypto_core import contracts  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -68,7 +73,13 @@ def main():
             body = f.read()
         if "KOL 推文日报" not in body:
             raise SystemExit("❌ 日报内容异常")
-        print("✅ crypto-x-kol e2e 通过（基线 → 增量 → 日报）")
+        run([os.path.join(HERE, "export_daily.py"), "--data-dir", data, "--date", DATE])
+        with open(os.path.join(data, "exports", "daily-%s.json" % DATE), encoding="utf-8") as f:
+            export = json.load(f)
+        problems = contracts.validate("kol/daily/v1", export)
+        if problems or not export["items"]:
+            raise SystemExit("❌ exports 不符合契约 kol/daily/v1：%s（items=%d）" % (problems, len(export["items"])))
+        print("✅ crypto-x-kol e2e 通过（基线 → 增量 → 日报 → 契约导出）")
         return 0
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

@@ -1,0 +1,3 @@
+{"schema": "onchain/pressure/v1", "generated_at": "2026-11-08T12:00:00", "source_module": "crypto-onchain", "mode": "shadow",
+ "assets": {"BTC": {"price": 101000.5, "change_24h_pct": -2.4, "taker_5m_sell_ratio": 0.58, "attribution": []}},
+ "market": {}, "candidates": {}, "walletflow": {}, "caveats": []}

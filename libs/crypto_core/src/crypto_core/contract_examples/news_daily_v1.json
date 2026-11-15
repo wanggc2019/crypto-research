@@ -1,0 +1,8 @@
+{"schema": "news/daily/v1", "source_module": "crypto-news", "date": "2026-11-08", "generated_at": "2026-11-08T23:50:00",
+ "counts": {"P0": 1, "P1": 1, "P2": 1, "ARCHIVE": 0},
+ "items": [{"severity": "P0", "title": "DeFi protocol exploited, attacker drains $45 million in ETH", "category": "protocol_security",
+            "assets": ["ETH"], "score": 88, "url": "https://example.com/defi-hack", "published_at": "2026-11-08T11:00:00+04:00", "hard": ["hack_large"]},
+           {"severity": "P1", "title": "SEC delays decision on spot ETH ETF options listing", "category": "regulatory",
+            "assets": ["ETH"], "score": 64, "url": "https://example.com/sec-eth", "published_at": "2026-11-08T12:00:00+04:00", "hard": []},
+           {"severity": "P2", "title": "Bitcoin price analysis: BTC consolidates near range high", "category": "market_structure",
+            "assets": ["BTC"], "score": 31, "url": "https://example.com/btc-ta", "published_at": "2026-11-08T14:00:00+04:00", "hard": []}]}

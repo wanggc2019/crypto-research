@@ -14,8 +14,9 @@
 输出：assess(record, cfg, ctx) -> {"send": bool, "score": int, "reasons": [str], "whale": bool}
 """
 import datetime
-import json
-import os
+
+import common  # noqa: F401  # isort: skip  # 把 libs/crypto_core 加入 sys.path（本模块可能先于 common 被导入）
+from crypto_core import contracts  # noqa: E402
 
 KEYWORDS = ("hack", "exploit", "etf", "fed", "rate", "liquidation", "blackrock",
             "binance", "coinbase", "sec", "ban", "tariff", "war", "crash", "outflow",
@@ -24,25 +25,14 @@ KEYWORDS = ("hack", "exploit", "etf", "fed", "rate", "liquidation", "blackrock",
 
 def load_news(repo_root, date):
     """读 crypto-news 的 daily export（跨模块只读 exports/）；失败返回 []。"""
-    path = os.path.join(repo_root, "crypto-news", "data", "exports", "daily-%s.json" % date)
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-    except (OSError, ValueError):
-        return []
-    items = data.get("items") if isinstance(data, dict) else None
+    data = contracts.read("news/daily/v1", date=date, repo=repo_root, default={})
+    items = data.get("items")
     return items if isinstance(items, list) else []
 
 
 def load_price_export(repo_root):
     """读 crypto-price 的 exports/latest.json（取 signals 与 assets 兜底）；失败返回 {}。"""
-    path = os.path.join(repo_root, "crypto-price", "data", "exports", "latest.json")
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-    except (OSError, ValueError):
-        return {}
-    return data if isinstance(data, dict) else {}
+    return contracts.read("price/snapshot/v1", repo=repo_root, default={})
 
 
 def _news_ttl_hours(cfg):

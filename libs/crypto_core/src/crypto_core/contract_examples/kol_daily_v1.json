@@ -1,0 +1,3 @@
+{"schema": "kol/daily/v1", "date": "2026-11-08", "generated_at": "2026-11-08T23:00:00",
+ "items": [{"handle": "example_kol", "name": "Example KOL", "id": "fx1", "kind": "post", "tier": "A", "tags": ["btc"],
+            "text": "BTC funding flipped negative on most venues.", "quote": "", "has_media": false, "url": "https://x.com/example_kol"}]}
