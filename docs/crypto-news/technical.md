@@ -73,7 +73,7 @@ launchd(600s) → collect.sh（锁）
 
 ## 7. 测试
 
-- 52 项离线单测（无网络）；`make verify` 会跑 ruff + libs + 模块单测 + 端到端重评分。
+- 52 项离线单测（无网络）；`make gate` 会跑 ruff + libs + 模块单测 + 端到端重评分。
 - 解析层用内联 fixtures，CI 不联网。
 - 联网冒烟仅本地可选：`./scripts/verify.sh --with-network`。
 

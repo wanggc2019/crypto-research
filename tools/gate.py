@@ -35,7 +35,6 @@ RUFF = os.path.join(REPO, ".venv", "bin", "ruff")
 if not os.path.exists(RUFF):
     RUFF = shutil.which("ruff") or ""
 LIBS = os.path.join(REPO, "libs", "crypto_core", "src")
-BUILTIN_E2E = {"crypto-news", "crypto-price"}
 
 
 def _env(extra=None):
@@ -121,39 +120,18 @@ def steps_offline():
             continue
         steps.append(("%s 单测" % module, [PY, "-m", "unittest", "discover",
                                            "-s", os.path.join(REPO, module, "tests")], None))
-    steps.append(("crypto-news 回放", [PY, os.path.join(REPO, "crypto-news/scripts/score.py")], None))
-    # crypto-price 两个快照 E2E（临时 data 目录，不碰生产 state）
-    tmp_price = tempfile.mkdtemp(prefix="gate-price-")
-    for fixture in ("snapshot_normal", "snapshot_shock"):
-        steps.append(("%s 回放" % fixture, [
-            PY, os.path.join(REPO, "crypto-price/scripts/run.py"),
-            "--snapshot", os.path.join(REPO, "crypto-price/tests/fixtures", fixture + ".json"),
-            "--data-dir", tmp_price, "--dry-run", "--json",
-        ], None))
-    # 新模块可提供 scripts/e2e.py（退出码 0 即通过）；已有三个模块用内置回放。
+    # 每个模块的离线端到端回放统一由 <module>/scripts/e2e.py 提供（退出码 0 即通过），
+    # gate 只负责发现与执行，不再内置任何模块的回放命令。
     for module in modules:
-        if module in BUILTIN_E2E:
-            continue
         hook = os.path.join(REPO, module, "scripts", "e2e.py")
         if os.path.isfile(hook):
             steps.append(("%s e2e" % module, [PY, hook], None))
-    # crypto-analyst 离线回放（日报 + 周报，fixtures）
-    steps.append(("crypto-analyst 日报回放", [
-        PY, os.path.join(REPO, "crypto-analyst/scripts/daily_brief.py"),
-        "--fixtures", os.path.join(REPO, "crypto-analyst/tests/fixtures"),
-        "--date", "2026-11-08", "--dry-run",
-    ], None))
-    steps.append(("crypto-analyst 周报回放", [
-        PY, os.path.join(REPO, "crypto-analyst/scripts/weekly.py"),
-        "--fixtures", os.path.join(REPO, "crypto-analyst/tests/fixtures"),
-        "--date", "2026-11-08", "--dry-run",
-    ], None))
     steps.append(("公开仓库信息检查", [PY, os.path.join(REPO, "tools/check_public_safe.py")], None))
     steps.append(("重复消息审计", [PY, os.path.join(REPO, "tools/audit_duplicates.py")], None))
     # launchd 任务健康：只有真失败（rc=2/3、未加载）才让门禁失败；
     # 降级（rc=1）与超时只打印（由 repo 级看门狗即时/每日告警），避免生产抖动卡住提交
     steps.append(("launchd 任务健康", [PY, os.path.join(REPO, "tools/jobs.py"), "--strict-errors"], None))
-    return steps, [tmp_price]
+    return steps, []
 
 
 def run_network(strict=False):
@@ -195,7 +173,7 @@ def main(argv=None):
     parser.add_argument("--with-network", action="store_true", help="额外联网冒烟（默认只警告外部失败）")
     parser.add_argument("--strict-network", action="store_true", help="联网冒烟失败也算失败（隐含 --with-network）")
     parser.add_argument("--push-test", action="store_true", help="额外发一条静默 Telegram 测试消息")
-    parser.add_argument("--only", help="逗号分隔：libs,tools,news,price,jobs,network,push")
+    parser.add_argument("--only", help="逗号分隔：libs,tools,<模块名去掉 crypto- 前缀，如 news,price,x-kol>,launchd,duplicate,network,push")
     args = parser.parse_args(argv)
 
     only = set((args.only or "").split(",")) if args.only else None
@@ -207,9 +185,8 @@ def main(argv=None):
     for name, cmd, _ in steps:
         key = ("libs" if name.startswith("libs") else
                "tools" if name.startswith("tools") else
-               "news" if name.startswith("crypto-news") else
-               "price" if name.startswith(("snapshot_", "crypto-price")) else
-               "jobs" if name.startswith("launchd") else
+               name.split()[0][len("crypto-"):] if name.startswith("crypto-") else
+               "launchd" if name.startswith("launchd") else
                "duplicate" if "重复" in name else name)
         if only and key not in only:
             continue

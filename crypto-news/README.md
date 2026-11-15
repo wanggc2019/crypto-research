@@ -47,7 +47,7 @@ cd ~/vscode/crypto-research/crypto-news
 ./scripts/verify.sh
 
 # 仓库级：一次跑完所有模块（推荐提交前）
-cd .. && make verify
+cd .. && make gate
 ```
 
 > 本模块的业务代码在 `scripts/`；通用能力（凭据/配置/存储/事件/去重/推送）在共享库

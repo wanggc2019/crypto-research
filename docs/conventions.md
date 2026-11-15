@@ -133,5 +133,5 @@ docs/crypto-<topic>/                # 文档：固定五件套
     目前由**本地 pre-push 守卫 + PR 流程约定**保证，不是 GitHub 服务端强制。
     升级团队账号或仓库转 public 后可改为服务端强制。
 - 一个提交只做一件事：`refactor:` 搬代码不改行为、`feat:` 新能力、`fix:` 修 bug、`docs:` 文档、`chore:` 杂项。
-- 提交前跑 `make verify`；涉及调度改动时额外跑 `make launchd module=<name> action=status`。
+- 提交前跑 `make gate`；涉及调度改动时额外跑 `make launchd module=<name> action=status`。
 - 新模块用 `make new-module` 生成；调度统一用 `tools/render_launchd.py`（不再手写 install 脚本）；数据清理用 `make prune`。

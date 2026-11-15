@@ -25,7 +25,8 @@ from crypto_core import text as _text  # noqa: E402
 from crypto_core import timeutil as _timeutil  # noqa: E402
 
 CONFIG_DIR = os.path.join(ROOT, "config")
-DATA_DIR = os.path.join(ROOT, "data")
+# CRYPTO_NEWS_DATA_DIR：离线回放/测试用临时目录，避免碰生产 data/
+DATA_DIR = os.environ.get("CRYPTO_NEWS_DATA_DIR") or os.path.join(ROOT, "data")
 RAW_DIR = os.path.join(DATA_DIR, "raw")
 STATE_DIR = os.path.join(DATA_DIR, "state")
 REPORT_DIR = os.path.join(DATA_DIR, "reports")

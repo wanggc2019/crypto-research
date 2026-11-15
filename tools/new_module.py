@@ -52,7 +52,7 @@ make launchd module={name} action=status
 
 - 业务策略（阈值/路由/评分）放本目录 `config/`；通用能力（凭据/HTTP/存储/推送/事件）用 `libs/crypto_core`。
 - 运行产物写 `data/`（gitignored）；凭据只读仓库根 `.env`。
-- 单测放 `tests/`；`make verify` 必须离线全绿。
+- 单测放 `tests/`；离线回放放 `scripts/e2e.py`（`make gate` 自动发现）；`make gate` 必须离线全绿。
 """
 
 CONFIG_TMPL = """schema_version: 1
@@ -172,6 +172,31 @@ if __name__ == "__main__":
     sys.exit(main())
 '''
 
+E2E_PY = '''#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""e2e.py —— {name} 离线端到端回放（make gate / CI 自动发现；退出码 0 即通过）。
+
+TODO：接入 tests/fixtures 后改为 --fixtures 回放，并断言关键产物。
+"""
+import os
+import subprocess
+import sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def main():
+    proc = subprocess.run([sys.executable, os.path.join(ROOT, "scripts", "main.py"), "--dry-run"],
+                          cwd=ROOT, capture_output=True, text=True, timeout=120)
+    if proc.returncode != 0:
+        print(proc.stdout[-1500:] + proc.stderr[-1500:])
+    return proc.returncode
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+'''
+
 RUN_SH = """#!/usr/bin/env bash
 # {name} 一键入口：跑一轮（+ 可选推送）
 set -euo pipefail
@@ -274,6 +299,7 @@ def scaffold(name, desc):
         "config/app.example.yaml": CONFIG_TMPL.format(desc=desc),
         "scripts/common.py": COMMON_PY.format(name=name),
         "scripts/main.py": MAIN_PY.format(name=name, desc=desc),
+        "scripts/e2e.py": E2E_PY.format(name=name),
         "scripts/run.sh": RUN_SH.format(name=name),
         "scripts/collect.sh": COLLECT_SH.format(name=name),
         "tests/test_smoke.py": SMOKE_TEST.format(name=name),

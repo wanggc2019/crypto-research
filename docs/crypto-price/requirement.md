@@ -32,7 +32,7 @@
 
 ## 6. 验收标准（可测量）
 
-1. `make verify` 全绿（ruff + libs 单测 + crypto-price 离线单测 + 端到端 fixtures）。
+1. `make gate` 全绿（ruff + libs 单测 + crypto-price 离线单测 + 端到端 fixtures）。
 2. `python scripts/run.py --once --dry-run --json` 联网返回三源价格，BTC/ETH/BNB 中位数与交易所页面偏差 <0.1%。
 3. `--fixtures` 回放：正常行情 0 条推送；`shock` 快照触发 `fast_move` P0 且卡片含现价/各窗口涨跌/多源核验。
 4. 冷却生效：同一事件连续两轮只推一次；幅度扩大 1.5 倍可再推。
