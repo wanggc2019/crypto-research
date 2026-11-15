@@ -49,10 +49,12 @@ def _throttle(url, headers):
     if not rule:
         return
     name, anon, keyed = rule
-    if any(k.lower() == "authorization" for k in headers):
-        rpm = int(os.environ.get("JINA_RPM_KEYED") or keyed)
-    else:
-        rpm = int(os.environ.get("JINA_RPM") or anon)
+    keyed_req = any(k.lower() == "authorization" for k in headers)
+    env_key, default = ("JINA_RPM_KEYED", keyed) if keyed_req else ("JINA_RPM", anon)
+    try:
+        rpm = int(os.environ.get(env_key) or default)
+    except ValueError:  # 配错成非数字时用默认值，不让请求在限速环节崩掉
+        rpm = default
     ratelimit.acquire(name, rpm)
 
 

@@ -56,6 +56,12 @@ class RateLimitTest(unittest.TestCase):
         self.assertIn("Too Many Requests", str(ctx.exception))
         self.assertIsInstance(ctx.exception, OSError)
 
+    def test_clock_rewind_keeps_window(self):
+        self._acq(1)
+        self.clock.t -= 30                 # 时钟回拨 30s：已有的时间戳在「未来」
+        with self.assertRaises(ratelimit.RateLimited):
+            self._acq(1, max_wait=5)       # 仍计入窗口，不会被清空后超发
+
     def test_corrupt_state_recovers(self):
         with open(os.path.join(self.tmp.name, "ratelimit-t.json"), "w") as f:
             f.write("not json")
@@ -94,6 +100,15 @@ class HttpHookTest(unittest.TestCase):
             with self.assertRaises(OSError):
                 http.get("https://api.binance.com/x")
         self.assertEqual(calls, [("jina", 18), ("jina", 18), ("jina", 90)], "重试也占配额；其它主机不限速")
+
+    def test_bad_rpm_env_falls_back(self):
+        calls = []
+        with mock.patch.object(http.ratelimit, "acquire", side_effect=lambda n, r: calls.append(r)), \
+                mock.patch.object(http._OPENER, "open", side_effect=OSError("offline")), \
+                mock.patch.dict(os.environ, {"CRYPTO_RATELIMIT": "1", "JINA_RPM": "abc"}):
+            with self.assertRaises(OSError):
+                http.get("https://r.jina.ai/x")
+        self.assertEqual(calls, [18])
 
     def test_rate_limited_not_retried(self):
         with mock.patch.object(http.ratelimit, "acquire", side_effect=ratelimit.RateLimited("Too Many Requests")), \

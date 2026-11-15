@@ -44,7 +44,8 @@ def acquire(name, per_minute, max_wait=90.0, directory=None, clock=time.time, sl
                     stamps = [float(t) for t in json.load(f)]
             except (OSError, ValueError, TypeError):
                 stamps = []
-            stamps = sorted(t for t in stamps if now - WINDOW < t <= now + 1)
+            # 时钟回拨时「未来」时间戳钳到 now（继续计入窗口），而不是丢弃导致窗口被清空、短时超发
+            stamps = sorted(min(t, now) for t in stamps if t > now - WINDOW)
             if len(stamps) < per_minute:
                 stamps.append(now)
                 tmp = path + ".tmp"
