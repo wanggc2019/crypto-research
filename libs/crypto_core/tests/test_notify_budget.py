@@ -148,6 +148,11 @@ class SendSignalTest(_Base):
         rows = ledger.read(datetime.date.today().isoformat())
         self.assertEqual([r["kind"] for r in rows], ["signal"], "真实 send_message 只记一条（带 signal 元信息）")
 
+    def test_err_is_always_str(self):
+        with mock.patch.object(budget, "load_config", return_value=self.cfg()):
+            self.assertEqual(budget.send_signal("t", "c", "x", "m", "P1", sender=lambda *a, **k: (True, None)),
+                             (True, ""))
+
     def test_budget_error_never_blocks(self):
         sender = mock.Mock(return_value=(True, ""))
         with mock.patch.object(budget, "decide", side_effect=ValueError("boom")):

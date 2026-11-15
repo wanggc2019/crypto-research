@@ -102,7 +102,9 @@ def send_signal(token, chat_id, text, module, severity, assets=(), key=None, now
         ledger.record(meta, ok=False, err="suppressed", text=text, decision=decision, now=now)
         return True, "suppressed: %s" % "; ".join(decision["reasons"])
     if sender is None or sender is telegram.send_message:
-        return telegram.send_message(token, chat_id, text, *sender_args, meta=meta, decision=decision, **send_kwargs)
-    ok, err = sender(token, chat_id, text, *sender_args, **send_kwargs)
-    ledger.record(meta, ok=ok, err=err, text=text, decision=decision, now=now)
-    return ok, err
+        ok, err = telegram.send_message(token, chat_id, text, *sender_args, meta=meta, decision=decision,
+                                        **send_kwargs)
+    else:
+        ok, err = sender(token, chat_id, text, *sender_args, **send_kwargs)
+        ledger.record(meta, ok=ok, err=err, text=text, decision=decision, now=now)
+    return bool(ok), str(err or "")   # 调用方会 err.startswith("suppressed")，保证恒为 str
