@@ -33,21 +33,13 @@ DATA_DIR = os.path.join(ROOT, "data")
 REPO_ROOT = _REPO_ROOT
 
 CONFIG_FILES = ("watchlist.yaml", "rules.yaml", "app.yaml")
-_CFG_CACHE = {}
+_CONFIG = _config.ConfigCache(ROOT)
 
 
 # ---------------------------------------------------------------- 目录
 def data_paths(base=None):
     """返回数据目录字典；base 非空时把 data/ 整体重定向（测试/回放用）。"""
-    root = os.path.abspath(base) if base else DATA_DIR
-    return {
-        "root": root,
-        "raw": os.path.join(root, "raw"),
-        "state": os.path.join(root, "state"),
-        "reports": os.path.join(root, "reports"),
-        "exports": os.path.join(root, "exports"),
-        "logs": os.path.join(root, "logs"),
-    }
+    return _paths.data_layout(base or DATA_DIR)
 
 
 def ensure_dirs(base=None):
@@ -58,13 +50,7 @@ def ensure_dirs(base=None):
 
 # ---------------------------------------------------------------- 配置
 def load_config(name):
-    if name in _CFG_CACHE:
-        return _CFG_CACHE[name]
-    data = _config.load_yaml(os.path.join(CONFIG_DIR, name))
-    if not isinstance(data, dict):
-        data = {}
-    _CFG_CACHE[name] = data
-    return data
+    return _CONFIG.get(name)
 
 
 def load_all_configs():
@@ -128,51 +114,22 @@ _ONCHAIN_CHAT_KEYS = (
 )
 
 
-def _first_value(raw, keys):
-    for key in keys:
-        value = raw.get(key)
-        if value:
-            return value
-    return ""
-
-
 def load_bot_env():
-    """crypto-onchain 专用 Bot 凭据优先（独立 Bot（.env 配置）），否则回退根 .env 的通用 TELEGRAM_*。
-
-    这样链上监控/告警可以单独用 独立 Bot（.env 配置） 发送，不影响其他模块。
-    """
-    raw = load_env()
-    return {
-        "TELEGRAM_BOT_TOKEN": _first_value(raw, _ONCHAIN_TOKEN_KEYS)
-        or raw.get("TELEGRAM_BOT_TOKEN", ""),
-        "TELEGRAM_CHAT_ID": _first_value(raw, _ONCHAIN_CHAT_KEYS)
-        or raw.get("TELEGRAM_CHAT_ID", ""),
-    }
+    """crypto-onchain 专用 Bot 凭据优先（TELEGRAM_ONCHAIN_* 等别名），否则回退根 .env 的通用 TELEGRAM_*。"""
+    info = _env.resolve_bot_env(load_env(), _ONCHAIN_TOKEN_KEYS, _ONCHAIN_CHAT_KEYS)
+    return {k: info[k] for k in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID")}
 
 
 # ---------------------------------------------------------------- 时区
 def apply_timezone(name):
-    """让进程本地时间跟随配置时区（默认 本地时区）。"""
-    if not name:
-        return None
-    os.environ["TZ"] = str(name)
-    try:
-        time.tzset()
-    except AttributeError:  # Windows 无 tzset
-        pass
-    return str(name)
+    """让进程本地时间跟随配置时区（TZ + tzset；见 crypto_core.timeutil.apply_timezone）。"""
+    return _timeutil.apply_timezone(name)
 
 
 # ---------------------------------------------------------------- 日志
 def log_line(msg, paths, filename="onchain.log"):
-    os.makedirs(paths["logs"], exist_ok=True)
-    line = "%s %s\n" % (now().strftime("%Y-%m-%d %H:%M:%S"), msg)
-    try:
-        with open(os.path.join(paths["logs"], filename), "a", encoding="utf-8") as f:
-            f.write(line)
-    except OSError:
-        pass
-    return line.strip()
+    return _store.append_log_line(os.path.join(paths["logs"], filename), msg,
+                                  ts=now().strftime("%Y-%m-%d %H:%M:%S"))
 
 
 # ---------------------------------------------------------------- 跨模块只读

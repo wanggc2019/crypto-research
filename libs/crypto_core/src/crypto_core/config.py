@@ -54,3 +54,21 @@ def check_schema_version(data, expected=1):
     if data.get("schema_version") != expected:
         return "schema_version 期望 %s，实际 %r" % (expected, data.get("schema_version"))
     return None
+
+
+class ConfigCache:
+    """模块配置的进程内缓存：get(name) 读 <module_dir>/config/<name>（.yaml/.yml/.json 自动识别），
+    非 dict（空文件/列表）一律视为 {}；clear() 用于热重载/测试。"""
+
+    def __init__(self, module_dir):
+        self.module_dir = module_dir
+        self._cache = {}
+
+    def get(self, name):
+        if name not in self._cache:
+            data = load_config(self.module_dir, name)
+            self._cache[name] = data if isinstance(data, dict) else {}
+        return self._cache[name]
+
+    def clear(self):
+        self._cache.clear()

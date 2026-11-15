@@ -56,3 +56,34 @@ def save_env_value(key, value, path=None, module_dir=None):
 def get(key, default=None):
     """读当前进程环境（供部署时覆盖 .env，如 DATA_DIR / CHANNEL_TYPE）。"""
     return os.environ.get(key, default)
+
+
+def first_value(raw, keys):
+    """按顺序返回第一个非空的 (value, key)；都为空返回 ("", "")。"""
+    for key in keys:
+        if raw.get(key):
+            return raw[key], key
+    return "", ""
+
+
+def resolve_bot_env(raw, token_keys=(), chat_keys=()):
+    """模块专用 Telegram Bot 凭据优先，未配置则回退共享 TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID。
+
+    token 与 chat 各自独立回退（只配了专用 token 时 chat 仍可用共享的）。
+    返回 {TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, token_key, chat_key, dedicated}：
+    token_key/chat_key 是实际命中的变量名（供 --whoami 排查）；dedicated = 专用 token 与 chat 都已配置。
+    """
+    token, token_key = first_value(raw, token_keys)
+    chat, chat_key = first_value(raw, chat_keys)
+    dedicated = bool(token and chat)
+    if not token:
+        token, token_key = raw.get("TELEGRAM_BOT_TOKEN", ""), "TELEGRAM_BOT_TOKEN"
+    if not chat:
+        chat, chat_key = raw.get("TELEGRAM_CHAT_ID", ""), "TELEGRAM_CHAT_ID"
+    return {
+        "TELEGRAM_BOT_TOKEN": token,
+        "TELEGRAM_CHAT_ID": str(chat or ""),
+        "token_key": token_key,
+        "chat_key": chat_key,
+        "dedicated": dedicated,
+    }

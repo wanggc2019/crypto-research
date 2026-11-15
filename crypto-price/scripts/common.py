@@ -28,6 +28,7 @@ from crypto_core import paths as _paths  # noqa: E402
 from crypto_core import store as _store  # noqa: E402
 from crypto_core import text as _text  # noqa: E402
 from crypto_core import timeutil as _timeutil  # noqa: E402
+from crypto_core.notify import telegram as _tg  # noqa: E402
 
 CONFIG_DIR = os.path.join(ROOT, "config")
 DATA_DIR = os.path.join(ROOT, "data")
@@ -38,7 +39,7 @@ EXPORT_DIR = os.path.join(DATA_DIR, "exports")
 LOG_DIR = os.path.join(DATA_DIR, "logs")
 
 CONFIG_FILES = ("watchlist.yaml", "rules.yaml", "app.yaml")
-_CFG_CACHE = {}
+_CONFIG = _config.ConfigCache(ROOT)
 _DATA_OVERRIDE = None
 
 
@@ -63,16 +64,8 @@ def ensure_dirs(base=None):
 
 
 def data_paths(base=None):
-    """返回数据目录字典；base 非空时把 data/ 整体重定向（测试用）。"""
-    root = os.path.abspath(base) if base else DATA_DIR
-    return {
-        "root": root,
-        "raw": os.path.join(root, "raw"),
-        "state": os.path.join(root, "state"),
-        "reports": os.path.join(root, "reports"),
-        "exports": os.path.join(root, "exports"),
-        "logs": os.path.join(root, "logs"),
-    }
+    """返回数据目录字典；base 非空时把 data/ 整体重定向（测试/回放用）。"""
+    return _paths.data_layout(base or DATA_DIR)
 
 
 def raw_file(paths, name, date=None):
@@ -81,15 +74,12 @@ def raw_file(paths, name, date=None):
 
 
 # ---------------------------------------------------------------- 配置
+_CONFIG = _config.ConfigCache(ROOT)
+
+
 def load_config(name):
-    """读 config/<name>（YAML；PyYAML 缺失时用系统 Ruby 兜底），带进程内缓存。"""
-    if name in _CFG_CACHE:
-        return _CFG_CACHE[name]
-    data = _config.load_yaml(os.path.join(CONFIG_DIR, name))
-    if not isinstance(data, dict):
-        data = {}
-    _CFG_CACHE[name] = data
-    return data
+    """读 config/<name>（.yaml/.yml/.json 自动识别；PyYAML 缺失时共享库回退 ruby）；进程内缓存，非 dict 视为 {}。"""
+    return _CONFIG.get(name)
 
 
 def load_all_configs():
@@ -102,7 +92,7 @@ def load_all_configs():
 
 
 def reload_configs():
-    _CFG_CACHE.clear()
+    _CONFIG.clear()
     return load_all_configs()
 
 
@@ -147,6 +137,10 @@ def read_jsonl(path):
     return _store.read_jsonl(path)
 
 
+_PRICE_TOKEN_KEYS = ("TELEGRAM_PRICE_BOT_TOKEN", "TELEGRAM_PRICE_BOT")
+_PRICE_CHAT_KEYS = ("TELEGRAM_PRICE_CHAT_ID",)
+
+
 def load_env():
     """凭据从仓库根 .env 读（模块内 .env 可覆盖）。
 
@@ -154,42 +148,23 @@ def load_env():
     本模块所有消息（告警/日报/测试/健康检查）都走这个 Bot；未配置则回退共享 Bot。
     """
     env = _env.load_env(module_dir=ROOT)
-    token = env.get("TELEGRAM_PRICE_BOT_TOKEN") or env.get("TELEGRAM_PRICE_BOT") or ""
-    chat = env.get("TELEGRAM_PRICE_CHAT_ID") or ""
-    if token:
-        env["TELEGRAM_BOT_TOKEN"] = token
-    if chat:
-        env["TELEGRAM_CHAT_ID"] = chat
+    info = _env.resolve_bot_env(env, _PRICE_TOKEN_KEYS, _PRICE_CHAT_KEYS)
+    if info["token_key"] in _PRICE_TOKEN_KEYS:
+        env["TELEGRAM_BOT_TOKEN"] = info["TELEGRAM_BOT_TOKEN"]
+    if info["chat_key"] in _PRICE_CHAT_KEYS:
+        env["TELEGRAM_CHAT_ID"] = info["TELEGRAM_CHAT_ID"]
     return env
 
 
 # ---------------------------------------------------------------- 时区
 def apply_timezone(name):
-    """让进程本地时间跟随配置时区（默认 本地时区）。
-
-    用 TZ 环境变量 + time.tzset()，这样 timeutil.now()/fromtimestamp 与日报日期
-    在 UTC VPS 上也按中东时间走，而不是依赖宿主机时区。
-    """
-    if not name:
-        return None
-    os.environ["TZ"] = str(name)
-    try:
-        time.tzset()
-    except AttributeError:  # Windows 无 tzset，退化为宿主时区
-        pass
-    return str(name)
+    """让进程本地时间跟随配置时区（TZ + tzset；见 crypto_core.timeutil.apply_timezone）。"""
+    return _timeutil.apply_timezone(name)
 
 
 def job_name(module="crypto-price"):
-    """调度任务名：优先 CRYPTO_JOB_LABEL（launchd plist 注入；launchd 会把 XPC 覆盖成 0），
-    其次 XPC_SERVICE_NAME，最后回退手动标记。"""
-    label = os.environ.get("CRYPTO_JOB_LABEL") or ""
-    if label:
-        return label
-    job = os.environ.get("XPC_SERVICE_NAME") or ""
-    if job.startswith("com.crypto-research"):
-        return job
-    return "%s（手动运行）" % module
+    """调度任务名（launchd Label / 手动运行标记），统一由 crypto_core.notify.telegram.job_label 解析。"""
+    return _tg.job_label(module)
 
 
 def set_data_override(base):
@@ -203,14 +178,8 @@ def set_data_override(base):
 def log_line(msg, paths=None, filename="price.log"):
     """追加一行人类可读日志；文件不存在时自动创建。"""
     paths = paths or data_paths(_DATA_OVERRIDE)
-    os.makedirs(paths["logs"], exist_ok=True)
-    line = "%s %s\n" % (now().strftime("%Y-%m-%d %H:%M:%S"), msg)
-    try:
-        with open(os.path.join(paths["logs"], filename), "a", encoding="utf-8") as f:
-            f.write(line)
-    except OSError:
-        pass
-    return line.strip()
+    return _store.append_log_line(os.path.join(paths["logs"], filename), msg,
+                                  ts=now().strftime("%Y-%m-%d %H:%M:%S"))
 
 
 # ---------------------------------------------------------------- 单实例锁

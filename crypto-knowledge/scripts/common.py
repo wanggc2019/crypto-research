@@ -59,33 +59,13 @@ def load_env():
     return env
 
 
-def _first_value(raw, keys):
-    for key in keys:
-        if raw.get(key):
-            return raw[key], key
-    return "", ""
-
-
 def resolve_bot_env(raw):
     """crypto-knowledge 专用 Bot 优先，否则回退共享 Bot。
 
     返回 {TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, token_key, chat_key, dedicated}；
-    token_key/chat_key 记录实际命中的变量名，供 --whoami 排查。
+    token_key/chat_key 记录实际命中的变量名，供 --whoami 排查。逻辑见 crypto_core.env.resolve_bot_env。
     """
-    token, token_key = _first_value(raw, _KNOWLEDGE_TOKEN_KEYS)
-    chat, chat_key = _first_value(raw, _KNOWLEDGE_CHAT_KEYS)
-    dedicated = bool(token and chat)
-    if not token:
-        token, token_key = raw.get("TELEGRAM_BOT_TOKEN", ""), "TELEGRAM_BOT_TOKEN"
-    if not chat:
-        chat, chat_key = raw.get("TELEGRAM_CHAT_ID", ""), "TELEGRAM_CHAT_ID"
-    return {
-        "TELEGRAM_BOT_TOKEN": token,
-        "TELEGRAM_CHAT_ID": str(chat or ""),
-        "token_key": token_key,
-        "chat_key": chat_key,
-        "dedicated": dedicated,
-    }
+    return core_env.resolve_bot_env(raw, _KNOWLEDGE_TOKEN_KEYS, _KNOWLEDGE_CHAT_KEYS)
 
 
 def load_bot_env():

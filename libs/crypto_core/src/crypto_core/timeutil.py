@@ -141,3 +141,18 @@ def decay(age, half_life_hours):
     if age is None or half_life_hours is None or half_life_hours <= 0:
         return 1.0
     return 2 ** (-float(age) / float(half_life_hours))
+
+
+def apply_timezone(name):
+    """让进程本地时间跟随配置时区：设置 TZ 并 time.tzset()；name 为空时不动，返回 None。
+
+    这样 now()/fromtimestamp 与日报日期在 UTC 主机上也按配置时区走，不依赖宿主机时区。
+    """
+    if not name:
+        return None
+    os.environ["TZ"] = str(name)
+    try:
+        time.tzset()
+    except AttributeError:  # Windows 无 tzset，退化为宿主时区
+        pass
+    return str(name)

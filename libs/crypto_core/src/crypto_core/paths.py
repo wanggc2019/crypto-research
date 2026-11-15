@@ -54,3 +54,15 @@ def rel_repo(path):
         return os.path.relpath(str(path), str(repo_root()))
     except ValueError:
         return str(path)
+
+
+DATA_SUBDIRS = ("raw", "state", "reports", "exports", "logs")
+
+
+def data_layout(root):
+    """模块 data/ 标准布局：{root, raw, state, reports, exports, logs}（只算路径，不建目录）。"""
+    root = os.path.abspath(str(root))
+    out = {"root": root}
+    for sub in DATA_SUBDIRS:
+        out[sub] = os.path.join(root, sub)
+    return out

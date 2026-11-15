@@ -53,3 +53,18 @@ def read_jsonl(path):
             except ValueError:
                 continue
     return out
+
+
+def append_log_line(path, msg, ts=None):
+    """向人类可读日志追加一行 `<YYYY-MM-DD HH:MM:SS> msg`；写失败不抛。返回写入的行（不含换行）。"""
+    from . import timeutil
+
+    stamp = ts or timeutil.now().strftime("%Y-%m-%d %H:%M:%S")
+    line = "%s %s" % (stamp, msg)
+    try:
+        ensure_parent(path)
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+    except OSError:
+        pass
+    return line
