@@ -205,14 +205,14 @@ def run(args):
         p1 = [r for r in push if r.get("level") != "P0"]
         sent = 0
         for r in p0:
-            ok, err = notify.send(brief.render_card(r))
+            ok, err = notify.send(brief.render_card(r), signal={"severity": "P0", "key": r.get("id")})
             if ok:
                 sent += 1
                 notified["ids"][r["id"]] = ts_iso()
             else:
                 print("❌ 推送失败：%s" % err)
         if p1:
-            ok, err = notify.send(brief.render_digest(p1))
+            ok, err = notify.send(brief.render_digest(p1), signal={"severity": "P1", "key": "p1-digest"})
             if ok:
                 sent += len(p1)
                 for r in p1:

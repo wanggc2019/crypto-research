@@ -570,7 +570,7 @@ def cmd_test(args, paths, cfg):
         print(text)
         print("\n（dry-run：未发送）")
         return 0
-    ok, err = send_message(token, chat_id, text, True)
+    ok, err = send_message(token, chat_id, text, True, meta={"module": "crypto-price", "kind": "test"})
     if ok:
         print("✅ 测试消息已发送（静默）")
         return 0

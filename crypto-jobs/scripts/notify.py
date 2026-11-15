@@ -27,7 +27,7 @@ def send(text, dry_run=False, silent=False):
     token, chat, problems = check_credentials(load_bot_env())
     if problems:
         return False, "凭据不完整：%s" % "；".join(problems)
-    return send_message(token, chat, text, silent=silent)
+    return send_message(token, chat, text, silent=silent, meta={"module": "crypto-jobs", "kind": "info"})
 
 
 def send_weekly(data, dry_run=False, report_path=None):

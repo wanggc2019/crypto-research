@@ -80,7 +80,7 @@ def main(argv=None):
         from crypto_core.notify import check_credentials, send_message
         token, chat, problems = check_credentials(envlib.load_env())
         if problems: print("凭据不完整", file=sys.stderr); return 2
-        ok, err = send_message(token, chat, tg)
+        ok, err = send_message(token, chat, tg, meta={"module": "crypto-analyst", "kind": "report"})
         if not ok: print("发送失败：%s" % err, file=sys.stderr); return 1
         print("已发送（%d 字符）" % len(tg))
     return 0

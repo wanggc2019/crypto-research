@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """告警投递：模板渲染 + Telegram 发送。"""
 
-from . import telegram, templates  # noqa: F401
+from . import budget, ledger, telegram, templates  # noqa: F401  # noqa: F401,E402
+from .budget import send_signal  # noqa: F401,E402
 from .telegram import (  # noqa: F401
     TOKEN_RE,
     build_multipart,
@@ -28,4 +29,7 @@ __all__ = [
     "tg_call",
     "job_label",
     "discover_chat_id",
+    "send_signal",
+    "budget",
+    "ledger",
 ]

@@ -38,7 +38,7 @@ from common import (  # noqa: E402
     today_str,
     ts_iso,
 )
-from crypto_core.notify import check_credentials, send_message  # noqa: E402
+from crypto_core.notify import check_credentials, send_message, send_signal  # noqa: E402
 from crypto_core.timeutil import in_quiet_hours  # noqa: E402
 
 MAX_LEN = 4096
@@ -353,7 +353,7 @@ def run(args):
         if args.dry_run:
             print("[dry-run] 测试消息：\n" + text)
             return 0
-        ok, err = send_message(token, chat, text)
+        ok, err = send_message(token, chat, text, meta={"module": "crypto-x-kol", "kind": "test"})
         print("测试消息%s%s" % ("发送成功 ✅" if ok else "发送失败 ❌", (" | " + err) if err else ""))
         return 0 if ok else 2
 
@@ -481,7 +481,12 @@ def run(args):
     if problems:
         print("❌ Telegram 凭据不完整：%s" % "；".join(problems))
         return 2
-    ok, err = send_message(token, chat, message)  # 保留 Telegram 链接预览（原帖卡片）
+    severity = "P0" if any(p.get("level") == "P0" for p in chosen) else "P1"
+    assets = [t for p in chosen for t in (p.get("tags") or [])]
+    ok, err = send_signal(token, chat, message, module="crypto-x-kol", severity=severity, assets=assets,
+                          key=",".join(str(p.get("id")) for p in chosen[:5]))  # 保留 Telegram 链接预览（原帖卡片）
+    if ok and err.startswith("suppressed"):
+        print("⏸ 全局预算拦截（%s）；条目已在日报中" % err)
     if not ok:
         print("❌ 推送失败：%s" % err)
         return 1

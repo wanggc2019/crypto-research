@@ -56,6 +56,16 @@
 | 免责 | `⚠️ 研究/方法验证，不构成投资建议` |
 | 频率 | 同一内容只发一次；去重键按模块维护，不要重复推送 |
 
+## 5.1 全仓推送台账与全局预算
+
+- **台账**：所有 Telegram 发送（经 `crypto_core.notify`）自动记入 `data/state/notify-ledger/<date>.jsonl`（模块、类别 kind、级别、资产、是否送达、首行预览）；`make notify-report [days=7]` 看送达量、按模块分布、即时信号数、预算会拦多少。
+- **全局预算**只约束即时信号（`kind=signal`：news/policy/x-kol/price/onchain 告警），配置 `config/notify-budget.yaml`：
+  - `daily_signal_cap`（默认 10）：全仓每天送达的非 P0 信号上限；**P0 永远放行**；
+  - `correlation_window_min`（默认 30）：同一关注资产（BTC/ETH/BNB）在窗口内已有**其它模块**送达的信号 → 视为跨模块重复；
+  - `mode`：`observe`（默认，只在台账标注「本该拦截」）/ `enforce`（真拦截，被拦内容仍在各模块日报里）/ `off`。
+- 日报/周报/课程/健康检查（kind=report/lesson/health）与 jobs 速报（info）只记台账、不占预算。
+- 设计与取舍见 [ADR 0009](adr/0009-notify-budget.md)。
+
 ## 6. 实现映射（改配置不改代码）
 
 | 项 | 位置 |
@@ -64,6 +74,7 @@
 | 总结类时间 | `crypto-analyst/deploy/launchd/agent.plist.tmpl` 的 `StartCalendarInterval` |
 | 报告类型分派 | `crypto-analyst/scripts/run_agent.sh`（按时间+日期） |
 | 兜底语义 | `libs/crypto_core/timeutil.in_quiet_hours`：`off/空/none/0` = 不静默 |
+| 全局预算 / 跨模块去重 | `config/notify-budget.yaml`；实现 `libs/crypto_core/src/crypto_core/notify/budget.py`、`ledger.py` |
 
 ## 7. 变更流程
 

@@ -33,7 +33,7 @@ import holdings  # noqa: E402
 
 from crypto_core import config as _config  # noqa: E402
 from crypto_core import http as _http  # noqa: E402
-from crypto_core.notify import check_credentials, send_message  # noqa: E402
+from crypto_core.notify import check_credentials, send_signal  # noqa: E402
 
 WATCHLIST_FILE = "holdings-watchlist.yaml"
 STATE_FILE = "state/holdings.json"
@@ -261,7 +261,10 @@ def push_change_alerts(events, alerts_cfg, paths, now):
     token, chat, problems = check_credentials(env)
     if problems:
         return 0, "凭据不完整：%s" % "；".join(problems), suppressed
-    ok, error = send_message(token, chat, holdings.render_alert(todo), disable_preview=True)
+    severity = "P0" if any(e.get("severity") == "P0" for e in todo) else "P1"
+    ok, error = send_signal(token, chat, holdings.render_alert(todo), module="crypto-onchain", severity=severity,
+                            assets=[e.get("asset") for e in todo], key=",".join(str(e.get("key")) for e in todo),
+                            disable_preview=True)
     if not ok:
         return 0, error, suppressed
     state["messages"] = (holdings._as_int(state.get("messages")) or 0) + 1

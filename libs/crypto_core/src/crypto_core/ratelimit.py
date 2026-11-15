@@ -9,6 +9,8 @@
 import fcntl
 import json
 import os
+import sys
+import tempfile
 import time
 
 from . import paths
@@ -25,7 +27,12 @@ def enabled():
 
 
 def state_dir():
-    return os.environ.get("CRYPTO_RATELIMIT_DIR") or str(paths.repo_root() / "data" / "state")
+    explicit = os.environ.get("CRYPTO_RATELIMIT_DIR")
+    if explicit:
+        return explicit
+    if "unittest" in sys.modules:   # 单测不占生产配额
+        return os.path.join(tempfile.gettempdir(), "crypto-ratelimit-unittest")
+    return str(paths.repo_root() / "data" / "state")
 
 
 def acquire(name, per_minute, max_wait=90.0, directory=None, clock=time.time, sleep=time.sleep):

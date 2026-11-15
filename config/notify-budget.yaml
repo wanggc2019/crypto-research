@@ -1,0 +1,14 @@
+# 全仓推送预算（crypto_core.notify.budget）—— 只约束「即时信号」（kind=signal）；
+# 日报/周报/课程/健康检查不受影响。台账：data/state/notify-ledger/<date>.jsonl；统计：make notify-report
+#
+# mode:
+#   observe —— 默认。照常发送，只在台账里标注「本该拦截」（would_suppress）及原因，先看一周数据再定上限
+#   enforce —— 真拦截：非 P0 信号超过日预算、或与其它模块 30 分钟内同资产信号重复时不发（内容仍在各模块日报里）
+#   off     —— 关闭预算判定（台账照记）
+mode: observe
+
+# 每天全仓送达的非 P0 即时信号上限（P0 永远放行，只计数）。对应项目目标「每天 ≤10 条可决策信号」。
+daily_signal_cap: 10
+
+# 同一关注资产（BTC/ETH/BNB）在该窗口内已有其它模块送达信号 → 视为跨模块重复。
+correlation_window_min: 30
