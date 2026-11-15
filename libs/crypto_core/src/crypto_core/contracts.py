@@ -9,6 +9,7 @@
 """
 import json
 import os
+import sys
 
 from . import paths
 
@@ -104,14 +105,23 @@ def validate(schema_id, obj):
 
 
 def read(schema_id, date=None, repo=None, default=None):
-    """读取并按 schema 字段核对契约：文件缺失/损坏/schema 不符都返回 default（消费方降级，不抛）。"""
+    """读取并按 schema 字段核对契约：文件缺失/损坏/schema 不符都返回 default（消费方降级，不抛）。
+
+    文件缺失是常态（生产方当天还没产出），静默；文件**存在却损坏或 schema 不符**说明契约出了问题，
+    往 stderr 打一行警告（进各模块 collect.log），避免长期静默丢数据。
+    """
     path = export_path(schema_id, date=date, repo=repo)
+    if not os.path.exists(path):
+        return default
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
-    except (OSError, ValueError):
+    except (OSError, ValueError) as e:
+        sys.stderr.write("[contracts] ⚠️ %s 读取失败（%s）：%s\n" % (schema_id, path, e))
         return default
-    if not isinstance(data, dict) or data.get("schema") != schema_id:
+    found = data.get("schema") if isinstance(data, dict) else type(data).__name__
+    if found != schema_id:
+        sys.stderr.write("[contracts] ⚠️ %s 期望 schema=%s，实际 %r：%s\n" % (path, schema_id, found, "已忽略"))
         return default
     return data
 

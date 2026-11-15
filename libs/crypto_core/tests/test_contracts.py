@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
 """crypto_core.contracts：登记表、校验、读取降级、样例仓库。"""
+import io
 import json
 import os
 import tempfile
 import unittest
+from unittest import mock
 
 from crypto_core import contracts
 
@@ -49,7 +51,9 @@ class ContractsTest(unittest.TestCase):
             self.assertIsNone(contracts.read("price/snapshot/v1", repo=root))
             with open(path, "w") as f:
                 json.dump({"schema": "price/snapshot/v2", "assets": {}}, f)
-            self.assertIsNone(contracts.read("price/snapshot/v1", repo=root), "schema 不符视为不可用")
+            with mock.patch("sys.stderr", new_callable=io.StringIO) as err:
+                self.assertIsNone(contracts.read("price/snapshot/v1", repo=root), "schema 不符视为不可用")
+            self.assertIn("期望 schema=price/snapshot/v1", err.getvalue(), "存在但不符要留警告")
 
     def test_example_repo_roundtrip(self):
         with tempfile.TemporaryDirectory() as root:

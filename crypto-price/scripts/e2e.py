@@ -49,8 +49,11 @@ def main():
             print("❌ crypto-price e2e [契约导出] rc=%s\n%s" % (proc.returncode, (proc.stderr or "")[-1500:]))
             return 1
         exports = os.path.join(live, "exports")
-        daily = [f for f in os.listdir(exports) if f.startswith("daily-")]
-        for schema_id, name in (("price/snapshot/v1", "latest.json"), ("price/daily/v1", daily[0] if daily else "")):
+        daily = sorted(f for f in os.listdir(exports) if f.startswith("daily-")) if os.path.isdir(exports) else []
+        if not daily:
+            print("❌ crypto-price e2e 契约：%s 下没有 daily-*.json 导出" % exports)
+            return 1
+        for schema_id, name in (("price/snapshot/v1", "latest.json"), ("price/daily/v1", daily[-1])):
             try:
                 with open(os.path.join(exports, name), encoding="utf-8") as f:
                     problems = contracts.validate(schema_id, json.load(f))
