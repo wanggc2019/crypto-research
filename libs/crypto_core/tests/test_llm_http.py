@@ -85,6 +85,10 @@ class HttpLlmTest(unittest.TestCase):
         self.assertEqual(headers.get("Content-Type"), "application/json")
         self.assertEqual(headers.get("User-Agent"), "ua-test/1")
 
+    def test_negative_retries_still_tries_once(self):
+        self.assertEqual(http.get_json(self.base + "/x", retries=-1), {"path": "/x"})
+        self.assertEqual(len(_Handler.calls), 1)
+
     def test_json_rpc(self):
         self.assertEqual(http.json_rpc(self.base + "/rpc", "eth_blockNumber", []), "0x10")
         body = _Handler.calls[-1][3]

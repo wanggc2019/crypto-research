@@ -38,6 +38,7 @@ def request(url, data=None, timeout=15, headers=None, ua=None, retries=0, backof
     h = {"User-Agent": ua or UA_DEFAULT, "Accept": "*/*"}
     if headers:
         h.update({k: v for k, v in headers.items() if isinstance(v, str)})
+    retries = max(0, int(retries or 0))
     last_err = None
     for attempt in range(retries + 1):
         try:

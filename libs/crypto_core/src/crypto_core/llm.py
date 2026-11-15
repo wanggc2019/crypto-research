@@ -83,6 +83,8 @@ def chat(messages, api_key, model=None, base_url=None, timeout=60, retries=0, **
                 detail = e.read().decode("utf-8", "ignore")[:300]
             except Exception:  # noqa: BLE001
                 detail = ""
+            finally:
+                e.close()
             last = LLMError("HTTP %s: %s" % (e.code, detail))
         except urllib.error.URLError as e:
             last = LLMError("网络错误：%s" % e)
