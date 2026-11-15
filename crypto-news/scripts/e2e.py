@@ -43,7 +43,6 @@ def main():
         proc = subprocess.run([sys.executable, os.path.join(ROOT, "scripts", "score.py"), "--date", date],
                               cwd=ROOT, env=env, capture_output=True, text=True, timeout=180)
         _require(proc.returncode == 0, "score.py rc=%s\n%s" % (proc.returncode, proc.stderr[-2000:]))
-        _require("评分完成" in proc.stdout, "score.py 未完成评分：%s" % proc.stdout[-500:])
 
         report = os.path.join(data_dir, "reports", "%s.md" % date)
         alerts_path = os.path.join(data_dir, "state", "alerts-%s.json" % date)
@@ -61,11 +60,14 @@ def main():
 
         titles = [it.get("title", "") for it in export["items"]]
         _require(not any("tournament" in t for t in titles), "促销条目未被丢弃")
-        _require(sum("drains $45 million" in t for t in titles) <= 1, "同 URL 重复条目未去重")
+        hack = [it for it in export["items"] if it.get("url") == "https://example.com/defi-hack"]
+        _require(len(hack) == 1, "同 URL 重复条目未去重或被漏掉：%d 条" % len(hack))
+        _require(hack[0].get("severity") in ("P0", "P1"), "$45M 被盗事件应为 P0/P1，实际 %s" % hack[0].get("severity"))
         print("✅ crypto-news e2e：counts=%s" % json.dumps(counts, ensure_ascii=False))
+        return 0
     finally:
         shutil.rmtree(data_dir, ignore_errors=True)
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

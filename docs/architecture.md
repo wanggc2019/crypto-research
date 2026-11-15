@@ -552,14 +552,12 @@ new-module:       ## make new-module name=crypto-price desc="价格告警"
 
 ### 10.2 CI
 
-当前实现见 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)，四个 job：
+当前实现见 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)，两个 job：
 
 - `hygiene`：`.env` / `data/` / `.venv/` 不得入库
-- `lint`：ruff 检查 libs / tools / 各模块
-- `libs`：crypto_core 单测（离线）
-- `crypto-news`：模块单测（离线；fixtures 回放 P2 补）
+- `gate`：`make gate`，与本地 / pre-push 完全一致（ruff + libs/tools/各模块单测 + 各模块 `scripts/e2e.py` 离线回放 + 审计）
 
-新增模块时：`jobs` 加一个 job + `MODULES` 加一项 + 根 README 模块表加一行（脚手架会打印这三件事）。
+新增模块时 CI 无需改动：gate 自动发现 `crypto-*/` 的 `tests/` 与 `scripts/e2e.py`（脚手架默认生成）；只需在根 README 模块表加一行。
 
 ---
 
