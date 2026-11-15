@@ -453,6 +453,30 @@ def grade_scored(scored, thresholds):
     return scored
 
 
+# ---------------------------------------------------------------- 去重/社交快照
+def item_key(it):
+    """去重键：普通新闻按 URL+标题；social/page_update 每次快照 id 唯一，不能按 URL 去重。"""
+    key = (it.get("url") or "") + "|" + (it.get("title") or "")
+    if it.get("kind") in ("social", "page_update"):
+        return it.get("id") or key
+    return key
+
+
+def latest_social_items(items):
+    """每个 X 账号只保留最新一次主页快照（旧快照里的推文会被新快照覆盖）。"""
+    latest = {}
+    rest = []
+    for it in items:
+        if it.get("kind") != "social":
+            rest.append(it)
+            continue
+        sid = it.get("source_id") or it.get("handle") or ""
+        prev = latest.get(sid)
+        if prev is None or (it.get("published_at") or "") >= (prev.get("published_at") or ""):
+            latest[sid] = it
+    return rest + list(latest.values())
+
+
 # ---------------------------------------------------------------- 主流程
 def main():
     ensure_dirs()
@@ -488,7 +512,7 @@ def main():
             continue
         text = it.get("title", "") + " " + (it.get("body", "") or "")
         # 去重
-        key = (it.get("url") or "") + "|" + (it.get("title") or "")
+        key = item_key(it)
         if key in seen_url:
             continue
         seen_url.add(key)
@@ -543,6 +567,8 @@ def main():
                 keep.append((score, ln[:300]))
         keep.sort(key=lambda x: -x[0])
         return [x[1] for x in keep[:6]]
+
+    items = latest_social_items(items)
 
     news_items, social_hits, social_quiet = [], [], []
     for it in items:

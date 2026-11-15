@@ -279,6 +279,28 @@ class TestDigestPoints(unittest.TestCase):
         self.assertEqual(score.extract_points("Binance pauses withdrawals", "short body"), [])
 
 
+class TestSocialSnapshots(unittest.TestCase):
+    """X 主页每次快照 URL/标题相同，不能按 URL 去重；每源只取最新快照。"""
+
+    def test_social_item_key_uses_id(self):
+        a = {"kind": "social", "url": "https://x.com/cz_binance", "title": "cz_binance 主页更新", "id": "a"}
+        b = {"kind": "social", "url": "https://x.com/cz_binance", "title": "cz_binance 主页更新", "id": "b"}
+        self.assertNotEqual(score.item_key(a), score.item_key(b))
+
+    def test_news_item_key_still_url_title(self):
+        a = {"kind": "news", "url": "https://x.com/a", "title": "t"}
+        self.assertEqual(score.item_key(a), "https://x.com/a|t")
+
+    def test_latest_social_items_keeps_newest_per_source(self):
+        old = {"kind": "social", "source_id": "x_cz", "published_at": "2026-11-15T01:00:00", "id": "old"}
+        new = {"kind": "social", "source_id": "x_cz", "published_at": "2026-11-15T21:00:00", "id": "new"}
+        other = {"kind": "social", "source_id": "x_yihe", "published_at": "2026-11-15T10:00:00", "id": "y"}
+        news = {"kind": "news", "id": "n"}
+        out = score.latest_social_items([old, new, other, news])
+        ids = {x["id"] for x in out}
+        self.assertEqual(ids, {"new", "y", "n"})
+
+
 class TestPageUpdateFetch(unittest.TestCase):
     """html_diff 只取可见文本；CSS/JS/JSON-LD 垃圾页面变化直接忽略。"""
 
