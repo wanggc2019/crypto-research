@@ -1,29 +1,93 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""用 DeepSeek 审查 PR diff，并把结果评论回 GitHub PR。"""
+"""用 DeepSeek 审查 PR diff，并把结果评论回 GitHub PR。
+
+安全边界：
+- 只读 git diff，不执行 PR 代码；
+- fork PR 直接跳过（GITHUB_TOKEN 只读，无法评论）；
+- 同一 PR 的评论用 marker 复用，synchronize 不会重复刷评论；
+- diff 按行截断并显式标记，避免把半个 hunk 发给模型。
+"""
 import json
 import os
 import subprocess
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 
 API_URL = "https://api.deepseek.com/chat/completions"
-MAX_DIFF = 60000
+GITHUB_API = "https://api.github.com"
+MAX_DIFF = 40000
+MAX_COMMENT = 60000
+MARKER = "<!-- ai-review -->"
 
 
-def get_diff(base, head):
-    proc = subprocess.run(
-        ["git", "diff", "--unified=40", "%s...%s" % (base, head)],
-        capture_output=True, text=True, check=False,
-    )
+def required_env(name):
+    value = os.environ.get(name, "").strip()
+    if not value:
+        raise RuntimeError("缺少环境变量 %s" % name)
+    return value
+
+
+def trim_diff(diff, limit=MAX_DIFF):
+    """按行截断，保证不把半个 hunk 发给模型；截断时显式标记。"""
+    if len(diff) <= limit:
+        return diff
+    lines = diff.splitlines(keepends=True)
+    kept, used = [], 0
+    for line in lines:
+        if used + len(line) > limit:
+            break
+        kept.append(line)
+        used += len(line)
+    return "".join(kept).rstrip() + "\n[diff truncated: 仅审查以上部分，原始 diff %d 字符]\n" % len(diff)
+
+
+def _run(cmd, timeout=60):
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("命令超时：%s" % " ".join(cmd))
     if proc.returncode != 0:
-        raise RuntimeError(proc.stderr.strip()[-500:])
-    return proc.stdout[:MAX_DIFF]
+        raise RuntimeError("%s 失败：%s" % (" ".join(cmd), (proc.stderr or "").strip()[-500:]))
+    return proc.stdout
+
+
+def ensure_commit(sha, ref=None):
+    """确保 base commit 在本地；fork PR/浅克隆时可能缺失。"""
+    if subprocess.run(["git", "cat-file", "-e", "%s^{commit}" % sha],
+                      capture_output=True).returncode == 0:
+        return
+    try:
+        _run(["git", "fetch", "--no-tags", "origin", sha], timeout=60)
+        return
+    except RuntimeError:
+        if not ref:
+            raise
+    _run(["git", "fetch", "--no-tags", "origin", ref], timeout=60)
+
+
+def get_diff(base, head, base_ref=None):
+    ensure_commit(base, base_ref)
+    diff = _run(["git", "diff", "--unified=40", "%s...%s" % (base, head)], timeout=60)
+    return trim_diff(diff)
+
+
+def parse_review_response(data):
+    """从 DeepSeek 响应中安全取出 content。"""
+    choices = data.get("choices") if isinstance(data, dict) else None
+    if not isinstance(choices, list) or not choices:
+        raise RuntimeError("DeepSeek 响应缺少 choices")
+    message = choices[0].get("message") if isinstance(choices[0], dict) else None
+    content = message.get("content") if isinstance(message, dict) else None
+    if not isinstance(content, str) or not content.strip():
+        raise RuntimeError("DeepSeek 响应缺少 message.content")
+    return content.strip()
 
 
 def review(diff):
-    key = os.environ.get("DEEPSEEK_API_KEY", "")
+    key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
     if not key:
         print("DEEPSEEK_API_KEY 未配置，跳过 AI 审查")
         return ""
@@ -48,58 +112,92 @@ DIFF:
         "model": "deepseek-chat",
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.2,
-        "max_tokens": 2000,
+        "max_tokens": 3000,
     }
     req = urllib.request.Request(
         API_URL,
         data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Authorization": "Bearer " + key,
-            "Content-Type": "application/json",
-        },
+        headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"},
         method="POST",
     )
     try:
         with urllib.request.urlopen(req, timeout=90) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
+            return parse_review_response(json.loads(resp.read().decode("utf-8")))
     except urllib.error.HTTPError as e:
-        raise RuntimeError("DeepSeek HTTP %s: %s" % (e.code, e.read().decode("utf-8", "ignore")[:300]))
-    return data["choices"][0]["message"]["content"].strip()
+        raise RuntimeError("DeepSeek HTTP %s: %s" % (
+            e.code, e.read().decode("utf-8", "ignore")[:300]))
+    except urllib.error.URLError as e:
+        raise RuntimeError("DeepSeek 网络错误：%s" % e)
+    except ValueError as e:
+        raise RuntimeError("DeepSeek 响应不是合法 JSON：%s" % e)
 
 
-def comment(body):
-    repo = os.environ["REPO"]
-    pr = os.environ["PR_NUMBER"]
-    token = os.environ["GITHUB_TOKEN"]
-    url = "https://api.github.com/repos/%s/issues/%s/comments" % (repo, pr)
+def _github(method, path, token, payload=None, timeout=30):
+    data = json.dumps(payload).encode("utf-8") if payload is not None else None
     req = urllib.request.Request(
-        url,
-        data=json.dumps({"body": body}).encode("utf-8"),
+        GITHUB_API + path,
+        data=data,
         headers={
             "Authorization": "Bearer " + token,
             "Accept": "application/vnd.github+json",
             "Content-Type": "application/json",
         },
-        method="POST",
+        method=method,
     )
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        return resp.status
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            body = resp.read().decode("utf-8")
+            return resp.status, json.loads(body) if body else {}
+    except urllib.error.HTTPError as e:
+        raise RuntimeError("GitHub API %s %s -> HTTP %s: %s" % (
+            method, path, e.code, e.read().decode("utf-8", "ignore")[:300]))
+    except urllib.error.URLError as e:
+        raise RuntimeError("GitHub API 网络错误：%s" % e)
+
+
+def select_existing_comment(comments):
+    """找本 workflow 之前发的评论（带 MARKER），返回最后一条。"""
+    for item in reversed(comments or []):
+        if isinstance(item, dict) and MARKER in str(item.get("body") or ""):
+            return item
+    return None
+
+
+def comment(body, token, repo, pr):
+    path = "/repos/%s/issues/%s/comments?per_page=100" % (repo, pr)
+    status, comments = _github("GET", path, token)
+    existing = select_existing_comment(comments if isinstance(comments, list) else [])
+    if existing and existing.get("id"):
+        _, _ = _github("PATCH", "/repos/%s/issues/comments/%s" % (repo, existing["id"]),
+                       token, {"body": body})
+        return "updated"
+    _, _ = _github("POST", "/repos/%s/issues/%s/comments" % (repo, pr), token, {"body": body})
+    return "created"
 
 
 def main():
-    if not os.environ.get("PR_NUMBER"):
+    pr = os.environ.get("PR_NUMBER", "").strip()
+    if not pr:
         print("不是 PR 事件，跳过")
         return 0
-    diff = get_diff(os.environ["BASE_SHA"], os.environ["HEAD_SHA"])
+    repo = required_env("REPO")
+    head_repo = os.environ.get("HEAD_REPO", "").strip()
+    if head_repo and head_repo != repo:
+        print("fork PR（%s != %s），跳过 AI 审查" % (head_repo, repo))
+        return 0
+    base = required_env("BASE_SHA")
+    head = required_env("HEAD_SHA")
+    diff = get_diff(base, head, os.environ.get("BASE_REF", "").strip() or None)
     if not diff.strip():
         print("diff 为空，跳过")
         return 0
     review_text = review(diff)
     if not review_text:
         return 0
-    body = review_text + "\n\n> 由 DeepSeek 自动审查；仅供参考，不替代人工 review。"
-    comment(body)
-    print("AI 审查评论已发布")
+    body = (MARKER + "\n" + review_text +
+            "\n\n> 由 DeepSeek 自动审查；仅供参考，不替代人工 review。")
+    action = comment(body[:MAX_COMMENT], required_env("GITHUB_TOKEN"), repo, pr)
+    print("AI 审查评论已%s" % ("更新" if action == "updated" else "发布"))
     return 0
 
 
