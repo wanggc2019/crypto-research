@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# 提交前扫描 staged 变更中的硬编码密钥。
+# 安装：make hooks；跳过一次：SKIP_GITLEAKS=1 git commit ...
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+
+if [ "${SKIP_GITLEAKS:-0}" = "1" ]; then
+  echo "[gitleaks] SKIP_GITLEAKS=1，跳过"
+  exit 0
+fi
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "[gitleaks] 未安装，跳过（brew install gitleaks）"
+  exit 0
+fi
+
+echo "[gitleaks] 扫描 staged 变更..."
+gitleaks git --pre-commit --staged --redact --verbose
