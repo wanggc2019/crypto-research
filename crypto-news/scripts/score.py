@@ -487,9 +487,14 @@ def main():
             date = args[i + 1]
 
     raw_path = os.path.join(RAW_DIR, date, "items.jsonl")
-    if not os.path.exists(raw_path):
-        print("没有找到 %s，请先跑 fetch.py" % raw_path)
-        return
+    if os.path.exists(raw_path):
+        with open(raw_path, "r", encoding="utf-8") as f:
+            raw_lines = f.readlines()
+    else:
+        # 跨天首轮常见：fetch 本轮 0 新增，当天 raw 尚未生成。按「当天 0 条」正常评分，
+        # 照常写出空的 alerts/报告/exports，下游（notify、crypto-analyst）不必特殊处理缺文件。
+        print("当天暂无原始条目（%s 不存在），按 0 条评分" % raw_path)
+        raw_lines = []
 
     thresholds = load_config("thresholds.yaml")
     max_age_days = thresholds.get("scoring", {}).get("max_age_days", 7)
@@ -501,7 +506,7 @@ def main():
 
     items, seen_url = [], set()
     total = 0
-    for line in open(raw_path, "r", encoding="utf-8"):
+    for line in raw_lines:
         line = line.strip()
         if not line:
             continue
