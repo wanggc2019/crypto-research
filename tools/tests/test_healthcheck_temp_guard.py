@@ -39,6 +39,10 @@ class TempCheckoutGuardTest(unittest.TestCase):
         self.assertFalse(healthcheck.is_temp_checkout("/opt/crypto-research"))
         self.assertFalse(healthcheck.is_temp_checkout("/tmpfoo/repo"))
 
+    def test_tmpdir_root_does_not_match_everything(self):
+        with mock.patch.object(healthcheck.tempfile, "gettempdir", return_value="/"):
+            self.assertFalse(healthcheck.is_temp_checkout("/opt/crypto-research"))
+
     def test_no_install_from_temp_checkout(self):
         fake_repo = Path(tempfile.gettempdir()) / "copy" / "repo"
         with mock.patch.object(healthcheck, "REPO", fake_repo):

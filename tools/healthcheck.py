@@ -150,7 +150,7 @@ _TEMP_ROOTS = ("/tmp", "/private/tmp", "/var/folders", "/private/var/folders")
 def is_temp_checkout(repo=None):
     """仓库是否位于系统临时目录（测试/实验用的副本）：这类副本不应被注册成 launchd 任务。"""
     path = os.path.realpath(str(repo or REPO))
-    roots = set(_TEMP_ROOTS) | {os.path.realpath(tempfile.gettempdir())}
+    roots = {r for r in set(_TEMP_ROOTS) | {os.path.realpath(tempfile.gettempdir())} if r != "/"}  # TMPDIR=/ 时不误判全部路径
     return any(path == r or path.startswith(r.rstrip("/") + "/") for r in roots)
 
 
