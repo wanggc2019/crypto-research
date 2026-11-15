@@ -12,11 +12,14 @@ import sys
 from brief import sample_card
 
 from common import job_name, load_env
-from crypto_core.notify import check_credentials, send_message
+from crypto_core.notify import check_credentials, send_message, send_signal
 
 
-def send(text, dry_run=False, silent=False):
+def send(text, dry_run=False, silent=False, signal=None, kind="info"):
     """发送 HTML 文本；返回 (ok, error)。dry_run 只打印。
+
+    signal={"severity", "key"} 时走全局推送预算（crypto_core.notify.send_signal）；
+    被预算拦截返回 (True, "suppressed: …")。其它消息按 kind 记入推送台账。
 
     统一在这里补 🏷 任务标签，避免各个卡片忘记带、分不清来源。
     """
@@ -28,8 +31,10 @@ def send(text, dry_run=False, silent=False):
     token, chat, problems = check_credentials(load_env())
     if problems:
         return False, "凭据不完整：%s" % "；".join(problems)
-    ok, err = send_message(token, chat, text, silent=silent)
-    return ok, err
+    if signal:
+        return send_signal(token, chat, text, module="crypto-policy", severity=signal.get("severity"),
+                           assets=signal.get("assets") or (), key=signal.get("key"), silent=silent)
+    return send_message(token, chat, text, silent=silent, meta={"module": "crypto-policy", "kind": kind})
 
 
 def main(argv=None):

@@ -304,7 +304,7 @@ def notify(text):
         if problems:
             log("凭据不完整，跳过告警")
             return False
-        ok, err = send_message(token, chat, text)
+        ok, err = send_message(token, chat, text, meta={"module": "repo", "kind": "health"})
         log("告警发送：%s" % ("ok" if ok else ("失败 %s" % err)))
         return ok
     except Exception as exc:  # noqa: BLE001 - 告警失败不能影响看门狗

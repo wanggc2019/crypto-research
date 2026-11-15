@@ -25,7 +25,7 @@ import context as market_context
 import common
 from crypto_core import http as _http
 from crypto_core import timeutil
-from crypto_core.notify import check_credentials, esc, job_label, send_message
+from crypto_core.notify import check_credentials, esc, job_label, send_signal
 
 STATE_FILE = "state/walletflow-alerts.json"
 TAG_CACHE = "state/address-tags.json"
@@ -600,7 +600,7 @@ def _rare_process(records, cfg, paths, labels, dry_run, now):
     if problems:
         return {"sent": False, "n": 0, "text": text,
                 "error": "凭据不完整：%s" % "；".join(problems), "suppressed": 0}
-    ok, err = send_message(token, chat, text, disable_preview=True)
+    ok, err = send_signal(token, chat, text, module="crypto-onchain", severity="P0", disable_preview=True)
     if not ok:
         return {"sent": False, "n": 0, "text": text, "error": err, "suppressed": 0}
     for rec in picks:
@@ -667,7 +667,7 @@ def process(records, cfg, paths, labels, dry_run=False, now=None, context=None):
         save_state(paths, state)
         return {"sent": False, "n": len(to_send), "text": text,
                 "error": "凭据不完整：%s" % "；".join(problems), "suppressed": len(suppressed)}
-    ok, err = send_message(token, chat, text, disable_preview=True)
+    ok, err = send_signal(token, chat, text, module="crypto-onchain", severity="P0", disable_preview=True)
     if not ok:
         state["pending"] = (state.get("pending") or []) + to_send
         state["pending"] = state["pending"][:PENDING_MAX]

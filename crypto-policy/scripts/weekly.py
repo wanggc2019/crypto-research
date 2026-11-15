@@ -69,7 +69,7 @@ def main(argv=None):
     print("✅ 周报已写入 %s" % path)
     if args.notify:
         text = "📅【crypto-policy】<b>政策周报</b>\n\n" + brief.esc(md[:3500])
-        ok, err = notify.send(text)
+        ok, err = notify.send(text, kind="report")
         if not ok:
             print("❌ 推送失败：%s" % err)
             return 1

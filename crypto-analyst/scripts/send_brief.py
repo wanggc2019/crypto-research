@@ -272,11 +272,11 @@ def main(argv=None):
     if problems:
         print("❌ Telegram 凭据不完整：%s" % "；".join(problems), file=sys.stderr)
         return 2
-    ok, err = send_message(token, chat, text)
+    ok, err = send_message(token, chat, text, meta={"module": "crypto-analyst", "kind": "report"})
     if not ok and "parse entities" in (err or ""):
         import html
         plain = html.unescape(text.replace("<b>", "").replace("</b>", ""))
-        ok, err = send_message(token, chat, plain)
+        ok, err = send_message(token, chat, plain, meta={"module": "crypto-analyst", "kind": "report"})
         if ok:
             print("⚠️ HTML 解析失败，已改用纯文本发送成功", file=sys.stderr)
     if not ok:

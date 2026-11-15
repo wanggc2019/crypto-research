@@ -367,7 +367,7 @@ def main(argv=None):
     if problems:
         print("❌ Telegram 凭据不完整：%s" % "；".join(problems), file=sys.stderr)
         return 2
-    ok, err = send_message(token, chat, tg)
+    ok, err = send_message(token, chat, tg, meta={"module": "crypto-analyst", "kind": "report"})
     if not ok:
         print("❌ 周报发送失败：%s" % err, file=sys.stderr)
         return 1

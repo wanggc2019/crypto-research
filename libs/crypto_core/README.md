@@ -26,6 +26,7 @@
 | `dedupe` | `DailyKeys`（按天去重，兼容既有 notified.json）、`Cooldown`（分钟级冷却） |
 | `notify` | `check_credentials` / `send_message(..., silent=)` / `discover_chat_id` / `format_alert` / 模板与 HTML 转义 |
 | `http` | GET（UA/超时/重试，补 308 跟随但仅 GET/HEAD）、`post_json()`、`json_rpc()`（公共 RPC）——**模块不要再直接 `urllib.request.urlopen`** |
+| `notify.ledger` / `notify.budget` | 全仓推送台账（每条发送自动记账）与全局预算：`send_signal(token, chat, text, module, severity, assets, key)` 统一即时信号出口（P0 放行、日预算、跨模块同资产去重；observe/enforce/off，见 `config/notify-budget.yaml`） |
 | `contracts` | 跨模块 exports 契约登记表：`read(schema, date=, repo=)`（降级不抛）/ `export_path()` / `validate()` / `example()` / `write_example_repo()`；见 ADR 0008 |
 | `ratelimit` | 跨进程共享滑动窗口限速（文件锁）；`http` 对 `r.jina.ai` 自动套用（匿名 18/min、带 key 90/min，`JINA_RPM`/`JINA_RPM_KEYED` 覆盖，`CRYPTO_RATELIMIT=0` 关闭）；超时抛 `RateLimited`（含 "Too Many Requests"，被各模块按 SKIP 处理） |
 | `llm` | OpenAI 兼容 chat/completions（默认 DeepSeek）：`find_api_key()`（.env → 环境变量 → ~/.dsh refs）、`chat()`（`LLMError` 含 HTTP 码）、`extract_json()`；提示词/缓存/降级留在调用方 |

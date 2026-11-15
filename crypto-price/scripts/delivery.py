@@ -20,7 +20,7 @@ import cards
 
 import common
 from crypto_core import timeutil
-from crypto_core.notify import check_credentials, send_message
+from crypto_core.notify import check_credentials, send_message, send_signal
 
 SEV_RANK = {"P0": 0, "P1": 1, "P2": 2}
 DEFAULT_COOLDOWN_MIN = 30
@@ -402,7 +402,9 @@ def deliver(events, rules_cfg, state_dir, env=None, now=None, dry_run=False,
             continue
         text = cards.format_price_alert(alert)
         # 价格告警保留 Telegram 链接预览（设计约束展示行情卡片）。
-        ok, err = send_fn(token, chat_id, text, False)
+        ok, err = send_signal(token, chat_id, text, module="crypto-price", severity=alert.get("severity"),
+                              assets=[alert.get("asset") or ev.get("asset")], key=key,
+                              sender=send_fn, sender_args=(False,))
         if ok:
             state["counts"][alert["severity"]] = state["counts"].get(alert["severity"], 0) + 1
             state["last_sent_ts"] = now_ts

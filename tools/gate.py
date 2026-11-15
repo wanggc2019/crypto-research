@@ -37,10 +37,16 @@ if not os.path.exists(RUFF):
 LIBS = os.path.join(REPO, "libs", "crypto_core", "src")
 
 
+# 共享状态（推送台账 / 跨进程限速）在 gate 里一律指向临时目录：测试不得污染生产计数
+_GATE_STATE = tempfile.mkdtemp(prefix="gate-shared-state-")
+
+
 def _env(extra=None):
     env = dict(os.environ)
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     env["PYTHONPATH"] = LIBS
+    env["CRYPTO_NOTIFY_LEDGER_DIR"] = os.path.join(_GATE_STATE, "notify-ledger")
+    env["CRYPTO_RATELIMIT_DIR"] = os.path.join(_GATE_STATE, "ratelimit")
     if extra:
         env.update(extra)
     return env

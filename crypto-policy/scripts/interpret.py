@@ -289,7 +289,7 @@ def run(args):
             f.write(md)
         status = "drafted"
         if args.notify:
-            ok, err = notify.send(brief.render_interpret_card(rec, draft))
+            ok, err = notify.send(brief.render_interpret_card(rec, draft), kind="report")
             if ok:
                 sent += 1
                 status = "pushed"

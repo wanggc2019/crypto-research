@@ -44,6 +44,7 @@ from crypto_core.notify import (  # noqa: E402
     discover_chat_id,
     format_alert,
     send_message,
+    send_signal,
 )
 from crypto_core.notify.templates import esc as esc  # noqa: E402,F401 - 兼容旧接口
 from crypto_core.timeutil import in_quiet_hours  # noqa: E402
@@ -248,7 +249,7 @@ def main():
         if dry_run:
             print("[dry-run] 测试消息：\n" + text)
             return 0
-        ok, err = send_message(token, chat_id, text)
+        ok, err = send_message(token, chat_id, text, meta={"module": "crypto-news", "kind": "test"})
         print("测试消息%s%s" % ("发送成功 ✅" if ok else "发送失败 ❌", (" | " + err) if err else ""))
         return 0 if ok else 2
 
@@ -262,8 +263,12 @@ def main():
         if dry_run:
             print("\n---- %s ----\n%s" % (a.get("level"), text))
         else:
-            ok, err = send_message(token, chat_id, text)
-            if ok:
+            ok, err = send_signal(token, chat_id, text, module="crypto-news", severity=a.get("level"),
+                                  assets=a.get("assets"), key=k)
+            if ok and err.startswith("suppressed"):
+                notified.mark(k)   # 预算拦截 = 已处理（内容仍在日报里），不再重试
+                print("  ⏸ 全局预算拦截 %s %s（%s）" % (a.get("level"), (a.get("titles") or [""])[0][:50], err))
+            elif ok:
                 notified.mark(k)
                 sent += 1
                 print("  ✅ %s %s" % (a.get("level"), (a.get("titles") or [""])[0][:50]))

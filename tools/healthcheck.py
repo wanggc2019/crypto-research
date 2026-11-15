@@ -546,7 +546,8 @@ def notify_repair(module, before_checks, diag, agent_result, after_checks):
     if problems:
         print("  （凭据不完整，跳过修复报告）")
         return False
-    ok, err = send_message(token, chat, _repair_text(module, before_checks, diag, agent_result, after_checks))
+    ok, err = send_message(token, chat, _repair_text(module, before_checks, diag, agent_result, after_checks),
+                           meta={"module": module, "kind": "health"})
     print("  修复报告：%s" % ("已发送 ✅" if ok else ("发送失败 ❌ " + (err or ""))))
     return ok
 
@@ -600,7 +601,7 @@ def maybe_notify(module, checks, fixed, diag=None, cooldown_min=60, notify_warn=
     if old.get("last_notify_hash") == digest and time.time() - float(last_ts or 0) < cooldown_min * 60:
         print("  （同一问题 %s 分钟内已告警过，跳过）" % cooldown_min)
         return False
-    ok, err = send_message(token, chat, text)
+    ok, err = send_message(token, chat, text, meta={"kind": "health"})
     print("  健康检查告警：%s" % ("已发送 ✅" if ok else ("发送失败 ❌ " + (err or ""))))
     if ok:
         # 冷却状态必须落盘，否则下一轮又会被 health.json 重写冲掉 → 每轮都发
@@ -676,7 +677,7 @@ def check_all_jobs(notify=False, json_out=False, quiet=False, cooldown_min=JOBS_
     if old.get("last_hash") == digest and time.time() - float(old.get("last_ts") or 0) < cooldown_min * 60:
         print("  （同一批异常 %s 分钟内已告警过，跳过）" % cooldown_min)
         return 1
-    ok, err = send_message(token, chat, jobs_notify_text(rows))
+    ok, err = send_message(token, chat, jobs_notify_text(rows), meta={"module": "repo", "kind": "health"})
     if ok:
         JOBS_ALERT_STATE.parent.mkdir(parents=True, exist_ok=True)
         JOBS_ALERT_STATE.write_text(json.dumps(

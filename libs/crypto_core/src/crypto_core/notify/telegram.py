@@ -51,8 +51,10 @@ def tg_call(token, method, payload, timeout=20):
         return json.loads(r.read().decode("utf-8"))
 
 
-def send_message(token, chat_id, text, silent=False, disable_preview=False):
-    """发送一条 HTML 文本，返回 (ok, error_message)。
+def send_message(token, chat_id, text, silent=False, disable_preview=False, meta=None, decision=None):
+    """发送一条 HTML 文本，返回 (ok, error_message)；结果自动记入全仓推送台账（notify/ledger.py）。
+
+    meta：{"module", "kind"(signal/report/health/lesson/info/test/other), "severity", "assets", "key"}，可省略（自动推断模块）。
 
     silent=True 时带 disable_notification（不响铃/不弹通知），用于深夜测试消息。
     disable_preview=True 时关闭链接预览卡片（消息里有链接时不再展开 X/网页预览）。
@@ -74,6 +76,12 @@ def send_message(token, chat_id, text, silent=False, disable_preview=False):
         payload["link_preview_options"] = {"is_disabled": True}
     if silent:
         payload["disable_notification"] = True
+    ok, err = _send_message_raw(token, payload)
+    _ledger_record(meta, ok, err, text, decision)
+    return ok, err
+
+
+def _send_message_raw(token, payload):
     try:
         res = tg_call(token, "sendMessage", payload)
         return bool(res.get("ok")), ""
@@ -86,6 +94,15 @@ def send_message(token, chat_id, text, silent=False, disable_preview=False):
             return False, "%s: %s" % (e.code, raw[:200])
     except Exception as e:  # 网络问题
         return False, "%s: %s" % (type(e).__name__, e)
+
+
+def _ledger_record(meta, ok, err, text, decision=None):
+    try:
+        from . import ledger
+
+        ledger.record(meta, ok=ok, err=err, text=text, decision=decision)
+    except Exception:  # noqa: BLE001 - 台账绝不影响发送
+        pass
 
 
 def discover_chat_id(token):
@@ -123,7 +140,16 @@ def build_multipart(fields, file_field, filename, file_bytes, boundary=None):
     return b"\r\n".join(chunks), "multipart/form-data; boundary=%s" % boundary
 
 
-def send_document(token, chat_id, path, caption="", silent=False, timeout=60):
+def send_document(token, chat_id, path, caption="", silent=False, timeout=60, meta=None):
+    """发送文件（附 caption），返回 (ok, err)；结果记入推送台账（默认 kind=report）。"""
+    meta = dict(meta or {})
+    meta.setdefault("kind", "report")
+    ok, err = _send_document_raw(token, chat_id, path, caption=caption, silent=silent, timeout=timeout)
+    _ledger_record(meta, ok, err, caption or os.path.basename(str(path)))
+    return ok, err
+
+
+def _send_document_raw(token, chat_id, path, caption="", silent=False, timeout=60):
     """上传一个文件（如 Markdown 报告）作为 Telegram 文档；返回 (ok, error)。"""
     try:
         with open(path, "rb") as handle:

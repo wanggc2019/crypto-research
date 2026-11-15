@@ -178,7 +178,7 @@ def send(env, text, silent=False):
     token, chat_id, problems = common.core_tg.check_credentials(env)
     if problems:
         return False, "；".join(problems)
-    return common.core_tg.send_message(token, chat_id, text, silent=silent, disable_preview=True)
+    return common.core_tg.send_message(token, chat_id, text, silent=silent, disable_preview=True, meta={"module": "crypto-knowledge", "kind": "lesson"})
 
 
 def write_report(data_dir, date, slot, text, label=None):

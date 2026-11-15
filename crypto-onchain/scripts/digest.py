@@ -375,7 +375,7 @@ def send_digest(cfg, paths, text, dry_run=False, force=False, now=None):
     if problems:
         return False, "凭据不完整：%s" % "；".join(problems), None
     full = text.rstrip() + "\n\n🏷 任务：%s" % job_label("crypto-onchain")
-    ok, err = send_message(token, chat, full, disable_preview=True)
+    ok, err = send_message(token, chat, full, disable_preview=True, meta={"module": "crypto-onchain", "kind": "report"})
     if not ok:
         return False, err, None
     state["last_sent_date"] = now.strftime("%Y-%m-%d")

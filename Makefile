@@ -15,6 +15,7 @@
 #   make new-module name=crypto-price desc="价格告警"
 #   make jobs                            # launchd 任务总览（只读；json=1 机器可读 / strict=1 有问题退出 1）
 #   make healthcheck-jobs [notify=1]      # 仓库级 launchd 健康检查（notify=1 异常时推 Telegram，60 分钟冷却）
+#   make notify-report [days=7]           # 全仓推送台账：送达量/按模块/即时信号/预算会拦多少
 #   make launchd module=crypto-news action=install|status|uninstall [template=healthcheck]
 #   make healthcheck module=crypto-news [fix=1] [notify=1]   # 手动跑一次健康检查
 #   make prune module=crypto-news          # 数据保留清理（默认 dry-run）
@@ -27,7 +28,7 @@ ALL_MODULES := $(patsubst %/,%,$(wildcard crypto-*/))
 MODULES := $(patsubst %/tests,%,$(wildcard crypto-*/tests))
 LINT_DIRS := libs/crypto_core/src tools $(foreach m,$(ALL_MODULES),$(wildcard $(m)/scripts) $(wildcard $(m)/tests))
 
-.PHONY: setup lint test verify gate hooks new-module launchd jobs jobs-alert healthcheck-jobs prune clean
+.PHONY: setup lint test verify gate hooks new-module launchd jobs jobs-alert healthcheck-jobs notify-report prune clean
 
 setup:
 	@test -x $(PY) || (python3 -m venv $(REPO)/.venv && $(PY) -m pip install -q pyyaml ruff)
@@ -77,6 +78,9 @@ jobs-alert:
 
 healthcheck-jobs:
 	@$(PY) $(REPO)/tools/healthcheck.py --module all $(if $(notify),--notify,) $(if $(json),--json,)
+
+notify-report:
+	@$(PY) $(REPO)/tools/notify_report.py $(if $(days),--days $(days),) $(if $(json),--json,)
 
 launchd:
 	@test -n "$(module)" || (echo "用法：make launchd module=crypto-news action=status"; exit 2)
