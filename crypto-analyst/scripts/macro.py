@@ -21,24 +21,16 @@ import json
 import os
 import sys
 import time
-import urllib.request
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-UA = {"User-Agent": "Mozilla/5.0 (crypto-research/1.0)"}
+UA = "Mozilla/5.0 (crypto-research/1.0)"
+sys.path.insert(0, os.path.join(os.path.dirname(HERE), "libs", "crypto_core", "src"))
+from crypto_core import http as _http  # noqa: E402
 
 
 def http(url, timeout=6, tries=1):
-    last = None
-    for i in range(tries):
-        try:
-            req = urllib.request.Request(url, headers=UA)
-            with urllib.request.urlopen(req, timeout=timeout) as r:
-                return r.read().decode()
-        except Exception as e:  # 网络/HTTP 错误都降级
-            last = e
-            if i < tries - 1:
-                time.sleep(1.0)
-    raise last
+    """GET 文本；失败重试（共 tries 次），最后一次失败抛出（调用方降级）。"""
+    return _http.get(url, timeout=timeout, ua=UA, retries=tries - 1, backoff=1.0).decode()
 
 
 def fetch_dvol(currency="BTC"):

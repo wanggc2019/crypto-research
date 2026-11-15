@@ -15,7 +15,9 @@ import json
 import os
 import re
 import sys
-import urllib.request
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "libs", "crypto_core", "src"))
+from crypto_core import llm  # noqa: E402
 
 SYSTEM_PROMPT = (
     "你是中文财经/加密新闻编辑。把每条英文标题改写成自然、准确、信息完整的中文一句话，"
@@ -26,16 +28,8 @@ SYSTEM_PROMPT = (
 
 
 def find_api_key():
-    key = (os.environ.get("DEEPSEEK_API_KEY") or "").strip()
-    if key:
-        return key
-    path = os.path.expanduser("~/.dsh/.credentials.yaml")
-    try:
-        text = open(path, encoding="utf-8").read()
-    except OSError:
-        return ""
-    m = re.search(r"DEEPSEEK_API_KEY:\s*[\"']?([^\s\"']+)", text)
-    return m.group(1).strip() if m else ""
+    """环境变量 DEEPSEEK_API_KEY → ~/.dsh/.credentials.yaml（见 crypto_core.llm.find_api_key）。"""
+    return llm.find_api_key()
 
 
 def parse_translations(content, expected):
@@ -56,23 +50,12 @@ def translate(titles, timeout=45):
     key = find_api_key()
     if not key:
         return {"error": "missing DEEPSEEK_API_KEY"}
-    body = json.dumps({
-        "model": "deepseek-chat",
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": json.dumps(titles, ensure_ascii=False)},
-        ],
-        "temperature": 0.2,
-    }).encode("utf-8")
-    req = urllib.request.Request(
-        "https://api.deepseek.com/chat/completions",
-        data=body,
-        headers={"Content-Type": "application/json", "Authorization": "Bearer " + key},
-    )
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": json.dumps(titles, ensure_ascii=False)},
+    ]
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-        out = parse_translations(data["choices"][0]["message"]["content"], len(titles))
+        out = parse_translations(llm.chat(messages, key, timeout=timeout, temperature=0.2), len(titles))
         if out is None:
             return {"error": "unparseable model output"}
         return {"translations": out}

@@ -28,13 +28,13 @@ import re
 import subprocess
 import sys
 import time
-import urllib.request
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "libs" / "crypto_core" / "src"))
 from crypto_core import config as core_config  # noqa: E402
 from crypto_core import env as envlib  # noqa: E402
+from crypto_core import http as _http  # noqa: E402
 from crypto_core.notify import check_credentials, send_message  # noqa: E402
 
 LABEL_PREFIX = "com.crypto-research"
@@ -300,10 +300,7 @@ def check_network(fix=False):
     bad = []
     for name, url in targets:
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "crypto-research-health/1.0"})
-            with urllib.request.urlopen(req, timeout=8) as r:
-                if r.status >= 400:
-                    bad.append("%s HTTP %s" % (name, r.status))
+            _http.get(url, timeout=8, ua="crypto-research-health/1.0")   # HTTP ≥400 会抛 HTTPError
         except Exception as e:  # noqa: BLE001
             bad.append("%s: %s" % (name, type(e).__name__))
     if bad:

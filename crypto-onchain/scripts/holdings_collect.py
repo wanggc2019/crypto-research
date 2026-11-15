@@ -26,7 +26,6 @@ import json
 import os
 import sys
 import urllib.parse
-import urllib.request
 
 import common  # isort: skip  # 必须最先导入：common 负责把 libs/crypto_core 加入 sys.path
 
@@ -57,18 +56,7 @@ def _get_json(url, timeout=10):
 
 
 def _rpc_call(url, method, params, timeout=10):
-    body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).encode("utf-8")
-    req = urllib.request.Request(
-        url, data=body,
-        headers={"Content-Type": "application/json", "User-Agent": "crypto-research/1.0"},
-    )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        data = json.loads(resp.read().decode("utf-8", "ignore"))
-    if not isinstance(data, dict):
-        raise ValueError("rpc 响应不是对象")
-    if data.get("error"):
-        raise RuntimeError("rpc error: %s" % str(data["error"])[:160])
-    return data.get("result")
+    return _http.json_rpc(url, method, params, timeout=timeout)
 
 
 def rpc_with_fallback(rpc_urls, method, params, timeout=10):

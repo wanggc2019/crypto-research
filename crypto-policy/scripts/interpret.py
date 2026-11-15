@@ -17,7 +17,6 @@ import json
 import os
 import re
 import sys
-import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import brief  # noqa: E402
@@ -36,6 +35,7 @@ from common import (  # noqa: E402
     today_str,
     ts_iso,
 )
+from crypto_core import llm  # noqa: E402  (common 已把 libs 加入 sys.path)
 
 PENDING_DIR = os.path.join(DATA_DIR, "pending")
 DONE_DIR = os.path.join(PENDING_DIR, "done")
@@ -178,34 +178,23 @@ def _packet(rec, idx):
 
 
 def _llm_draft(rec, idx):
-    key = os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("LLM_API_KEY") or ""
+    key = llm.find_api_key(names=("DEEPSEEK_API_KEY", "LLM_API_KEY"), dsh_fallback=False)
     if not key:
         return None
-    base = (os.environ.get("LLM_BASE_URL") or "https://api.deepseek.com").rstrip("/")
-    model = os.environ.get("LLM_MODEL") or "deepseek-chat"
+    base = os.environ.get("LLM_BASE_URL") or llm.DEFAULT_BASE_URL
+    model = os.environ.get("LLM_MODEL") or llm.DEFAULT_MODEL
     system = (
         "你是中国金融监管法律研究助手。只依据给定原文作答，不编造条款、案号、日期。"
         "输出严格 JSON：{summary,key_points:[],changes:[],impact:[],risks:[],confidence}。"
         "中文，简洁；summary 不超过 120 字；key_points 最多 5 条；confidence 0-1。"
     )
-    payload = {
-        "model": model,
-        "temperature": 0.2,
-        "max_tokens": 1200,
-        "messages": [
-            {"role": "system", "content": system},
-            {"role": "user", "content": _packet(rec, idx)},
-        ],
-    }
-    req = urllib.request.Request(
-        base + "/chat/completions",
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json", "Authorization": "Bearer " + key},
-    )
+    messages = [
+        {"role": "system", "content": system},
+        {"role": "user", "content": _packet(rec, idx)},
+    ]
     try:
-        with urllib.request.urlopen(req, timeout=90) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-        text = (data.get("choices") or [{}])[0].get("message", {}).get("content", "")
+        text = llm.chat(messages, key, model=model, base_url=base, timeout=90,
+                        temperature=0.2, max_tokens=1200) or ""
         m = re.search(r"\{.*\}", text, re.S)
         out = json.loads(m.group(0) if m else text)
         out["engine"] = "deepseek"

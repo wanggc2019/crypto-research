@@ -19,11 +19,11 @@ import re
 import socket
 import time
 import urllib.error
-import urllib.request
 
 import context as market_context
 
 import common
+from crypto_core import http as _http
 from crypto_core import timeutil
 from crypto_core.notify import check_credentials, esc, job_label, send_message
 
@@ -80,10 +80,9 @@ def parse_etherscan_tag(html):
 def fetch_etherscan_tag(addr, timeout=6):
     """取 Etherscan 地址页 name tag（只对 ETH 地址；失败返回空串，绝不抛）。"""
     url = "https://etherscan.io/address/%s" % addr
-    req = urllib.request.Request(url, headers={
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/124.0"})
     try:
-        html = urllib.request.urlopen(req, timeout=timeout).read().decode("utf-8", "ignore")
+        html = _http.get_text(url, timeout=timeout,
+                              ua="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/124.0")
     except (urllib.error.URLError, socket.timeout, OSError, ValueError):
         return ""
     return parse_etherscan_tag(html)
