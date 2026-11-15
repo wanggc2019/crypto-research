@@ -535,7 +535,13 @@ def _test_message(snapshot, cfg=None):
     lines = [
         "✅【crypto-price】<b>测试消息</b>",
         "监控标的：%s" % (" / ".join(watch_assets) or "—"),
-        "当前行情：%s" % ("｜".join(bits) if bits else "行情源暂不可用"),
+        "当前行情：",
+    ]
+    if bits:
+        lines.extend("  " + bit for bit in bits)
+    else:
+        lines.append("  行情源暂不可用")
+    lines += [
         "多源核验：%s" % _source_status_line(snapshot),
         "数据源请求：%s/%s 成功" % (h if h is not None else "—", t if t is not None else "—"),
         "已启用规则：急涨急跌 / 24h 波动 / 新高新低 / 放量 / 资金费率 / 持仓量 / 关键位 / 数据质量",
