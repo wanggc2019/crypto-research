@@ -43,8 +43,10 @@ class TestCommentDedup(unittest.TestCase):
     def test_select_existing_marker(self):
         comments = [
             {"id": 1, "body": "normal comment", "user": {"type": "User"}},
-            {"id": 2, "body": "<!-- ai-review -->\nold", "user": {"type": "Bot"}},
-            {"id": 3, "body": "<!-- ai-review -->\nnew", "user": {"type": "Bot"}},
+            {"id": 2, "body": "<!-- ai-review -->\nold", "user": {"type": "Bot"},
+             "created_at": "2026-01-01T00:00:00Z"},
+            {"id": 3, "body": "<!-- ai-review -->\nnew", "user": {"type": "Bot"},
+             "created_at": "2026-01-02T00:00:00Z"},
         ]
         self.assertEqual(ai_review_pr.select_existing_comment(comments)["id"], 3)
 
@@ -54,6 +56,12 @@ class TestCommentDedup(unittest.TestCase):
              "user": {"type": "User"}},
         ]
         self.assertIsNone(ai_review_pr.select_existing_comment(comments))
+
+    def test_trim_comment_preserves_marker_and_note(self):
+        body = "<!-- ai-review -->\n" + ("x" * 1000)
+        out = ai_review_pr.trim_comment(body, limit=200)
+        self.assertTrue(out.startswith("<!-- ai-review -->"))
+        self.assertIn("[comment truncated:", out)
 
     def test_comment_updates_existing(self):
         calls = []

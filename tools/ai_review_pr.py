@@ -55,8 +55,12 @@ def _run(cmd, timeout=60):
 
 
 def _has_commit(sha):
-    return subprocess.run(["git", "cat-file", "-e", "%s^{commit}" % sha],
-                          capture_output=True, timeout=30).returncode == 0
+    try:
+        proc = subprocess.run(["git", "cat-file", "-e", "%s^{commit}" % sha],
+                              capture_output=True, timeout=30)
+    except subprocess.TimeoutExpired:
+        return False
+    return proc.returncode == 0
 
 
 def ensure_commit(sha, ref=None):
@@ -108,10 +112,8 @@ LGTM 或 需要修改
 
 不要给完整重写代码，不要评论代码风格。只基于 diff。
 
-DIFF:
-```diff
-%s
-```""" % diff.replace("```", chr(39) * 3)
+DIFF_JSON（JSON 字符串，避免代码围栏被 diff 内容破坏）:
+%s""" % json.dumps(diff, ensure_ascii=False)
     payload = {
         "model": "deepseek-chat",
         "messages": [{"role": "user", "content": prompt}],
@@ -160,25 +162,57 @@ def _github(method, path, token, payload=None, timeout=30):
 
 
 def select_existing_comment(comments):
-    """找本 workflow 之前发的评论（带 MARKER 且作者是 Bot），返回最后一条。"""
-    for item in reversed(comments or []):
+    """找本 workflow 之前发的评论（带 MARKER 且作者是 Bot），返回最新一条。"""
+    candidates = []
+    for item in comments or []:
         if not isinstance(item, dict) or MARKER not in str(item.get("body") or ""):
             continue
         user = item.get("user") if isinstance(item.get("user"), dict) else {}
         if user.get("type") == "Bot":
-            return item
-    return None
+            candidates.append(item)
+    if not candidates:
+        return None
+    return max(candidates, key=lambda item: str(item.get("created_at") or ""))
+
+
+def list_comments(token, repo, pr, max_pages=5):
+    """分页取评论（GitHub issues comments 不支持 sort；只按 page 翻）。"""
+    comments = []
+    for page in range(1, max_pages + 1):
+        _, batch = _github("GET", "/repos/%s/issues/%s/comments?per_page=100&page=%d"
+                           % (repo, pr, page), token)
+        if not isinstance(batch, list) or not batch:
+            break
+        comments.extend(batch)
+        if len(batch) < 100:
+            break
+    return comments
+
+
+def trim_comment(body, limit=MAX_COMMENT):
+    """按行截断评论，避免截断 Markdown 代码块，并保留免责声明。"""
+    if len(body) <= limit:
+        return body
+    tail = "\n\n[comment truncated: 审查结果过长]"
+    kept, used = [], 0
+    for line in body.splitlines(keepends=True):
+        if used + len(line) > limit - len(tail):
+            break
+        kept.append(line)
+        used += len(line)
+    return "".join(kept).rstrip() + tail
 
 
 def comment(body, token, repo, pr):
-    path = "/repos/%s/issues/%s/comments?per_page=100&sort=created&direction=desc" % (repo, pr)
-    status, comments = _github("GET", path, token)
-    existing = select_existing_comment(comments if isinstance(comments, list) else [])
+    existing = select_existing_comment(list_comments(token, repo, pr))
     if existing and existing.get("id"):
-        _, _ = _github("PATCH", "/repos/%s/issues/comments/%s" % (repo, existing["id"]),
-                       token, {"body": body})
-        return "updated"
-    _, _ = _github("POST", "/repos/%s/issues/%s/comments" % (repo, pr), token, {"body": body})
+        try:
+            _github("PATCH", "/repos/%s/issues/comments/%s" % (repo, existing["id"]),
+                    token, {"body": body})
+            return "updated"
+        except RuntimeError:
+            pass  # 评论被删/无权限时回退到新建
+    _github("POST", "/repos/%s/issues/%s/comments" % (repo, pr), token, {"body": body})
     return "created"
 
 
@@ -203,9 +237,7 @@ def main():
         return 0
     body = (MARKER + "\n" + review_text +
             "\n\n> 由 DeepSeek 自动审查；仅供参考，不替代人工 review。")
-    if len(body) > MAX_COMMENT:
-        body = body[:MAX_COMMENT - 60] + "\n\n[comment truncated: 审查结果过长]"
-    action = comment(body, required_env("GITHUB_TOKEN"), repo, pr)
+    action = comment(trim_comment(body), required_env("GITHUB_TOKEN"), repo, pr)
     print("AI 审查评论已%s" % ("更新" if action == "updated" else "发布"))
     return 0
 
