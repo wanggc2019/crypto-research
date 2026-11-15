@@ -29,6 +29,7 @@ import core  # noqa: E402
 import daily_brief  # noqa: E402
 
 import score as score_mod  # noqa: E402
+from crypto_core import contracts  # noqa: E402
 
 MAX_LEN = 4096
 
@@ -79,8 +80,7 @@ def load_week_events(repo_root, dates):
     """本周 crypto-news 导出里的 P0/P1，按标题去重（保留最高级别）。"""
     seen = {}
     for d in dates:
-        data = daily_brief.read_json(os.path.join(
-            repo_root, "crypto-news", "data", "exports", "daily-%s.json" % d))
+        data = contracts.read("news/daily/v1", date=d, repo=repo_root)
         if not data:
             continue
         for item in (data.get("items") or []):
@@ -98,8 +98,7 @@ def load_policy(repo_root, dates):
     """本周政策/监管条目（crypto-policy exports）。"""
     items = []
     for d in dates:
-        data = daily_brief.read_json(os.path.join(
-            repo_root, "crypto-policy", "data", "exports", "policy-%s.json" % d))
+        data = contracts.read("policy/daily/v1", date=d, repo=repo_root)
         if not data:
             continue
         for it in (data.get("items") or []):
@@ -108,11 +107,10 @@ def load_policy(repo_root, dates):
 
 
 def load_kol(repo_root, dates):
-    """本周 KOL 条目（crypto-kol exports），按 handle+text 去重。"""
+    """本周 KOL 条目（crypto-x-kol exports），按 handle+text 去重。"""
     seen = {}
     for d in dates:
-        data = daily_brief.read_json(os.path.join(
-            repo_root, "crypto-kol", "data", "exports", "daily-%s.json" % d))
+        data = contracts.read("kol/daily/v1", date=d, repo=repo_root)
         if not data:
             continue
         for it in (data.get("items") or []):
@@ -125,8 +123,7 @@ def load_week_signals(repo_root, dates):
     """本周 crypto-price 导出里的 P0/P1 价格异动，去重后返回。"""
     seen = {}
     for d in dates:
-        data = daily_brief.read_json(os.path.join(
-            repo_root, "crypto-price", "data", "exports", "daily-%s.json" % d))
+        data = contracts.read("price/daily/v1", date=d, repo=repo_root)
         if not data:
             continue
         for sig in (data.get("signals") or []):
@@ -146,8 +143,7 @@ def news_counts(repo_root, dates):
     """本周 crypto-news 的 P0/P1/P2 计数（按天累加）。"""
     out = {"P0": 0, "P1": 0, "P2": 0}
     for d in dates:
-        data = daily_brief.read_json(os.path.join(
-            repo_root, "crypto-news", "data", "exports", "daily-%s.json" % d))
+        data = contracts.read("news/daily/v1", date=d, repo=repo_root)
         if not data:
             continue
         for sev, n in (data.get("counts") or {}).items():
@@ -158,13 +154,9 @@ def news_counts(repo_root, dates):
 
 def export_coverage(repo_root, dates):
     """本周 price/news 导出覆盖天数（数据源健康度的替代指标）。"""
-    def days(module):
-        n = 0
-        for d in dates:
-            if os.path.exists(os.path.join(repo_root, module, "data", "exports", "daily-%s.json" % d)):
-                n += 1
-        return n
-    return {"price": days("crypto-price"), "news": days("crypto-news")}
+    def days(schema_id):
+        return sum(1 for d in dates if os.path.exists(contracts.export_path(schema_id, date=d, repo=repo_root)))
+    return {"price": days("price/daily/v1"), "news": days("news/daily/v1")}
 
 
 def build(cfg, date_str, base_dir=HERE, repo_root=REPO):
@@ -250,7 +242,7 @@ def build(cfg, date_str, base_dir=HERE, repo_root=REPO):
     else:
         L.append("- 本周无政策条目")
     L.append("")
-    L.append("**KOL 动态（crypto-kol）**：本周 %d 条" % len(kols))
+    L.append("**KOL 动态（crypto-x-kol）**：本周 %d 条" % len(kols))
     for it in kols[:3]:
         L.append("- %s（%s）：%s" % (it.get("name") or it.get("handle"), it.get("tier") or "—",
                                     (it.get("text") or "")[:60]))

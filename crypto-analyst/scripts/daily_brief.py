@@ -28,6 +28,8 @@ import score as score_mod  # noqa: E402
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REPO = os.path.dirname(HERE)
+sys.path.insert(0, os.path.join(REPO, "libs", "crypto_core", "src"))
+from crypto_core import contracts  # noqa: E402
 
 DISCLAIMER = ("本报告为公开数据的统计分析与方法研究，不构成投资建议；"
               "不提供任何交易、出入金或账户操作指引。")
@@ -76,7 +78,7 @@ def read_json(path):
 
 
 def load_events(repo_root, date_str):
-    data = read_json(os.path.join(repo_root, "crypto-news", "data", "exports", f"daily-{date_str}.json"))
+    data = contracts.read("news/daily/v1", date=date_str, repo=repo_root)
     if not data:
         return []
     items = data.get("items") or []
@@ -84,7 +86,7 @@ def load_events(repo_root, date_str):
 
 
 def load_price_snapshot(repo_root):
-    return read_json(os.path.join(repo_root, "crypto-price", "data", "exports", "latest.json"))
+    return contracts.read("price/snapshot/v1", repo=repo_root)
 
 
 def load_macro(base_dir, date_str):

@@ -1,0 +1,7 @@
+{"schema": "price/snapshot/v1", "generated_at": "2026-11-08T12:00:00", "source_module": "crypto-price",
+ "assets": {"BTC": {"price": 101000.5, "change_24h_pct": -2.4, "volume_24h": 1.2e10, "funding_rate": 0.0001, "oi": 85000.0,
+                    "high_24h": 104000.0, "low_24h": 99500.0, "n_sources": 3, "spread_bps": 2.1, "sources": {"binance": 101001.0}},
+            "ETH": {"price": 3500.2, "change_24h_pct": 1.1, "volume_24h": 6.1e9, "funding_rate": 0.00008, "oi": 2100000.0,
+                    "high_24h": 3550.0, "low_24h": 3410.0, "n_sources": 3, "spread_bps": 1.5, "sources": {"binance": 3500.0}}},
+ "signals": [{"asset": "BTC", "rule": "move_1h", "severity": "P1", "title": "BTC 1h -2.1%", "dedupe_key": "BTC|move_1h"}],
+ "source_health": {"binance": {"ok": true, "assets": 3, "expected": 3}}}

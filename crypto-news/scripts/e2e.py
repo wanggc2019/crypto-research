@@ -16,6 +16,10 @@ import subprocess
 import sys
 import tempfile
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                                "libs", "crypto_core", "src"))
+from crypto_core import contracts  # noqa: E402
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FIXTURE = os.path.join(ROOT, "tests", "fixtures", "news_items.jsonl")
 
@@ -52,7 +56,8 @@ def main():
 
         with open(export_path, encoding="utf-8") as f:
             export = json.load(f)
-        _require(export.get("schema") == "news/daily/v1", "exports schema 不对：%r" % export.get("schema"))
+        problems = contracts.validate("news/daily/v1", export)
+        _require(not problems, "exports 不符合契约 news/daily/v1：%s" % problems)
         _require(export.get("date") == date, "exports date 不对")
         _require(isinstance(export.get("items"), list), "exports items 不是 list")
         counts = export.get("counts") or {}

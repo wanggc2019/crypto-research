@@ -1,0 +1,5 @@
+{"schema": "price/daily/v1", "source_module": "crypto-price", "date": "2026-11-08", "generated_at": "2026-11-08T23:59:00",
+ "assets": {"BTC": {"open": 100000.0, "high": 104000.0, "low": 99500.0, "close": 101000.5, "n_sources": 3, "spread_bps": 2.1, "last_ts": 1762632000}},
+ "signals": [{"asset": "BTC", "rule": "move_1h", "severity": "P1", "title": "BTC 1h -2.1%", "dedupe_key": "BTC|move_1h", "ts": "2026-11-08T10:00:00"},
+             {"asset": "ETH", "rule": "data_quality", "severity": "P1", "title": "ETH 主源报价不足", "dedupe_key": "ETH|dq", "ts": "2026-11-08T11:00:00"}],
+ "primary_sources": ["binance"], "source_health": {"binance": {"ok": true, "assets": 3, "expected": 3}}}

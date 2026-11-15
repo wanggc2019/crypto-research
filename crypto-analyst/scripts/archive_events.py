@@ -14,8 +14,8 @@ import sys
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REPO = os.path.dirname(HERE)
-sys.path.insert(0, os.path.join(HERE, "scripts"))
-import daily_brief  # noqa: E402
+sys.path.insert(0, os.path.join(REPO, "libs", "crypto_core", "src"))
+from crypto_core import contracts  # noqa: E402
 
 
 def load(path):
@@ -38,12 +38,12 @@ def main(argv=None):
     seen = {r.get("key") for r in records}
     added = 0
     sources = [
-        ("news", "crypto-news", "daily-%s.json", "P0/P1"),
-        ("policy", "crypto-policy", "policy-%s.json", "policy"),
-        ("kol", "crypto-kol", "daily-%s.json", "kol"),
+        ("news", "news/daily/v1", "P0/P1"),
+        ("policy", "policy/daily/v1", "policy"),
+        ("kol", "kol/daily/v1", "kol"),
     ]
-    for src, module, pattern, kind in sources:
-        data = daily_brief.read_json(os.path.join(REPO, module, "data", "exports", pattern % today))
+    for src, schema_id, kind in sources:
+        data = contracts.read(schema_id, date=today, repo=REPO)
         if not data:
             continue
         for it in (data.get("items") or []):

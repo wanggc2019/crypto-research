@@ -5,11 +5,16 @@
 回放 tests/fixtures 的正常/冲击两个行情快照，跑完整规则链路（--dry-run --json）。
 全部离线、不推送；需要写盘的步骤使用临时 data 目录，不碰生产 data/。
 """
+import json
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                                "libs", "crypto_core", "src"))
+from crypto_core import contracts  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PY = sys.executable
@@ -36,6 +41,25 @@ def main():
                 print((proc.stderr or "")[-1500:])
                 return 1
             print("✅ %s" % name)
+        # 契约：非 dry-run（不带 --notify → 不推送）把 exports 写进临时 data 目录，再按登记表校验
+        live = os.path.join(tmp, "contract")
+        proc = subprocess.run([PY, "scripts/run.py", "--snapshot", "tests/fixtures/snapshot_shock.json",
+                               "--data-dir", live, "--json"], cwd=ROOT, capture_output=True, text=True, timeout=300)
+        if proc.returncode != 0:
+            print("❌ crypto-price e2e [契约导出] rc=%s\n%s" % (proc.returncode, (proc.stderr or "")[-1500:]))
+            return 1
+        exports = os.path.join(live, "exports")
+        daily = [f for f in os.listdir(exports) if f.startswith("daily-")]
+        for schema_id, name in (("price/snapshot/v1", "latest.json"), ("price/daily/v1", daily[0] if daily else "")):
+            try:
+                with open(os.path.join(exports, name), encoding="utf-8") as f:
+                    problems = contracts.validate(schema_id, json.load(f))
+            except (OSError, ValueError) as e:
+                problems = ["读不到 %s：%s" % (name, e)]
+            if problems:
+                print("❌ crypto-price e2e 契约 %s：%s" % (schema_id, problems))
+                return 1
+        print("✅ 契约导出（price/snapshot/v1 + price/daily/v1）")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     return 0
