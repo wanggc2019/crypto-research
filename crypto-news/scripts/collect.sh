@@ -7,9 +7,9 @@ body() {
   ./scripts/run.sh --notify
 }
 
-# 本模块 healthcheck --fix 之后再做仓库级 launchd 任务检查（"任务挂了"自动报警；同批异常 60 分钟内只报一次）
+# 仓库级 launchd 任务检查平时由 watchdog 负责；watchdog 心跳过期时由本模块兜底（同批异常 60 分钟内只报一次）
 after() {
-  "$PY" "$REPO_ROOT/tools/healthcheck.py" --module all --quiet --notify
+  round_watchdog_alive || "$PY" "$REPO_ROOT/tools/healthcheck.py" --module all --quiet --notify
 }
 
 round_main body --health-args "--agent"

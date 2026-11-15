@@ -18,7 +18,9 @@
 #   2. 单实例锁 data/state/collect.lock（mkdir 原子锁；上一轮未结束 → 记 skip 并 exit 0）
 #      --no-lock：锁由业务进程自己管理（如 crypto-price 的 run.py，冲突时退出码 4）
 #   3. collect.log 写 `===== <ts> start =====` / `===== <ts> done (rc=N) =====`（healthcheck 依赖此格式）
-#   4. 完整一轮之后跑 healthcheck（--quiet --notify --fix [+ --health-args]），输出到 data/logs/healthcheck.out.log
+#   4. 健康检查由仓库级 watchdog（每 5 分钟）统一负责；只有 watchdog 心跳
+#      data/state/watchdog.json 超过 ROUND_WATCHDOG_STALE_MIN（默认 15）分钟未更新时，
+#      本轮才兜底自查（healthcheck --quiet --notify --fix [+ --health-args]，输出到 data/logs/healthcheck.out.log）
 #   5. 当天首轮跑 prune（data/state/.prune-<date> 标记，幂等）
 #   6. 若定义了 after()，执行之
 #   7. exit 本轮 rc（healthcheck/prune/after 失败不影响 rc）
@@ -51,9 +53,17 @@ export CRYPTO_JOB_LABEL="${CRYPTO_JOB_LABEL:-com.crypto-research.${MODULE}}"
 export REPO_ROOT MODULE PY
 
 ROUND_LOG="data/logs/collect.log"
+ROUND_WATCHDOG_STATE="$REPO_ROOT/data/state/watchdog.json"
+ROUND_WATCHDOG_STALE_MIN="${ROUND_WATCHDOG_STALE_MIN:-15}"
+case "$ROUND_WATCHDOG_STALE_MIN" in ""|*[!0-9]*) ROUND_WATCHDOG_STALE_MIN=15 ;; esac   # 非数字一律回退默认
 ROUND_HEALTH_LOG="data/logs/healthcheck.out.log"
 
 round_ts() { date '+%F %T'; }
+
+# watchdog 心跳新鲜 → 0；缺失/过期 → 1（find -mmin 在 BSD/GNU 上都可用）
+round_watchdog_alive() {
+  [ -f "$ROUND_WATCHDOG_STATE" ] && [ -n "$(find "$ROUND_WATCHDOG_STATE" -mmin "-$ROUND_WATCHDOG_STALE_MIN" 2>/dev/null)" ]
+}
 
 round_main() {
   local body_fn="$1"; shift
@@ -86,10 +96,13 @@ round_main() {
     echo "===== $(round_ts) done (rc=$rc) ====="
   } >> "$ROUND_LOG" 2>&1
 
-  # 健康检查放在完整一轮之后：首轮也有 start/done 可解析，不会误报「找不到完整一轮」
-  # shellcheck disable=SC2086
-  "$PY" "$REPO_ROOT/tools/healthcheck.py" --module "$MODULE" --quiet --notify --fix $health_args \
-    >> "$ROUND_HEALTH_LOG" 2>&1 || true
+  # 健康检查：watchdog 活着就交给它（避免每轮重复检查/重复告警）；watchdog 挂了才兜底自查。
+  # 放在完整一轮之后：首轮也有 start/done 可解析，不会误报「找不到完整一轮」
+  if ! round_watchdog_alive; then
+    # shellcheck disable=SC2086
+    "$PY" "$REPO_ROOT/tools/healthcheck.py" --module "$MODULE" --quiet --notify --fix $health_args \
+      >> "$ROUND_HEALTH_LOG" 2>&1 || true
+  fi
 
   # 每日维护（幂等）：保留期与体积上限见 tools/prune.py
   local stamp
