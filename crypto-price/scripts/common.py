@@ -148,8 +148,19 @@ def read_jsonl(path):
 
 
 def load_env():
-    """凭据从仓库根 .env 读（模块内 .env 可覆盖，与 crypto-news 一致）。"""
-    return _env.load_env(module_dir=ROOT)
+    """凭据从仓库根 .env 读（模块内 .env 可覆盖）。
+
+    价格模块专用 Bot：配置 TELEGRAM_PRICE_BOT_TOKEN / TELEGRAM_PRICE_CHAT_ID 后，
+    本模块所有消息（告警/日报/测试/健康检查）都走这个 Bot；未配置则回退共享 Bot。
+    """
+    env = _env.load_env(module_dir=ROOT)
+    token = env.get("TELEGRAM_PRICE_BOT_TOKEN") or env.get("TELEGRAM_PRICE_BOT") or ""
+    chat = env.get("TELEGRAM_PRICE_CHAT_ID") or ""
+    if token:
+        env["TELEGRAM_BOT_TOKEN"] = token
+    if chat:
+        env["TELEGRAM_CHAT_ID"] = chat
+    return env
 
 
 # ---------------------------------------------------------------- 时区

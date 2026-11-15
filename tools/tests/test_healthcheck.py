@@ -318,6 +318,22 @@ class TestHealthStateWritten(unittest.TestCase):
         self.assertGreater(data["last_agent_ts"], 0)
 
 
+class TestModuleEnv(unittest.TestCase):
+    def test_price_uses_dedicated_bot(self):
+        env = {"TELEGRAM_BOT_TOKEN": "shared", "TELEGRAM_CHAT_ID": "1",
+               "TELEGRAM_PRICE_BOT_TOKEN": "price", "TELEGRAM_PRICE_CHAT_ID": "2"}
+        with mock.patch.object(healthcheck.envlib, "load_env", return_value=dict(env)):
+            loaded = healthcheck.module_env("crypto-price")
+        self.assertEqual(loaded["TELEGRAM_BOT_TOKEN"], "price")
+        self.assertEqual(loaded["TELEGRAM_CHAT_ID"], "2")
+
+    def test_other_module_uses_shared_bot(self):
+        env = {"TELEGRAM_BOT_TOKEN": "shared", "TELEGRAM_CHAT_ID": "1"}
+        with mock.patch.object(healthcheck.envlib, "load_env", return_value=dict(env)):
+            loaded = healthcheck.module_env("crypto-news")
+        self.assertEqual(loaded["TELEGRAM_BOT_TOKEN"], "shared")
+
+
 class TestNotifyDedupePersisted(unittest.TestCase):
     """同一问题 60 分钟内只发一次：去重指纹要落盘且跨进程稳定。"""
 

@@ -271,8 +271,21 @@ def check_disk(module, max_data_mb=500, max_log_kb=2048, fix=False):
     return {"name": "disk", "state": state, "detail": "；".join(parts), "fixed": fixed}
 
 
-def check_creds(fix=False):
+def module_env(module=None):
+    """按模块选择 Bot：crypto-price 支持专用 TELEGRAM_PRICE_*，其余用共享 Bot。"""
     env = envlib.load_env()
+    if module == "crypto-price":
+        token = env.get("TELEGRAM_PRICE_BOT_TOKEN") or env.get("TELEGRAM_PRICE_BOT") or ""
+        chat = env.get("TELEGRAM_PRICE_CHAT_ID") or ""
+        if token:
+            env["TELEGRAM_BOT_TOKEN"] = token
+        if chat:
+            env["TELEGRAM_CHAT_ID"] = chat
+    return env
+
+
+def check_creds(fix=False, module=None):
+    env = module_env(module)
     token, chat, problems = check_credentials(env)
     if problems:
         return {"name": "creds", "state": WARN, "detail": "凭据不完整：%s" % "；".join(problems)}
@@ -516,7 +529,7 @@ def _repair_text(module, before_checks, diag, agent_result, after_checks):
 
 def notify_repair(module, before_checks, diag, agent_result, after_checks):
     """AI 处理完成后统一发一条修复报告（AI 自己不再发 Telegram，避免重复）。"""
-    env = envlib.load_env()
+    env = module_env(module)
     token, chat, problems = check_credentials(env)
     if problems:
         print("  （凭据不完整，跳过修复报告）")
@@ -562,7 +575,7 @@ def maybe_notify(module, checks, fixed, diag=None, cooldown_min=60, notify_warn=
     if worst == WARN and not notify_warn:
         print("  （仅有告警/WARN，默认不推 Telegram；需要时加 --notify-warn）")
         return False
-    env = envlib.load_env()
+    env = module_env(module)
     token, chat, problems = check_credentials(env)
     if problems:
         print("  （凭据不完整，跳过 Telegram 告警）")
@@ -696,7 +709,7 @@ def main(argv=None):
         check_last_run(args.module, stale_min, args.fix),
         check_lock(args.module, args.fix),
         check_disk(args.module, fix=args.fix),
-        check_creds(),
+        check_creds(module=args.module),
     ]
     if args.network:
         checks.append(check_network())

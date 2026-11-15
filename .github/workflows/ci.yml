@@ -7,7 +7,7 @@ on:
 
 jobs:
   hygiene: # 凭据/运行产物不得入库
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
       - name: No secrets / data / venv tracked
@@ -17,7 +17,7 @@ jobs:
           ! git ls-files | grep -E '(^|/)\.venv/'
 
   lint:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -31,7 +31,7 @@ jobs:
         run: PYTHONPATH=libs/crypto_core/src python -m unittest discover -s tools/tests -v
 
   gate: # 通用质量门：自动发现 crypto-* 模块（ruff + 单测 + 内置回放 + 重复审计）
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -43,7 +43,7 @@ jobs:
         run: make gate
 
   libs:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -55,7 +55,7 @@ jobs:
         run: PYTHONPATH=libs/crypto_core/src python -m unittest discover -s libs/crypto_core/tests -v
 
   crypto-news:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     defaults:
       run:
         working-directory: crypto-news
@@ -70,7 +70,7 @@ jobs:
         run: python -m unittest discover -s tests -v
 
   crypto-price:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     defaults:
       run:
         working-directory: crypto-price
@@ -92,7 +92,7 @@ jobs:
 
 
   crypto-analyst:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     defaults:
       run:
         working-directory: crypto-analyst
@@ -111,7 +111,7 @@ jobs:
         run: python scripts/score.py --dry-run --as-of 2026-11-08 >/dev/null
 
   crypto-x-kol:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     defaults:
       run:
         working-directory: crypto-x-kol
@@ -128,7 +128,7 @@ jobs:
         run: python scripts/e2e.py
 
   crypto-jobs:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     defaults:
       run:
         working-directory: crypto-jobs
@@ -145,7 +145,7 @@ jobs:
         run: python scripts/e2e.py
 
   crypto-onchain:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     defaults:
       run:
         working-directory: crypto-onchain
@@ -162,7 +162,7 @@ jobs:
         run: python scripts/run.py --fixtures tests/fixtures --data-dir "$RUNNER_TEMP/onchain-data" --dry-run --json >/dev/null
 
   crypto-knowledge:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     defaults:
       run:
         working-directory: crypto-knowledge
