@@ -54,23 +54,27 @@ def _run(cmd, timeout=60):
     return proc.stdout
 
 
+def _has_commit(sha):
+    return subprocess.run(["git", "cat-file", "-e", "%s^{commit}" % sha],
+                          capture_output=True, timeout=30).returncode == 0
+
+
 def ensure_commit(sha, ref=None):
     """确保 base commit 在本地；fork PR/浅克隆时可能缺失。"""
-    if subprocess.run(["git", "cat-file", "-e", "%s^{commit}" % sha],
-                      capture_output=True).returncode == 0:
+    if _has_commit(sha):
         return
     try:
         _run(["git", "fetch", "--no-tags", "origin", sha], timeout=60)
-        return
     except RuntimeError:
-        if not ref:
-            raise
-    _run(["git", "fetch", "--no-tags", "origin", ref], timeout=60)
+        if ref:
+            _run(["git", "fetch", "--no-tags", "origin", ref], timeout=60)
+    if not _has_commit(sha):
+        raise RuntimeError("base commit %s 不在本地仓库，且 fetch 后仍找不到" % sha)
 
 
 def get_diff(base, head, base_ref=None):
     ensure_commit(base, base_ref)
-    diff = _run(["git", "diff", "--unified=40", "%s...%s" % (base, head)], timeout=60)
+    diff = _run(["git", "diff", "--unified=10", "%s...%s" % (base, head)], timeout=60)
     return trim_diff(diff)
 
 
@@ -89,7 +93,7 @@ def parse_review_response(data):
 def review(diff):
     key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
     if not key:
-        print("DEEPSEEK_API_KEY 未配置，跳过 AI 审查")
+        print("::warning::DEEPSEEK_API_KEY 未配置，跳过 AI 审查")
         return ""
     prompt = """你是资深代码审查员。只审查下面 git diff 中的改动，不要臆测未出现的代码。
 重点找：真实 bug、安全问题、边界条件、回归风险、测试缺失。
@@ -107,7 +111,7 @@ LGTM 或 需要修改
 DIFF:
 ```diff
 %s
-```""" % diff
+```""" % diff.replace("```", chr(39) * 3)
     payload = {
         "model": "deepseek-chat",
         "messages": [{"role": "user", "content": prompt}],
@@ -156,15 +160,18 @@ def _github(method, path, token, payload=None, timeout=30):
 
 
 def select_existing_comment(comments):
-    """找本 workflow 之前发的评论（带 MARKER），返回最后一条。"""
+    """找本 workflow 之前发的评论（带 MARKER 且作者是 Bot），返回最后一条。"""
     for item in reversed(comments or []):
-        if isinstance(item, dict) and MARKER in str(item.get("body") or ""):
+        if not isinstance(item, dict) or MARKER not in str(item.get("body") or ""):
+            continue
+        user = item.get("user") if isinstance(item.get("user"), dict) else {}
+        if user.get("type") == "Bot":
             return item
     return None
 
 
 def comment(body, token, repo, pr):
-    path = "/repos/%s/issues/%s/comments?per_page=100" % (repo, pr)
+    path = "/repos/%s/issues/%s/comments?per_page=100&sort=created&direction=desc" % (repo, pr)
     status, comments = _github("GET", path, token)
     existing = select_existing_comment(comments if isinstance(comments, list) else [])
     if existing and existing.get("id"):
@@ -196,7 +203,9 @@ def main():
         return 0
     body = (MARKER + "\n" + review_text +
             "\n\n> 由 DeepSeek 自动审查；仅供参考，不替代人工 review。")
-    action = comment(body[:MAX_COMMENT], required_env("GITHUB_TOKEN"), repo, pr)
+    if len(body) > MAX_COMMENT:
+        body = body[:MAX_COMMENT - 60] + "\n\n[comment truncated: 审查结果过长]"
+    action = comment(body, required_env("GITHUB_TOKEN"), repo, pr)
     print("AI 审查评论已%s" % ("更新" if action == "updated" else "发布"))
     return 0
 

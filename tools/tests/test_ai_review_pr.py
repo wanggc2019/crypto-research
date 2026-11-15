@@ -42,11 +42,18 @@ class TestReviewResponse(unittest.TestCase):
 class TestCommentDedup(unittest.TestCase):
     def test_select_existing_marker(self):
         comments = [
-            {"id": 1, "body": "normal comment"},
-            {"id": 2, "body": "<!-- ai-review -->\nold"},
-            {"id": 3, "body": "<!-- ai-review -->\nnew"},
+            {"id": 1, "body": "normal comment", "user": {"type": "User"}},
+            {"id": 2, "body": "<!-- ai-review -->\nold", "user": {"type": "Bot"}},
+            {"id": 3, "body": "<!-- ai-review -->\nnew", "user": {"type": "Bot"}},
         ]
         self.assertEqual(ai_review_pr.select_existing_comment(comments)["id"], 3)
+
+    def test_select_ignores_non_bot_marker(self):
+        comments = [
+            {"id": 1, "body": "<!-- ai-review -->\nuser comment",
+             "user": {"type": "User"}},
+        ]
+        self.assertIsNone(ai_review_pr.select_existing_comment(comments))
 
     def test_comment_updates_existing(self):
         calls = []
@@ -54,7 +61,8 @@ class TestCommentDedup(unittest.TestCase):
         def fake_github(method, path, token, payload=None, timeout=30):
             calls.append((method, path))
             if method == "GET":
-                return 200, [{"id": 99, "body": "<!-- ai-review --> old"}]
+                return 200, [{"id": 99, "body": "<!-- ai-review --> old",
+                              "user": {"type": "Bot"}}]
             return 200, {}
 
         with mock.patch.object(ai_review_pr, "_github", side_effect=fake_github):
