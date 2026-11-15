@@ -210,21 +210,16 @@ PY="$REPO_ROOT/.venv/bin/python"
 """
 
 COLLECT_SH = """#!/usr/bin/env bash
-# {name} 定时任务入口：加锁跑一轮（日志留痕，防重叠）
-set -uo pipefail
-cd "$(dirname "$0")/.."
-mkdir -p data/logs data/state
-LOCKDIR=data/state/collect.lock
-if ! mkdir "$LOCKDIR" 2>/dev/null; then
-  echo "$(date '+%F %T') skip: previous run still in progress" >> data/logs/collect.log
-  exit 0
-fi
-trap 'rmdir "$LOCKDIR" 2>/dev/null || true' EXIT
-{{
-  echo "===== $(date '+%F %T') start ====="
+# {name} 定时任务入口（launchd 调用）。
+# 锁 / start-done 日志 / healthcheck / 每日 prune / rc 透传由 tools/lib/module_round.sh 统一处理；
+# 这里只写本模块一轮的业务步骤（返回值 = 本轮 rc）。
+source "$(dirname "$0")/../../tools/lib/module_round.sh"
+
+body() {{
   ./scripts/run.sh
-  echo "===== $(date '+%F %T') done (rc=$?) ====="
-}} >> data/logs/collect.log 2>&1
+}}
+
+round_main body
 """
 
 SMOKE_TEST = '''#!/usr/bin/env python3
