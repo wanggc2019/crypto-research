@@ -48,6 +48,7 @@
 
 - 跨模块只允许读别人的 `exports/`，禁止读 `state/`、`raw/`、`reports/`。
 - 运行产物一律 gitignored；凭据只在仓库根 `.env`。
+- **launchd 入口 `scripts/collect.sh` 一律 `source tools/lib/module_round.sh`**，只写 `body()`（本轮业务步骤，返回值即 rc）再 `round_main body [--no-lock] [--health-args "..."]`；锁、`===== start/done =====` 日志（healthcheck 依赖）、healthcheck、每日 prune、rc 透传都由骨架处理，不要在模块里复制（`tools/tests/test_module_round.py` 会校验）。
 - 保留策略由 `tools/prune.py` 执行（raw 90d / logs 30d / exports 7d / reports 365d / alerts 180d / 单日志 2MB 上限 / **data 总量硬上限 500MB**），模块的 `collect.sh` **每天首轮自动跑一次**，无需另设定时任务。
 
 ## 5. 告警事件

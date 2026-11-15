@@ -53,7 +53,7 @@ launchd（Label 前缀 com.crypto-research.）
 
 ```
 launchd 到点
-  └─ collect.sh        加锁 data/state/collect.lock（上一轮没跑完就跳过，防重叠）
+  └─ collect.sh        source tools/lib/module_round.sh：加锁 data/state/collect.lock（上一轮没跑完就跳过）→ start/done 日志 → 本轮后 healthcheck → 当天首轮 prune
        └─ run.sh        用仓库根 .venv/bin/python（没有则 python3）依次执行：
             ├─ scripts/fetch.py    40 源采集 → data/raw/<date>/items.jsonl
             ├─ scripts/score.py    过滤/聚类/评分 → data/reports/<date>.md + data/state/alerts-<date>.json
