@@ -5,6 +5,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 import unittest
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -103,6 +104,27 @@ class ModuleRoundTest(unittest.TestCase):
         proc = self._run(self._collect("echo RAN", "--no-lock"))
         self.assertEqual(proc.returncode, 0)
         self.assertIn("RAN", self._log())
+
+    def _heartbeat(self, age_min):
+        state = os.path.join(self.repo, "data", "state")
+        os.makedirs(state, exist_ok=True)
+        path = os.path.join(state, "watchdog.json")
+        with open(path, "w") as f:
+            f.write("{}")
+        t = time.time() - age_min * 60
+        os.utime(path, (t, t))
+
+    def test_fresh_watchdog_owns_healthcheck(self):
+        self._heartbeat(age_min=1)
+        proc = self._run(self._collect("return 0"))
+        self.assertEqual(proc.returncode, 0)
+        self.assertEqual(self._calls("healthcheck"), [], "watchdog 活着时本轮不应重复健康检查")
+        self.assertEqual(len(self._calls("prune")), 1, "prune 仍由本轮负责")
+
+    def test_stale_watchdog_falls_back_to_self_check(self):
+        self._heartbeat(age_min=30)
+        self._run(self._collect("return 0"))
+        self.assertEqual(len(self._calls("healthcheck")), 1, "watchdog 心跳过期时本轮兜底自查")
 
     def test_healthcheck_failure_does_not_change_rc(self):
         with open(os.path.join(self.repo, "tools", "healthcheck.py"), "w") as f:

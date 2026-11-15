@@ -53,7 +53,7 @@ launchd（Label 前缀 com.crypto-research.）
 
 ```
 launchd 到点
-  └─ collect.sh        source tools/lib/module_round.sh：加锁 data/state/collect.lock（上一轮没跑完就跳过）→ start/done 日志 → 本轮后 healthcheck → 当天首轮 prune
+  └─ collect.sh        source tools/lib/module_round.sh：加锁 data/state/collect.lock（上一轮没跑完就跳过）→ start/done 日志 →（仅 watchdog 心跳过期时）兜底 healthcheck → 当天首轮 prune
        └─ run.sh        用仓库根 .venv/bin/python（没有则 python3）依次执行：
             ├─ scripts/fetch.py    40 源采集 → data/raw/<date>/items.jsonl
             ├─ scripts/score.py    过滤/聚类/评分 → data/reports/<date>.md + data/state/alerts-<date>.json
@@ -255,8 +255,8 @@ crypto-price 额外排查：
 
 ## 6. 持续健康检查（healthcheck）
 
-健康检查**已并入主任务**：每轮 `collect.sh` 跑完会顺带执行一次，正常时零输出，异常时推 Telegram + 规则化诊断 + 能自愈的直接修。
-另外有一个**仓库级看门狗** `com.crypto-research.watchdog`（每 300 秒），覆盖「主任务完全没跑」这种自检也跑不到的盲区。
+健康检查**只有一个负责人**：仓库级看门狗 `com.crypto-research.watchdog`（每 300 秒）对每个模块跑 `healthcheck --fix [--agent]` + `--module all`，异常汇总成一条 Telegram（60 分钟冷却），正常零输出。
+**兜底**：看门狗心跳 `data/state/watchdog.json` 超过 15 分钟未更新（看门狗挂了/被卸载）时，各模块 `collect.sh` 每轮自动恢复本模块自查，crypto-news 每 10 分钟另跑 `--module all`；看门狗恢复后自动停止兜底（逻辑在 `tools/lib/module_round.sh`）。
 
 | 项 | 值 |
 |---|---|
@@ -366,7 +366,7 @@ launchd 会给任务进程注入 `XPC_SERVICE_NAME`，但**子进程里该值会
 
 - **仓库级看门狗** `com.crypto-research.watchdog`（每 300 秒）：遍历已接入 healthcheck 的模块 + `--module all` 检查全部 launchd 任务，异常汇总成一条 Telegram（60 分钟冷却）；模块正在跑时跳过，避免并发写状态。安装/查看见 §6。
 - `make gate` 新增「launchd 任务健康」步骤：有失败/超时/未加载时门禁失败；CI/无 LaunchAgents 环境自动跳过。
-- `crypto-news/scripts/collect.sh` 每 10 分钟顺带跑 `tools/healthcheck.py --module all --quiet --notify`，作为二级兜底（看门狗挂了也能报）。
+- 看门狗心跳过期（>15 分钟）时，各模块 `collect.sh` 每轮兜底自查、crypto-news 每 10 分钟兜底跑 `--module all`（看门狗挂了也能报）；平时不重复检查。
 
 **修复后刷新状态**：`launchctl` 的 `last exit code` 只会在 launchd 真正跑过一次后更新，所以修完要么等下一个周期，要么手动踢一次：
 
