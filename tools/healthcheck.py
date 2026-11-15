@@ -27,6 +27,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -143,10 +144,24 @@ def parse_last_run(text):
     return out
 
 
+_TEMP_ROOTS = ("/tmp", "/private/tmp", "/var/folders", "/private/var/folders")
+
+
+def is_temp_checkout(repo=None):
+    """仓库是否位于系统临时目录（测试/实验用的副本）：这类副本不应被注册成 launchd 任务。"""
+    path = os.path.realpath(str(repo or REPO))
+    roots = {r for r in set(_TEMP_ROOTS) | {os.path.realpath(tempfile.gettempdir())} if r != "/"}  # TMPDIR=/ 时不误判全部路径
+    return any(path == r or path.startswith(r.rstrip("/") + "/") for r in roots)
+
+
 def check_launchd(module, fix=False):
     label = label_for(module)
     plist = Path.home() / "Library" / "LaunchAgents" / (label + ".plist")
     if not plist.is_file():
+        if fix and is_temp_checkout():
+            # 临时副本里跑 collect.sh 时不能自动安装，否则会留下指向已删除目录的幽灵任务（rc=127）
+            return {"name": "launchd", "state": WARN,
+                    "detail": "任务未安装；仓库位于临时目录（%s），不自动安装" % REPO}
         if fix:
             proc = _run([sys.executable, str(REPO / "tools" / "render_launchd.py"),
                          "--module", module, "--install"])
