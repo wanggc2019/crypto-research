@@ -1,7 +1,4 @@
 {
-  "crypto-analyst/scripts/daily_brief.py::build": 16,
-  "crypto-analyst/scripts/send_brief.py::_build_full": 16,
-  "crypto-analyst/scripts/weekly.py::build": 28,
   "crypto-knowledge/scripts/content.py::_validate_item": 24,
   "crypto-knowledge/scripts/main.py::run": 18,
   "crypto-onchain/scripts/context.py::assess": 19,
