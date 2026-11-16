@@ -689,6 +689,24 @@ def check_all_jobs(notify=False, json_out=False, quiet=False, cooldown_min=JOBS_
 
 
 # ---------------------------------------------------------------- 主流程
+def _print_report(module, checks, fixed, diag, worst):
+    icons = {OK: "✅", WARN: "⚠️", FAIL: "❌"}
+    print("== %s 健康检查 ==" % module)
+    for c in checks:
+        print(" %s %-10s %s" % (icons[c["state"]], c["name"], c["detail"]))
+    if fixed:
+        print(" 🔧 已自愈：%s" % "；".join(fixed))
+    if diag["causes"]:
+        print(" 🔎 原因推断：")
+        for item in diag["causes"][:3]:
+            print("    - %s → %s" % (item["cause"], item["hint"]))
+        if diag["errors"]:
+            print("    最近错误行：")
+            for err in diag["errors"][:3]:
+                print("      %s" % err[:120])
+    print(" 结论：%s" % {"ok": "正常", "warn": "有告警", "fail": "有故障"}[worst])
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="模块运行期健康检查（可自愈/可告警）")
     parser.add_argument("--module", required=True,
@@ -739,21 +757,7 @@ def main(argv=None):
                           "ts": datetime.datetime.now().isoformat(timespec="seconds")},
                          ensure_ascii=False, indent=1))
     else:
-        icons = {OK: "✅", WARN: "⚠️", FAIL: "❌"}
-        print("== %s 健康检查 ==" % args.module)
-        for c in checks:
-            print(" %s %-10s %s" % (icons[c["state"]], c["name"], c["detail"]))
-        if fixed:
-            print(" 🔧 已自愈：%s" % "；".join(fixed))
-        if diag["causes"]:
-            print(" 🔎 原因推断：")
-            for item in diag["causes"][:3]:
-                print("    - %s → %s" % (item["cause"], item["hint"]))
-            if diag["errors"]:
-                print("    最近错误行：")
-                for err in diag["errors"][:3]:
-                    print("      %s" % err[:120])
-        print(" 结论：%s" % {"ok": "正常", "warn": "有告警", "fail": "有故障"}[worst])
+        _print_report(args.module, checks, fixed, diag, worst)
 
     state_path = module_dir(args.module) / "data" / "state" / "health.json"
     state = merge_state(load_state(state_path), {

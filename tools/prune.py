@@ -165,6 +165,33 @@ def _remove(path, is_dir, apply, removed):
     return size
 
 
+def _oldest_exports(data):
+    """exports 下的文件，按修改时间从老到新。"""
+    exports = data / "exports"
+    if not exports.is_dir():
+        return []
+    files = sorted(exports.glob("*"), key=lambda p: p.stat().st_mtime if p.is_file() else 0)
+    return [f for f in files if f.is_file()]
+
+
+def _trim_logs(data, budget, limit, apply, keep_lines, removed):
+    """把日志裁剪到最近 keep_lines 行，直到回到预算内（budget 为单元素列表，原地扣减）。"""
+    for f in sorted((data / "logs").glob("*.log")):
+        if budget[0] <= limit:
+            break
+        if not f.is_file():
+            continue
+        before = f.stat().st_size
+        if apply:
+            lines = f.read_text(encoding="utf-8", errors="ignore").splitlines()
+            kept = "\n".join(lines[-keep_lines:]) + "\n"
+            tmp = f.with_suffix(f.suffix + ".tmp")
+            tmp.write_text(kept, encoding="utf-8")
+            tmp.replace(f)
+        budget[0] -= max(0, before - min(before, keep_lines * 100))
+        removed.append((f, "budget-trim", False))
+
+
 def enforce_budget(module, max_mb=500, apply=False, keep_lines=200):
     """总数据量硬上限：超过预算时从最老的产物删起，直到回到预算内。"""
     limit = max_mb * 1024 * 1024
@@ -188,11 +215,8 @@ def enforce_budget(module, max_mb=500, apply=False, keep_lines=200):
         take(path, True)
 
     # 2) 最老的 exports
-    for f in sorted((data / "exports").glob("*"), key=lambda p: p.stat().st_mtime if p.is_file() else 0) if (
-        data / "exports"
-    ).is_dir() else []:
-        if f.is_file():
-            take(f, False)
+    for f in _oldest_exports(data):
+        take(f, False)
 
     # 3) 最老的 reports
     for _, f in _date_files(data / "reports", "*.md", lambda n: _parse_day(n[:-3])):
@@ -205,20 +229,7 @@ def enforce_budget(module, max_mb=500, apply=False, keep_lines=200):
 
     # 5) 最后手段：裁剪日志到最近 keep_lines 行
     if budget[0] > limit:
-        for f in sorted((data / "logs").glob("*.log")):
-            if budget[0] <= limit:
-                break
-            if not f.is_file():
-                continue
-            before = f.stat().st_size
-            if apply:
-                lines = f.read_text(encoding="utf-8", errors="ignore").splitlines()
-                kept = "\n".join(lines[-keep_lines:]) + "\n"
-                tmp = f.with_suffix(f.suffix + ".tmp")
-                tmp.write_text(kept, encoding="utf-8")
-                tmp.replace(f)
-            budget[0] -= max(0, before - min(before, keep_lines * 100))
-            removed.append((f, "budget-trim", False))
+        _trim_logs(data, budget, limit, apply, keep_lines, removed)
 
     if budget[0] > limit:
         print(

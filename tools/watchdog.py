@@ -312,6 +312,61 @@ def notify(text):
         return False
 
 
+def _module_state(rc, payload, output, ai):
+    """把单模块 healthcheck 结果压成 watchdog 状态条目。"""
+    checks = [c for c in (payload.get("checks") or []) if isinstance(c, dict)]
+    return {
+        "state": payload.get("state") or "fail", "rc": rc,
+        "fixed": [c.get("detail") for c in checks if c.get("fixed")],
+        "causes": [c.get("cause") for c in ((payload.get("diagnosis") or {}).get("causes") or [])
+                   if isinstance(c, dict)],
+        "warn_details": ["%s：%s" % (c.get("name"), c.get("detail"))
+                         for c in checks if c.get("state") == "warn"],
+        "ai": ai,
+        "error": "" if rc in (0, 1, 2) else output[-200:],
+    }
+
+
+def _split_job_problems(jobs_problems):
+    """error 级（rc=2/3、未加载等）即时告警；warn 级（rc=1 降级、超时）进每日降级汇总。"""
+    def pick(level):
+        return [p for p in jobs_problems
+                if p.get("level") == level and p.get("status") not in ("🟢 正常", "🟢 运行中")]
+    return pick("error"), pick("warn")
+
+
+def _fail_alert(old, module_states, job_errors, muted):
+    """1) FAIL 即时告警（批次 digest + 60 分钟冷却）。muted 非空时只记日志不发送。返回 (text, digest, notified)。"""
+    text = build_message(module_states, job_errors)
+    digest = digest_of(module_states, job_errors)
+    same = old.get("last_notify_hash") == digest
+    cooling = time.time() - float(old.get("last_notify_ts") or 0) < NOTIFY_COOLDOWN_MIN * 60
+    notified = False
+    if text and not (same and cooling):
+        if muted:
+            log("（%s）本次告警内容：\n%s" % (muted, text))
+        else:
+            notified = notify(text)
+            if notified:
+                old["last_notify_ts"] = time.time()
+    return text, digest, notified
+
+
+def _warn_digest(old, module_states, job_warns, muted, warn_digest_hour):
+    """2) WARN 每日汇总（每天一条，避免降级运行长期静默）。返回 (warn_text, notified)。"""
+    warn_text = build_warn_digest(module_states, job_warns)
+    warn_day = warn_digest_date(hour=warn_digest_hour)
+    warn_notified = False
+    if warn_text and should_send_warn_digest(old.get("last_warn_digest_date"), hour=warn_digest_hour):
+        if muted:
+            log("（%s）本次降级汇总：\n%s" % (muted, warn_text))
+        else:
+            warn_notified = notify(warn_text)
+            if warn_notified and warn_day:
+                old["last_warn_digest_date"] = warn_day
+    return warn_text, warn_notified
+
+
 def run_once(no_notify=False, no_agent=False, dry_run=False,
              network_every_hours=NETWORK_EVERY_HOURS, warn_digest_hour=WARN_DIGEST_HOUR):
     started = time.time()
@@ -348,64 +403,23 @@ def run_once(no_notify=False, no_agent=False, dry_run=False,
                 continue
             rc, payload, output, ai = run_module(module, not no_notify, agent_this_round,
                                                  network=network_due, stale_min=stale_override)
-            checks = [c for c in (payload.get("checks") or []) if isinstance(c, dict)]
-            state = payload.get("state") or "fail"
-            fixed = [c.get("detail") for c in checks if c.get("fixed")]
-            warn_details = ["%s：%s" % (c.get("name"), c.get("detail"))
-                            for c in checks if c.get("state") == "warn"]
-            causes = [c.get("cause") for c in ((payload.get("diagnosis") or {}).get("causes") or [])
-                      if isinstance(c, dict)]
-            module_states[module] = {
-                "state": state, "rc": rc, "fixed": fixed, "causes": causes,
-                "warn_details": warn_details, "ai": ai,
-                "error": "" if rc in (0, 1, 2) else output[-200:],
-            }
-            if state != "ok":
-                log("%s：%s（rc=%s，自愈 %d 项）" % (module, state, rc, len(fixed)))
+            module_states[module] = _module_state(rc, payload, output, ai)
+            if module_states[module]["state"] != "ok":
+                log("%s：%s（rc=%s，自愈 %d 项）" % (module, module_states[module]["state"], rc,
+                                                 len(module_states[module]["fixed"])))
 
         jobs_problems, _jobs_out = run_jobs_check()
-        # error 级（rc=2/3、未加载等）即时告警；warn 级（rc=1 降级、超时）进每日降级汇总
-        job_errors = [p for p in jobs_problems
-                      if p.get("level") == "error"
-                      and p.get("status") not in ("🟢 正常", "🟢 运行中")]
-        job_warns = [p for p in jobs_problems
-                     if p.get("level") == "warn"
-                     and p.get("status") not in ("🟢 正常", "🟢 运行中")]
+        job_errors, job_warns = _split_job_problems(jobs_problems)
 
-        # 1) FAIL 即时告警（批次 digest + 60 分钟冷却）
-        text = build_message(module_states, job_errors)
-        digest = digest_of(module_states, job_errors)
-        same = old.get("last_notify_hash") == digest
-        cooling = time.time() - float(old.get("last_notify_ts") or 0) < NOTIFY_COOLDOWN_MIN * 60
-        notified = False
-        if text and not (same and cooling):
-            if no_notify or slept:
-                log("（%s）本次告警内容：\n%s" % (
-                    "休眠后首轮，降噪跳过发送" if slept else "--no-notify", text))
-            else:
-                notified = notify(text)
-                if notified:
-                    old["last_notify_ts"] = time.time()
-
-        # 2) WARN 每日汇总（每天一条，避免降级运行长期静默）
-        warn_text = build_warn_digest(module_states, job_warns)
-        warn_day = warn_digest_date(hour=warn_digest_hour)
-        warn_notified = False
-        if warn_text and should_send_warn_digest(old.get("last_warn_digest_date"),
-                                                 hour=warn_digest_hour):
-            if no_notify or slept:
-                log("（%s）本次降级汇总：\n%s" % (
-                    "休眠后首轮，降噪跳过发送" if slept else "--no-notify", warn_text))
-            else:
-                warn_notified = notify(warn_text)
-                if warn_notified and warn_day:
-                    old["last_warn_digest_date"] = warn_day
+        muted = "休眠后首轮，降噪跳过发送" if slept else ("--no-notify" if no_notify else "")
+        text, digest, notified = _fail_alert(old, module_states, job_errors, muted)
+        warn_text, warn_notified = _warn_digest(old, module_states, job_warns, muted, warn_digest_hour)
 
         duration = round(time.time() - started, 2)
         states = {}
         for info in module_states.values():
             states[info["state"]] = states.get(info["state"], 0) + 1
-        summary = ("watchdog: 检查 %d 模块（运行中跳过 %d，未接入 %d），launchd 失败 %d/降级 %d，"
+        summary =("watchdog: 检查 %d 模块（运行中跳过 %d，未接入 %d），launchd 失败 %d/降级 %d，"
                    "告警=%s，降级汇总=%s，联网=%s，休眠恢复=%s（%.2fs）" % (
                        len(module_states) - len(skipped), len(skipped), len(unmonitored),
                        len(job_errors), len(job_warns), "yes" if notified else "no",

@@ -2,9 +2,5 @@
   "crypto-price/scripts/cards.py::format_price_alert": 24,
   "crypto-price/scripts/delivery.py::deliver": 20,
   "crypto-price/scripts/run.py::main": 17,
-  "crypto-price/scripts/run.py::run_cycle": 16,
-  "libs/crypto_core/src/crypto_core/notify/templates.py::format_alert": 19,
-  "tools/healthcheck.py::main": 16,
-  "tools/prune.py::enforce_budget": 17,
-  "tools/watchdog.py::run_once": 19
+  "crypto-price/scripts/run.py::run_cycle": 16
 }
