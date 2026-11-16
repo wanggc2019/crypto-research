@@ -18,11 +18,15 @@ jobs:
 
   gate: # 唯一质量门：与本地 make gate / pre-push 完全一致（自动发现 crypto-* 模块：ruff + 单测 + scripts/e2e.py）
     runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.12"]   # 3.9 = 当前线上 .venv；3.12 = 升级目标（见 docs/adr/0010）
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.9"
+          python-version: ${{ matrix.python-version }}
       - name: Install
         run: pip install pyyaml ruff
       - name: Gate

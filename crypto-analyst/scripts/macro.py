@@ -34,18 +34,18 @@ def http(url, timeout=6, tries=1):
 
 
 def fetch_dvol(currency="BTC"):
-    start = int((datetime.datetime.utcnow() - datetime.timedelta(days=3)).timestamp() * 1000)
+    start = int((datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=3)).timestamp() * 1000)
     end = int(time.time() * 1000)
     url = ("https://www.deribit.com/api/v2/public/get_volatility_index_data"
            f"?currency={currency}&start_timestamp={start}&end_timestamp={end}&resolution=1D")
     rows = json.loads(http(url))["result"]["data"]
     ts, _o, _h, _l, close = rows[-1]
-    d = datetime.datetime.utcfromtimestamp(ts / 1000).strftime("%Y-%m-%d")
+    d = datetime.datetime.fromtimestamp(ts / 1000, datetime.timezone.utc).strftime("%Y-%m-%d")
     return {"label": "DVOL（BTC 隐含波动率）", "value": round(close, 2), "date": d}
 
 
 def fetch_fred(series_id, label, days=10):
-    cosd = (datetime.datetime.utcnow() - datetime.timedelta(days=days)).strftime("%Y-%m-%d")
+    cosd = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=days)).strftime("%Y-%m-%d")
     url = f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}&cosd={cosd}"
     lines = [ln for ln in http(url).strip().splitlines() if ln and not ln.startswith("observation_date")]
     for ln in reversed(lines):
@@ -62,7 +62,7 @@ def fetch_yahoo(symbol, label):
     stamps = data.get("timestamp") or []
     for i in range(len(closes) - 1, -1, -1):
         if closes[i] is not None:
-            d = datetime.datetime.utcfromtimestamp(stamps[i]).strftime("%Y-%m-%d")
+            d = datetime.datetime.fromtimestamp(stamps[i], datetime.timezone.utc).strftime("%Y-%m-%d")
             return {"label": label, "value": round(float(closes[i]), 3), "date": d}
     raise ValueError("Yahoo 无有效收盘价")
 
@@ -96,7 +96,7 @@ def main(argv=None):
     args = ap.parse_args(argv)
 
     series, errors = collect()
-    date_str = datetime.datetime.utcnow().strftime("%Y-%m-%d")
+    date_str = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
     payload = {"schema": "macro/v1", "date": date_str, "series": series, "errors": errors}
 
     if args.json:
