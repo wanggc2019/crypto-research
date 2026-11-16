@@ -318,46 +318,35 @@ def select_alerts(candidates, sent_today, caps):
 
 
 # ---------------------------------------------------------------- 主流程
-def run(args):
-    cfg = load_config("app.yaml") or {}
-    rules = load_config("rules.yaml") or {}
-    digest_cfg = cfg.get("digest") or {}
-    policy = scoring.policy(rules)
-    caps = policy.get("caps") or {}
-    paths = ensure_dirs(args.data_dir)
-    date = args.date or today_str()
-    now_dt = now()
+_DEFAULT_QUIET = "22:00-07:00"
 
-    raw_posts = apply_meta(read_jsonl(os.path.join(paths["raw"], date, "posts.jsonl")), account_meta())
-    history = load_history(paths, date, int(policy.get("novelty_days") or 7) + 1)
-    posts = scoring.evaluate(raw_posts, rules, history=history, now=now_dt)
-    counts = _counts(posts)
 
-    if args.test:
-        env = load_env()
-        token, chat, problems = check_credentials(env)
-        if problems:
-            print("❌ Telegram 凭据不完整：%s" % "；".join(problems))
-            return 2
-        accounts = [a for a in (load_config("kol.yaml").get("accounts") or [])
-                    if a.get("enabled", True)]
-        analysis_on = bool(analyzer.analysis_config(cfg).get("enabled"))
-        text = ("✅【crypto-x-kol】<b>通道测试</b>\n"
-                "监控账号：%d 个（每 %s 秒抓一次）｜抓取：r.jina.ai（免 key）\n"
-                "告警：价值分 P0≥%s / P1≥%s，每日最多 %s 条\n"
-                "中文：DeepSeek %s｜原文见日报\n🏷 任务：%s" % (
-                    len(accounts), (cfg.get("poll_seconds") or 300),
-                    policy["thresholds"].get("P0"), policy["thresholds"].get("P1"),
-                    caps.get("per_day"), "翻译+总结" if analysis_on else "未启用",
-                    job_name()))
-        if args.dry_run:
-            print("[dry-run] 测试消息：\n" + text)
-            return 0
-        ok, err = send_message(token, chat, text, meta={"module": "crypto-x-kol", "kind": "test"})
-        print("测试消息%s%s" % ("发送成功 ✅" if ok else "发送失败 ❌", (" | " + err) if err else ""))
-        return 0 if ok else 2
+def _cmd_test(args, cfg, policy, caps):
+    token, chat, problems = check_credentials(load_env())
+    if problems:
+        print("❌ Telegram 凭据不完整：%s" % "；".join(problems))
+        return 2
+    accounts = [a for a in (load_config("kol.yaml").get("accounts") or [])
+                if a.get("enabled", True)]
+    analysis_on = bool(analyzer.analysis_config(cfg).get("enabled"))
+    text = ("✅【crypto-x-kol】<b>通道测试</b>\n"
+            "监控账号：%d 个（每 %s 秒抓一次）｜抓取：r.jina.ai（免 key）\n"
+            "告警：价值分 P0≥%s / P1≥%s，每日最多 %s 条\n"
+            "中文：DeepSeek %s｜原文见日报\n🏷 任务：%s" % (
+                len(accounts), (cfg.get("poll_seconds") or 300),
+                policy["thresholds"].get("P0"), policy["thresholds"].get("P1"),
+                caps.get("per_day"), "翻译+总结" if analysis_on else "未启用",
+                job_name()))
+    if args.dry_run:
+        print("[dry-run] 测试消息：\n" + text)
+        return 0
+    ok, err = send_message(token, chat, text, meta={"module": "crypto-x-kol", "kind": "test"})
+    print("测试消息%s%s" % ("发送成功 ✅" if ok else "发送失败 ❌", (" | " + err) if err else ""))
+    return 0 if ok else 2
 
-    # 翻译 + 一句话总结（DeepSeek；dry-run / --no-analyze 跳过；无 key 自动降级）
+
+def _analyze_posts(args, cfg, posts, paths, date):
+    """翻译 + 一句话总结（DeepSeek；dry-run / --no-analyze 跳过；无 key 自动降级）→ 分析缓存。"""
     analysis_cache = load_analysis_cache(paths, date)
     analysis_cfg = analyzer.analysis_config(cfg)
     if posts and not args.dry_run and not args.no_analyze:
@@ -375,6 +364,144 @@ def run(args):
         print("（--no-analyze：跳过翻译/总结，显示原文）")
     elif args.dry_run:
         print("（dry-run：跳过翻译/总结，不调用 DeepSeek）")
+    return analysis_cache
+
+
+def _finish(args, summary, rc=0):
+    if args.json:
+        print(json.dumps(summary, ensure_ascii=False))
+    return rc
+
+
+def _in_quiet(c):
+    dc = c["digest_cfg"]
+    return bool(dc.get("quiet_hold", True)) and in_quiet_hours(
+        now_dt=c["now"], span=dc.get("quiet_hours") or _DEFAULT_QUIET)
+
+
+def _quiet_filter(c, alerts):
+    """静默时段只留 P0（且 p0_pierce_quiet 开启时）。"""
+    return [p for p in alerts if p.get("level") == "P0"] if c["policy"].get("p0_pierce_quiet") else []
+
+
+def _alert_message(c, chosen):
+    return build_alert_message(chosen, c["rules"],
+                               int(c["digest_cfg"].get("text_chars") or 140),
+                               int(c["caps"].get("max_per_message") or 5),
+                               c["report_display"], cache=c["cache"])
+
+
+def _preview(args, c, posts, alerts, counts, summary):
+    """非 --notify：只写日报 + 打印「如果推送会发什么」。"""
+    print("今日新帖 %d 条（P0 %d / P1 %d / P2 %d / MUTE %d），待告警 %d 条；报告：%s" % (
+        len(posts), counts.get("P0", 0), counts.get("P1", 0),
+        counts.get("P2", 0), counts.get("MUTE", 0), len(alerts), c["report_display"]))
+    quiet = _in_quiet(c)
+    if alerts and args.dry_run:
+        print("\n--- 本次会推送的告警预览%s ---" % ("（静默时段：仅 P0）" if quiet else ""))
+        preview = _quiet_filter(c, alerts) if quiet else alerts
+        if preview:
+            print(_alert_message(c, preview))
+        else:
+            print("（静默时段：本轮无 P0，P1 留待次日）")
+    elif alerts:
+        print("（未加 --notify，仅写日报；%d 条达到告警阈值）" % len(alerts))
+    return _finish(args, summary)
+
+
+def _mark_digest(args, c, pushed, pending):
+    mark(pushed, pending, "digest")
+    if not args.dry_run:
+        save_pushed(c["paths"], c["date"], pushed)
+
+
+def _send_alerts(args, c, chosen, pushed, pending, quiet, summary):
+    token, chat, problems = check_credentials(load_env())
+    if problems:
+        print("❌ Telegram 凭据不完整：%s" % "；".join(problems))
+        return 2
+    message = c["message"]
+    severity = "P0" if any(p.get("level") == "P0" for p in chosen) else "P1"
+    assets = [t for p in chosen for t in (p.get("tags") or [])]
+    ok, err = send_signal(token, chat, message, module="crypto-x-kol", severity=severity, assets=assets,
+                          key=",".join(str(p.get("id")) for p in chosen[:5]))  # 保留 Telegram 链接预览（原帖卡片）
+    if ok and err.startswith("suppressed"):
+        print("⏸ 全局预算拦截（%s）；条目已在日报中" % err)
+    if not ok:
+        print("❌ 推送失败：%s" % err)
+        return 1
+
+    held = mark_after_send(pushed, pending, chosen, quiet)
+    save_pushed(c["paths"], c["date"], pushed)
+    n_p0 = sum(1 for p in chosen if p["level"] == "P0")
+    n_p1 = sum(1 for p in chosen if p["level"] == "P1")
+    if quiet:
+        print("✅ 已推送 %d 条告警（P0 %d / P1 %d）；%d 条 P1 留待静默结束；报告：%s" % (
+            len(chosen), n_p0, n_p1, held, c["report_display"]))
+    else:
+        print("✅ 已推送 %d 条告警（P0 %d / P1 %d）；其余 %d 条进日报；报告：%s" % (
+            len(chosen), n_p0, n_p1, max(0, len(pending) - len(chosen)), c["report_display"]))
+    if args.json:
+        summary["sent"] = len({p["id"] for p in chosen})
+    return _finish(args, summary)
+
+
+def _notify(args, c, posts, pending, alerts, summary):
+    """--notify：只处理「达到 P0/P1 且未推送」的告警；P2/MUTE 直接标记为已进日报。"""
+    pushed = c["pushed"]
+    if not alerts:
+        _mark_digest(args, c, pushed, pending)
+        if pending:
+            print("本轮待处理 %d 条均未达到告警阈值（今日共 %d 条），已进日报；报告：%s" % (
+                len(pending), len(posts), c["report_display"]))
+        else:
+            print("今日新帖已全部处理完毕（无待推送）；报告：data/reports/%s" % os.path.basename(c["report_file"]))
+        return _finish(args, summary)
+
+    quiet = _in_quiet(c)
+    candidates = alerts
+    if quiet:
+        candidates = _quiet_filter(c, alerts)
+        if not candidates:
+            print("静默时段（%s），%d 条 P1 留待次日；报告：%s" % (
+                c["digest_cfg"].get("quiet_hours") or _DEFAULT_QUIET, len(alerts), c["report_display"]))
+            return _finish(args, summary)
+
+    chosen = select_alerts(candidates, sent_alerts_today(pushed), c["caps"])
+    if not chosen:
+        print("今日告警已达上限（%d 条），%d 条高分推文只进日报；报告：%s" % (
+            int(c["caps"].get("per_day") or 8), len(alerts), c["report_display"]))
+        _mark_digest(args, c, pushed, pending)
+        return _finish(args, summary)
+
+    # 给待推送告警补「原帖链接」（按需抓 HTML；失败回退主页）
+    if not args.dry_run:
+        xlink.attach(chosen, c["cfg"], log=print)
+    c["message"] = _alert_message(c, chosen)
+    if args.dry_run:
+        print(c["message"])
+        return 0
+    return _send_alerts(args, c, chosen, pushed, pending, quiet, summary)
+
+
+def run(args):
+    cfg = load_config("app.yaml") or {}
+    rules = load_config("rules.yaml") or {}
+    policy = scoring.policy(rules)
+    caps = policy.get("caps") or {}
+    paths = ensure_dirs(args.data_dir)
+    date = args.date or today_str()
+    now_dt = now()
+
+    raw_posts = apply_meta(read_jsonl(os.path.join(paths["raw"], date, "posts.jsonl")), account_meta())
+    history = load_history(paths, date, int(policy.get("novelty_days") or 7) + 1)
+    posts = scoring.evaluate(raw_posts, rules, history=history, now=now_dt)
+    counts = _counts(posts)
+
+    if args.test:
+        return _cmd_test(args, cfg, policy, caps)
+
+    analysis_cache = _analyze_posts(args, cfg, posts, paths, date)
 
     report_file = os.path.join(paths["reports"], "%s.md" % date)
     report_display = "data/reports/%s" % os.path.basename(report_file)
@@ -395,117 +522,14 @@ def run(args):
 
     if not posts:
         print("今日暂无新帖（%s）" % date)
-        if args.json:
-            print(json.dumps(summary, ensure_ascii=False))
-        return 0
+        return _finish(args, summary)
 
-    # 非 --notify：只写日报 + 打印「如果推送会发什么」
+    c = {"cfg": cfg, "rules": rules, "policy": policy, "caps": caps, "digest_cfg": cfg.get("digest") or {},
+         "paths": paths, "date": date, "now": now_dt, "cache": analysis_cache, "pushed": pushed,
+         "report_file": report_file, "report_display": report_display}
     if not args.notify:
-        print("今日新帖 %d 条（P0 %d / P1 %d / P2 %d / MUTE %d），待告警 %d 条；报告：%s" % (
-            len(posts), counts.get("P0", 0), counts.get("P1", 0),
-            counts.get("P2", 0), counts.get("MUTE", 0), len(alerts), report_display))
-        quiet = bool(digest_cfg.get("quiet_hold", True)) and in_quiet_hours(
-            now_dt=now_dt, span=digest_cfg.get("quiet_hours") or "22:00-07:00")
-        if alerts and args.dry_run:
-            print("\n--- 本次会推送的告警预览%s ---" % ("（静默时段：仅 P0）" if quiet else ""))
-            preview = alerts
-            if quiet:
-                preview = [p for p in preview if p.get("level") == "P0"] \
-                    if policy.get("p0_pierce_quiet") else []
-            if preview:
-                print(build_alert_message(preview, rules,
-                                          int(digest_cfg.get("text_chars") or 140),
-                                          int(caps.get("max_per_message") or 5),
-                                          report_display, cache=analysis_cache))
-            else:
-                print("（静默时段：本轮无 P0，P1 留待次日）")
-        elif alerts:
-            print("（未加 --notify，仅写日报；%d 条达到告警阈值）" % len(alerts))
-        if args.json:
-            print(json.dumps(summary, ensure_ascii=False))
-        return 0
-
-    # --notify：只处理「达到 P0/P1 且未推送」的告警；P2/MUTE 直接标记为已进日报
-    if not alerts:
-        mark(pushed, pending, "digest")
-        if not args.dry_run:
-            save_pushed(paths, date, pushed)
-        if pending:
-            print("本轮待处理 %d 条均未达到告警阈值（今日共 %d 条），已进日报；报告：%s" % (
-                len(pending), len(posts), report_display))
-        else:
-            print("今日新帖已全部处理完毕（无待推送）；报告：data/reports/%s" % os.path.basename(report_file))
-        if args.json:
-            print(json.dumps(summary, ensure_ascii=False))
-        return 0
-
-    quiet = bool(digest_cfg.get("quiet_hold", True)) and in_quiet_hours(
-        now_dt=now_dt, span=digest_cfg.get("quiet_hours") or "22:00-07:00")
-    candidates = alerts
-    if quiet:
-        candidates = [p for p in alerts if p.get("level") == "P0"] if policy.get("p0_pierce_quiet") else []
-        if not candidates:
-            print("静默时段（%s），%d 条 P1 留待次日；报告：%s" % (
-                digest_cfg.get("quiet_hours") or "22:00-07:00", len(alerts), report_display))
-            if args.json:
-                print(json.dumps(summary, ensure_ascii=False))
-            return 0
-
-    per_day = int(caps.get("per_day") or 8)
-    max_msg = int(caps.get("max_per_message") or 5)
-    sent_today = sent_alerts_today(pushed)
-    chosen = select_alerts(candidates, sent_today, caps)
-    if not chosen:
-        print("今日告警已达上限（%d 条），%d 条高分推文只进日报；报告：%s" % (
-            per_day, len(alerts), report_display))
-        mark(pushed, pending, "digest")
-        if not args.dry_run:
-            save_pushed(paths, date, pushed)
-        if args.json:
-            print(json.dumps(summary, ensure_ascii=False))
-        return 0
-
-    # 给待推送告警补「原帖链接」（按需抓 HTML；失败回退主页）
-    if not args.dry_run:
-        xlink.attach(chosen, cfg, log=print)
-
-    message = build_alert_message(chosen, rules,
-                                  int(digest_cfg.get("text_chars") or 140),
-                                  max_msg, report_display, cache=analysis_cache)
-    if args.dry_run:
-        print(message)
-        return 0
-
-    env = load_env()
-    token, chat, problems = check_credentials(env)
-    if problems:
-        print("❌ Telegram 凭据不完整：%s" % "；".join(problems))
-        return 2
-    severity = "P0" if any(p.get("level") == "P0" for p in chosen) else "P1"
-    assets = [t for p in chosen for t in (p.get("tags") or [])]
-    ok, err = send_signal(token, chat, message, module="crypto-x-kol", severity=severity, assets=assets,
-                          key=",".join(str(p.get("id")) for p in chosen[:5]))  # 保留 Telegram 链接预览（原帖卡片）
-    if ok and err.startswith("suppressed"):
-        print("⏸ 全局预算拦截（%s）；条目已在日报中" % err)
-    if not ok:
-        print("❌ 推送失败：%s" % err)
-        return 1
-
-    held = mark_after_send(pushed, pending, chosen, quiet)
-    save_pushed(paths, date, pushed)
-    if quiet:
-        print("✅ 已推送 %d 条告警（P0 %d / P1 %d）；%d 条 P1 留待静默结束；报告：%s" % (
-            len(chosen), sum(1 for p in chosen if p["level"] == "P0"),
-            sum(1 for p in chosen if p["level"] == "P1"), held, report_display))
-    else:
-        print("✅ 已推送 %d 条告警（P0 %d / P1 %d）；其余 %d 条进日报；报告：%s" % (
-            len(chosen), sum(1 for p in chosen if p["level"] == "P0"),
-            sum(1 for p in chosen if p["level"] == "P1"),
-            max(0, len(pending) - len(chosen)), report_display))
-    if args.json:
-        summary["sent"] = len({p["id"] for p in chosen})
-        print(json.dumps(summary, ensure_ascii=False))
-    return 0
+        return _preview(args, c, posts, alerts, counts, summary)
+    return _notify(args, c, posts, pending, alerts, summary)
 
 
 def main(argv=None):

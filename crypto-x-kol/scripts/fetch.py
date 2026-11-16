@@ -309,106 +309,110 @@ def build_item(post, account, date):
 
 
 # ---------------------------------------------------------------- 主流程
-def run(args):
-    cfg = load_config("app.yaml") or {}
-    paths = ensure_dirs(args.data_dir)
-    date = args.date or today_str()
-    accounts = load_accounts(only=args.only)
-    if args.limit:
-        accounts = accounts[:args.limit]
-    if not accounts:
-        print("没有 enabled 的 KOL 账号（检查 config/kol.yaml）")
+class _Pacer:
+    """账号间最小请求间隔（第一个请求不等）。"""
+
+    def __init__(self, interval):
+        self.interval = interval
+        self.last = 0.0
+        self.started = False
+
+    def wait(self):
+        if self.interval > 0:
+            wait = self.interval - (time.time() - self.last)
+            if self.started and wait > 0:
+                time.sleep(wait)
+        self.last = time.time()
+        self.started = True
+
+
+def _fetch_account(handle, state, ctx):
+    """抓取 + 解析 + 与状态比对（带页面级重试）→ (ok, err, parsed, fresh, baseline)。"""
+    err, parsed = "", []
+    for attempt in range(1 + ctx["page_retries"]):
+        try:
+            ctx["pacer"].wait()
+            page = load_page(handle, ctx["cfg"], ctx["headers"], fixtures=ctx["fixtures"])
+            parsed = parse_page(page, handle)
+            fresh, baseline = diff_posts(state, parsed)
+            return True, "", parsed, fresh, baseline
+        except ParseError as exc:
+            err = str(exc)
+        except Exception as exc:  # noqa: BLE001 - 网络/超时统一记录，继续下一个账号
+            err = "%s: %s" % (type(exc).__name__, exc)
+        if attempt < ctx["page_retries"]:
+            time.sleep(ctx["retry_backoff"])
+    return False, err, parsed, [], False
+
+
+def _record_success(account, state, parsed, fresh, args, out_path, date):
+    """成功：更新状态、新帖落盘；返回落盘条数。"""
+    if not args.dry_run:
+        _mark_seen(state, parsed)
+    state.update({"initialized": True, "last_checked": ts_iso(),
+                  "last_ok": ts_iso(), "last_error": ""})
+    if not fresh or args.dry_run:
         return 0
+    records = [build_item(p, account, date) for p in fresh]
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    with open(out_path, "a", encoding="utf-8") as f:
+        for rec in records:
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    return len(fresh)
 
-    headers = request_headers(cfg, load_env())
-    fetch_cfg = cfg.get("fetch") or {}
-    interval = 0.0 if args.fixtures else float(fetch_cfg.get("min_interval_seconds") or 0)
-    page_retries = 0 if args.fixtures else int(fetch_cfg.get("page_retries") or 0)
-    retry_backoff = float(fetch_cfg.get("page_retry_backoff_seconds") or 2)
-    last_request = 0.0
-    out_path = os.path.join(paths["raw"], date, "posts.jsonl")
-    stats = {
-        "date": date, "started_at": ts_iso(),
-        "accounts": [], "errors": [], "skipped": [], "total_new": 0, "baseline": 0,
-    }
-    total_new = 0
 
-    previous_requests = False
-    for account in accounts:
-        handle = account["handle"]
-        state_path = os.path.join(paths["state"], "kol-%s.json" % handle.lower())
-        state = safe_json_load(state_path, {})
-        started = time.time()
-        fresh, baseline, parsed = [], False, []
-        ok, err = False, ""
-        for attempt in range(1 + page_retries):
-            try:
-                if interval > 0:
-                    wait = interval - (time.time() - last_request)
-                    if previous_requests and wait > 0:
-                        time.sleep(wait)
-                last_request = time.time()
-                previous_requests = True
-                page = load_page(handle, cfg, headers, fixtures=args.fixtures)
-                parsed = parse_page(page, handle)
-                fresh, baseline = diff_posts(state, parsed)
-                ok, err = True, ""
-                break
-            except ParseError as exc:
-                ok, err = False, str(exc)
-            except Exception as exc:  # noqa: BLE001 - 网络/超时统一记录，继续下一个账号
-                ok, err = False, "%s: %s" % (type(exc).__name__, exc)
-            if attempt < page_retries:
-                time.sleep(retry_backoff)
+def _record_failure(handle, state, err, stats):
+    state.update({"last_checked": ts_iso(), "last_error": err})
+    if is_web_restriction(err):
+        # 登录墙/403/429/代理临时封禁：等下一轮，不记失败、不告警
+        state["last_skipped"] = err
+        stats["skipped"].append({"handle": handle, "reason": err})
+    else:
+        stats["errors"].append({"handle": handle, "error": err})
 
-        if ok:
-            if not args.dry_run:
-                _mark_seen(state, parsed)
-            state.update({"initialized": True, "last_checked": ts_iso(),
-                          "last_ok": ts_iso(), "last_error": ""})
-            if fresh and not args.dry_run:
-                records = [build_item(p, account, date) for p in fresh]
-                os.makedirs(os.path.dirname(out_path), exist_ok=True)
-                with open(out_path, "a", encoding="utf-8") as f:
-                    for rec in records:
-                        f.write(json.dumps(rec, ensure_ascii=False) + "\n")
-                total_new += len(fresh)
-            if baseline:
-                stats["baseline"] += 1
-            if args.dry_run:
-                fresh = []  # dry-run 不落盘，也不宣称新增
-        else:
-            state.update({"last_checked": ts_iso(), "last_error": err})
-            if is_web_restriction(err):
-                # 登录墙/403/429/代理临时封禁：等下一轮，不记失败、不告警
-                state["last_skipped"] = err
-                stats["skipped"].append({"handle": handle, "reason": err})
-            else:
-                stats["errors"].append({"handle": handle, "error": err})
 
-        if not args.dry_run:
-            safe_json_dump(state_path, state)
+def _process_account(account, args, ctx, stats):
+    """处理一个账号；返回本账号落盘的新帖数。"""
+    handle = account["handle"]
+    state_path = os.path.join(ctx["paths"]["state"], "kol-%s.json" % handle.lower())
+    state = safe_json_load(state_path, {})
+    started = time.time()
+    ok, err, parsed, fresh, baseline = _fetch_account(handle, state, ctx)
+    new = 0
+    if ok:
+        new = _record_success(account, state, parsed, fresh, args, ctx["out_path"], ctx["date"])
+        if baseline:
+            stats["baseline"] += 1
+        if args.dry_run:
+            fresh = []  # dry-run 不落盘，也不宣称新增
+    else:
+        _record_failure(handle, state, err, stats)
+    if not args.dry_run:
+        safe_json_dump(state_path, state)
 
-        elapsed = round(time.time() - started, 2)
-        skipped = (not ok) and is_web_restriction(err)
-        if ok:
-            print("  @%-18s OK   new=%-2d visible=%-2d %5.2fs%s" % (
-                handle, len(fresh), len(parsed), elapsed,
-                "（基线）" if baseline and not args.dry_run else ""))
-        elif skipped:
-            print("  @%-18s SKIP %5.2fs  %s" % (handle, elapsed, err[:80]))
-        else:
-            print("  @%-18s ERR  %5.2fs  %s" % (handle, elapsed, err[:80]))
-        stats["accounts"].append({
-            "handle": handle, "ok": ok, "skipped": skipped, "new": len(fresh),
-            "visible": len(parsed), "baseline": baseline,
-            "seconds": elapsed, "error": err,
-        })
+    elapsed = round(time.time() - started, 2)
+    skipped = (not ok) and is_web_restriction(err)
+    if ok:
+        print("  @%-18s OK   new=%-2d visible=%-2d %5.2fs%s" % (
+            handle, len(fresh), len(parsed), elapsed,
+            "（基线）" if baseline and not args.dry_run else ""))
+    elif skipped:
+        print("  @%-18s SKIP %5.2fs  %s" % (handle, elapsed, err[:80]))
+    else:
+        print("  @%-18s ERR  %5.2fs  %s" % (handle, elapsed, err[:80]))
+    stats["accounts"].append({
+        "handle": handle, "ok": ok, "skipped": skipped, "new": len(fresh),
+        "visible": len(parsed), "baseline": baseline,
+        "seconds": elapsed, "error": err,
+    })
+    return new
 
+
+def _summarize(args, stats, accounts, paths, date):
+    total_new = stats["total_new"]
     ok_n = sum(1 for a in stats["accounts"] if a["ok"])
     skip_n = len(stats["skipped"])
-    stats.update({"finished_at": ts_iso(), "total_new": total_new,
-                  "ok": ok_n, "fail": len(stats["errors"]), "skip": skip_n})
+    stats.update({"finished_at": ts_iso(), "ok": ok_n, "fail": len(stats["errors"]), "skip": skip_n})
     if not args.dry_run:
         safe_json_dump(os.path.join(paths["logs"], "fetch-%s.json" % date), stats)
         log_line("fetch %s：账号 %d，成功 %d，失败 %d，新增 %d" % (
@@ -429,6 +433,35 @@ def run(args):
     if stats["errors"]:
         return 3 if ok_n == 0 else 1
     return 0
+
+
+def run(args):
+    cfg = load_config("app.yaml") or {}
+    paths = ensure_dirs(args.data_dir)
+    date = args.date or today_str()
+    accounts = load_accounts(only=args.only)
+    if args.limit:
+        accounts = accounts[:args.limit]
+    if not accounts:
+        print("没有 enabled 的 KOL 账号（检查 config/kol.yaml）")
+        return 0
+
+    fetch_cfg = cfg.get("fetch") or {}
+    ctx = {
+        "cfg": cfg, "paths": paths, "date": date, "fixtures": args.fixtures,
+        "headers": request_headers(cfg, load_env()),
+        "pacer": _Pacer(0.0 if args.fixtures else float(fetch_cfg.get("min_interval_seconds") or 0)),
+        "page_retries": 0 if args.fixtures else int(fetch_cfg.get("page_retries") or 0),
+        "retry_backoff": float(fetch_cfg.get("page_retry_backoff_seconds") or 2),
+        "out_path": os.path.join(paths["raw"], date, "posts.jsonl"),
+    }
+    stats = {
+        "date": date, "started_at": ts_iso(),
+        "accounts": [], "errors": [], "skipped": [], "total_new": 0, "baseline": 0,
+    }
+    for account in accounts:
+        stats["total_new"] += _process_account(account, args, ctx, stats)
+    return _summarize(args, stats, accounts, paths, date)
 
 
 def main(argv=None):

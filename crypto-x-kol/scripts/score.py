@@ -125,54 +125,80 @@ def _consensus(post, topic_key, history, rules, cfg, now):
     return len(handles)
 
 
-def evaluate_post(post, rules, history=None, now=None):
-    """给单条推文打分并分级；返回补全 score/level/topic/reasons 的 dict。"""
-    cfg = policy(rules)
-    text = _text(post)
-    weights, penalties = cfg["weights"], cfg["penalties"]
-    tier = str(post.get("tier") or "T2")
-    score = int((weights.get("tier") or {}).get(tier, (weights.get("tier") or {}).get("T2", 10)))
-    reasons, matched = [], []
-    critical_hit = promo_hit = gm_hit = rumor_hit = False
-    topic_key = topic_label = None
+# kind → (取值表, 键, 默认分, 理由模板（None=不写理由；{label} 替换为主题名）, 是否可作为主题)
+_KIND_RULES = {
+    "critical": ("weights", "critical", 30, "安全/监管类：{label}", True),
+    "strong": ("weights", "strong", 16, "{label}", True),
+    "action": ("weights", "action", 8, "操作观点", False),
+    "breaking": ("weights", "breaking", 10, "突发词", False),
+    "rumor": ("penalties", "rumor", -10, None, False),
+    "promo": ("penalties", "promo", -25, None, False),
+    "gm": ("penalties", "gm", -18, None, False),
+}
 
+
+def _score_topics(text, rules, cfg):
+    """按主题词组累加分数；返回 {score, reasons, matched, kinds(命中的 kind 集合), topic_key, topic_label}。"""
+    tables = {"weights": cfg["weights"], "penalties": cfg["penalties"]}
+    res = {"score": 0, "reasons": [], "matched": [], "kinds": set(), "topic_key": None, "topic_label": None}
     for key, group in _topic_groups(rules):
         hits = _hits(text, group.get("keywords"))
         if not hits:
             continue
         kind = str(group.get("kind") or "strong")
         label = group.get("label") or key
-        matched.extend(hits[:3])
-        if kind == "critical":
-            critical_hit = True
-            score += int(weights.get("critical") or 30)
-            reasons.append("安全/监管类：" + label)
-            if topic_key is None:
-                topic_key, topic_label = key, label
-        elif kind == "strong":
-            score += int(weights.get("strong") or 16)
-            reasons.append(label)
-            if topic_key is None:
-                topic_key, topic_label = key, label
-        elif kind == "action":
-            score += int(weights.get("action") or 8)
-            reasons.append("操作观点")
-        elif kind == "breaking":
-            score += int(weights.get("breaking") or 10)
-            reasons.append("突发词")
-        elif kind == "rumor":
-            rumor_hit = True
-            score += int(penalties.get("rumor") or -10)
-        elif kind == "promo":
-            promo_hit = True
-            score += int(penalties.get("promo") or -25)
-        elif kind == "gm":
-            gm_hit = True
-            score += int(penalties.get("gm") or -18)
+        res["matched"].extend(hits[:3])
+        rule = _KIND_RULES.get(kind)
+        if not rule:
+            continue
+        table, wkey, default, reason, sets_topic = rule
+        res["kinds"].add(kind)
+        res["score"] += int(tables[table].get(wkey) or default)
+        if reason:
+            res["reasons"].append(reason.format(label=label))
+        if sets_topic and res["topic_key"] is None:
+            res["topic_key"], res["topic_label"] = key, label
+    return res
 
-    if promo_hit or gm_hit:
+
+def _is_novel(post, topic_key, history, rules):
+    """同一账号在历史窗口内没提过该主题。"""
+    handle = (post.get("handle") or "").lower()
+    for other in history:
+        if other.get("id") == post.get("id"):
+            continue
+        if (other.get("handle") or "").lower() != handle:
+            continue
+        if topic_of(other, rules)[0] == topic_key:
+            return False
+    return True
+
+
+def _grade(score, thresholds, critical_hit, consensus):
+    if score >= int(thresholds.get("P0") or 45) and (critical_hit or consensus >= 2):
+        return "P0"
+    if score >= int(thresholds.get("P1") or 28):
+        return "P1"
+    if score >= int(thresholds.get("P2") or 10):
+        return "P2"
+    return "MUTE"
+
+
+def evaluate_post(post, rules, history=None, now=None):
+    """给单条推文打分并分级；返回补全 score/level/topic/reasons 的 dict。"""
+    cfg = policy(rules)
+    text = _text(post)
+    weights = cfg["weights"]
+    tier = str(post.get("tier") or "T2")
+    score = int((weights.get("tier") or {}).get(tier, (weights.get("tier") or {}).get("T2", 10)))
+
+    topics = _score_topics(text, rules, cfg)
+    score += topics["score"]
+    reasons = topics["reasons"]
+    topic_key, topic_label = topics["topic_key"], topics["topic_label"]
+    if topics["kinds"] & {"promo", "gm"}:
         reasons.append("推广/日常内容（降权）")
-    if rumor_hit:
+    if "rumor" in topics["kinds"]:
         reasons.append("传闻（降权）")
 
     assets = _assets_in(text, rules)
@@ -190,30 +216,12 @@ def evaluate_post(post, rules, history=None, now=None):
                      int(weights.get("consensus_cap") or 20))
         reasons.append("%d 位 KOL 同题（%s）" % (consensus, topic_label or topic_key))
 
-    if topic_key and history is not None:
-        novel = True
-        for other in history:
-            if other.get("id") == post.get("id"):
-                continue
-            if (other.get("handle") or "").lower() != (post.get("handle") or "").lower():
-                continue
-            if topic_of(other, rules)[0] == topic_key:
-                novel = False
-                break
-        if novel:
-            score += int(weights.get("novelty") or 8)
-            reasons.append("%d 天内首次提该主题" % int(cfg.get("novelty_days") or 7))
+    if topic_key and history is not None and _is_novel(post, topic_key, history, rules):
+        score += int(weights.get("novelty") or 8)
+        reasons.append("%d 天内首次提该主题" % int(cfg.get("novelty_days") or 7))
 
     score = max(0, min(100, score))
-    thresholds = cfg["thresholds"]
-    if score >= int(thresholds.get("P0") or 45) and (critical_hit or consensus >= 2):
-        level = "P0"
-    elif score >= int(thresholds.get("P1") or 28):
-        level = "P1"
-    elif score >= int(thresholds.get("P2") or 10):
-        level = "P2"
-    else:
-        level = "MUTE"
+    level = _grade(score, cfg["thresholds"], "critical" in topics["kinds"], consensus)
 
     out = dict(post)
     out.update({
@@ -222,7 +230,7 @@ def evaluate_post(post, rules, history=None, now=None):
         "level_cn": LEVEL_CN.get(level, level),
         "topic": topic_key,
         "topic_label": topic_label,
-        "topic_hits": matched[:5],
+        "topic_hits": topics["matched"][:5],
         "consensus": consensus,
         "reasons": reasons,
         "keywords": _hits(text, ((rules.get("high_signal") or {}).get("keywords") or [])),
