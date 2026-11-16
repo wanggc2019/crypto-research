@@ -25,7 +25,7 @@ whenToUse: 当前工作目录是 crypto-research（含 crypto-* 模块、docs/�
 
 ## 3. 实现
 
-- Python 3.9 标准库；共享逻辑进 `libs/crypto_core`，模块间零 import；
+- Python 3.12 标准库（依赖见 `requirements.txt`）；共享逻辑进 `libs/crypto_core`，模块间零 import；
 - 配置放 `<module>/config/*.yaml`；所有外部副作用支持 `--dry-run`，解析层支持 `--fixtures`；
 - 单源/单账号失败继续跑并汇总 rc；状态文件有界；运行产物只写模块 `data/`；
 - 改 bug 先补会失败的测试。

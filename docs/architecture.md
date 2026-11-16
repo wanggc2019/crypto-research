@@ -12,7 +12,7 @@
 - **三层结构**：根目录只放共享配置/凭据/文档/CI；`crypto-*/` 是需求模块；`libs/crypto_core` 是共享能力；`tools/` 是仓库级工具。
 - **依赖单向**：模块 → libs；**模块之间零 import**，只通过 `data/exports/` 的产物契约交互。
 - **共性按"第二个使用者出现才抽"分批下沉**：先 `notify / events / dedupe / store / env`（两个模块都必然要用），再 `http / sources / market`，最后 `report / launchd 生成器 / prune`。
-- **统一运行时**：Python 3.9 标准库为主；单根 `.venv`（没有也能跑）；凭据只在根 `.env`。
+- **统一运行时**：Python 3.12 标准库为主，依赖见 `requirements.txt`；单根 `.venv`；凭据只在根 `.env`。
 - **每个模块自带**：README、配置示例、单测、`data/` 产物目录、launchd 模板、离线回放能力。
 - **新需求 30 分钟起步**：`docs/_template/` 五件套模板 + `tools/new_module.py` 脚手架（同时生成代码与文档）+ `make gate` + 一键装调度。
 
@@ -23,7 +23,7 @@
 | 类别 | 内容 |
 |---|---|
 | **目标** | ① 所有 crypto 需求有唯一归属目录，不再往根目录堆文件；② 共性能力只实现一次（推送、事件、去重、抓取、行情、存储）；③ 每个模块可独立运行、独立调度、独立测试；④ 新需求低成本起步；⑤ 可回放、可回滚、可脱离本机迁移 |
-| **硬约束** | 个人项目、零付费（无 VPS/无付费 API）；本机 macOS + Python 3.9；launchd 调度；Telegram 送达；凭据不出本机；中文为主 |
+| **硬约束** | 个人项目、零付费（无 VPS/无付费 API）；本机 macOS + Python 3.12；launchd 调度；Telegram 送达；凭据不出本机；中文为主 |
 | **软约束** | 单文件尽量 < 500 行；模块代码 < 800–1000 行再考虑拆包；不引入数据库/消息队列/微服务 |
 | **非目标** | 多用户/权限体系、Web 服务、实时流式处理、分布式部署、PyPI 发包、K8s、复杂 CI 矩阵 |
 
@@ -37,7 +37,7 @@
 | D2 | 模块位置 | **顶层 `crypto-*/`**（不再包一层 `modules/`） | 已有 `crypto-news`，前缀已能自解释；等模块 > 6 个再机械分组，避免反复搬迁 |
 | D3 | 共享代码形态 | **`libs/crypto_core/` 纯 Python 包 + `PYTHONPATH`**，不做 pip 发包 | 零网络、零安装、系统 python3 也能跑；发包/版本管理对个人项目是负担 |
 | D4 | 依赖方向 | **模块 → libs 单向；模块之间禁止 import** | 共享能力不依赖业务，业务之间不被耦合；跨模块只走数据契约 |
-| D5 | 运行时 | **统一 Python 3.9**；Node 只在某个模块确有硬需求时**模块内自带**，不进 libs | 当前双运行时（Python 情报 + Node 价格）已消失，不再引入第二套 |
+| D5 | 运行时 | **统一 Python 3.12**（2026-11-16 起，ADR 0010）；Node 只在某个模块确有硬需求时**模块内自带**，不进 libs | 当前双运行时（Python 情报 + Node 价格）已消失，不再引入第二套 |
 | D6 | 环境 | **单根 `.venv`**（仅 ruff/PyYAML 开发增强）；模块脚本无 venv 时回退 `python3` | 避免每个模块重建 venv；零依赖原则下不会有版本冲突 |
 | D7 | 数据 | **模块内 `data/`**：`raw/ state/ reports/ exports/ logs/`；跨模块只读 `exports/` | 数据归属清晰、备份/清理简单；不建中央数据库 |
 | D8 | 凭据 | **根 `.env` 唯一来源**，`.env.example` 列 key；CI 做"密钥/数据未入库"检查 | 一处维护，入库风险最小 |
@@ -133,7 +133,7 @@ flowchart TB
         CORE["paths·env·config·store·http<br/>events·dedupe·notify<br/>sources·market"]
     end
     subgraph RT["运行时"]
-        PY["Python 3.9 标准库"]
+        PY["Python 3.12 标准库"]
     end
     subgraph TOOL["仓库工具（人工 / CI 使用）"]
         T["healthcheck · render_launchd<br/>new_module · prune"]
@@ -220,7 +220,7 @@ flowchart LR
         └──────────────┬───────────────┘
                        │ 只用标准库
         ┌──────────────▼───────────────┐
-        │  Python 3.9 标准库            │
+        │  Python 3.12 标准库           │
         └──────────────────────────────┘
 
   tools/ ── 调用 libs 与模块（手工/CI 使用），不被任何模块 import
@@ -501,11 +501,11 @@ notify.discover_chat_id()                  # --discover，回写根 .env
 [project]
 name = "crypto-research-workspace"
 version = "0.0.0"
-requires-python = ">=3.9"
+requires-python = ">=3.12"
 
 [tool.ruff]
 line-length = 120
-target-version = "py39"
+target-version = "py312"
 src = ["libs/crypto_core/src", "crypto-news/scripts", "tools"]
 
 [tool.ruff.lint]

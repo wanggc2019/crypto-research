@@ -2,11 +2,11 @@
 name = "crypto-research-workspace"
 version = "0.0.0"
 description = "个人 crypto 研究/监测仓库（多需求模块 + 共享库）"
-requires-python = ">=3.9"
+requires-python = ">=3.12"
 
 [tool.ruff]
 line-length = 120
-target-version = "py39"
+target-version = "py312"
 src = ["libs/crypto_core/src", "tools", "crypto-news/scripts"]
 
 [tool.ruff.lint]
