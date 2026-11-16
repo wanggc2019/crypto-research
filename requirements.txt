@@ -1,0 +1,5 @@
+# 根 .venv 依赖（make setup / CI 安装；Python >= 3.12，见 docs/adr/0010、0011）
+# 新增第三方依赖需在 PR 里说明理由；模块业务逻辑仍优先标准库。
+PyYAML==6.0.3
+ruff==0.17.4
+anthropic==2.9.0   # Claude API（crypto_core.llm）

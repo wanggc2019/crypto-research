@@ -30,7 +30,7 @@ make jobs 2>/dev/null | head -20        # 当前 launchd 任务/状态
 
 1. 先写/更新 `docs/<module>/requirement.md`（边界、验收标准要可测量）；
 2. 新模块：`make new-module name=crypto-<领域词> desc="..."`（生成代码 + 文档五件套）；
-3. 实现：Python 3.9 标准库；配置 YAML；`--dry-run` / `--fixtures` 离线可跑；退出码按 conventions；
+3. 实现：Python 3.12 标准库（第三方依赖只用 `requirements.txt` 已列出的：PyYAML、Anthropic SDK）；配置 YAML；`--dry-run` / `--fixtures` 离线可跑；退出码按 conventions；
 4. 单源/单账号失败不拖垮整轮 → 记录并汇总 rc；
 5. 文档与代码同一个 PR 更新（design/technical/README/HANDOFF 视情况）。
 

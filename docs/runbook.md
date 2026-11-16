@@ -239,7 +239,7 @@ grep -r "crypto-news" .github/ Makefile README.md docs/ 2>/dev/null | grep -v "H
 | 日志文件特别大 | 每天首轮会自动裁剪到 2 MB / 最后 2000 行 | 想立即处理：`make prune module=crypto-news apply=1` |
 | 合盖/关机期间没跑 | 正常现象 | 唤醒/登录后 `RunAtLoad` 会补跑一轮；要 7×24 只能上 VPS |
 | 报 `Operation not permitted` / 读不到文件 | 项目目录被移动，或落到 `~/Documents`（macOS TCC） | 项目必须留在 `~/vscode/crypto-research`，重新 install |
-| 所有模块同时报 `ModuleNotFoundError` / `CERTIFICATE_VERIFY_FAILED` / 解释器错误 | `.venv/bin/python -V` 是否 3.12.10；`.venv` 是否被删 | 回退旧 3.9：`mv .venv .venv-py312 && mv .venv-py39 .venv`；重建：`rm -rf .venv && make setup`；两种情况之后都要 `.venv/bin/python tools/watchdog.py --install`（ADR 0010） |
+| 所有模块同时报 `ModuleNotFoundError` / `CERTIFICATE_VERIFY_FAILED` / 解释器错误 | `.venv/bin/python -V` 是否 3.12.10；`.venv` 是否被删 | 重建：`rm -rf .venv && make setup`；之后要 `.venv/bin/python tools/watchdog.py --install`（ADR 0010） |
 | watchdog 退出 -9、`launchctl print` 显示 `OS_REASON_CODESIGNING` | 换过 `.venv` 解释器 | `.venv/bin/python tools/watchdog.py --install` 重新注册 |
 
 crypto-price 额外排查：

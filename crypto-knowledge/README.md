@@ -75,5 +75,5 @@ crypto-knowledge/data/
 ## 约定
 
 - 内容只放 `config/curriculum/`；业务逻辑放 `scripts/`；通用能力（配置/存储/推送/时间）用 `libs/crypto_core`。
-- 不新增第三方依赖（Python 3.9 标准库；PyYAML 缺失时由共享库回退 Ruby）。
+- 不新增第三方依赖（Python 3.12 标准库；PyYAML 缺失时由共享库回退 Ruby）。
 - 单测离线可跑：`python3 -m unittest discover -s tests -v`。
