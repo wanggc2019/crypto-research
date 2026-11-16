@@ -36,11 +36,10 @@ jobs:
         run: |
           git fetch --no-tags origin "$BASE_SHA" || git fetch --no-tags origin "$BASE_REF"
 
-      # 这个 job 拿得到 CLAUDE_CODE_OAUTH_TOKEN：只装审查真正需要的、锁定版本的依赖，缩小供应链面
-      # （默认 claude-code 提供商不用 anthropic SDK；若把 ci.pr-review 改成 anthropic，需在这里加 anthropic==<requirements.txt 里的版本>）
-      # 版本与 requirements.txt 一致，由 tools/tests/test_workflows.py 校验
+      # 这个 job 拿得到 CLAUDE_CODE_OAUTH_TOKEN：只装审查真正需要的依赖，按哈希锁定，缩小供应链面
+      # （默认 claude-code 提供商不用 anthropic SDK；若把 ci.pr-review 改成 anthropic，需把 anthropic 及其依赖加进该文件）
       - name: Install
-        run: pip install --no-deps PyYAML==6.0.3
+        run: pip install --no-deps --require-hashes -r .github/ai-review-requirements.txt
 
       # config/ai.yaml 的 ci.pr-review 默认用 claude-code（Claude Code 订阅）：
       # 订阅凭据 = `claude setup-token` 生成的长期 token，存为 secret CLAUDE_CODE_OAUTH_TOKEN；没配就不装、审查跳过
