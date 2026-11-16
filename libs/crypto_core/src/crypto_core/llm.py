@@ -60,8 +60,8 @@ def load_ai_config(path=None):
     return _config.load_yaml(path or _paths.repo_path(AI_CONFIG)) or {}
 
 
-def validate_config(cfg, tasks_in_code=()):
-    """返回问题列表（空 = 合法）：提供商种类、默认/各功能字段、代码里用到的功能是否都已登记。"""
+def validate_config(cfg, tasks_in_code=(), agents_in_code=()):
+    """返回问题列表（空 = 合法）：提供商种类、默认/各功能字段、agent 字段、代码里用到的功能/agent 是否都已登记。"""
     problems = []
     providers = cfg.get("providers") or {}
     for name in providers:
@@ -77,6 +77,14 @@ def validate_config(cfg, tasks_in_code=()):
             problems.append(str(e))
     for task in sorted(set(tasks_in_code) - set(tasks)):
         problems.append("tasks.%s：代码里用到了，但 config/ai.yaml 没有登记" % task)
+    agent_tasks = (cfg.get("agents") or {}).get("tasks") or {}
+    for task in sorted(agent_tasks):
+        try:
+            resolve_agent(task, cfg=cfg)
+        except LLMError as e:
+            problems.append(str(e))
+    for task in sorted(set(agents_in_code) - set(agent_tasks)):
+        problems.append("agents.tasks.%s：脚本里用到了，但 config/ai.yaml 没有登记" % task)
     return problems
 
 
@@ -108,6 +116,40 @@ def resolve(task, cfg=None):
         "key_env": pinfo.get("key_env") or "", "base_url": pinfo.get("base_url"),
         "max_tokens": int(spec.get("max_tokens") or DEFAULT_MAX_TOKENS),
     }
+
+
+AGENT_RUNNERS = ("claude", "dsh")
+AGENT_AUTHS = ("subscription", "api")
+
+
+def resolve_agent(task, cfg=None):
+    """headless agent 功能名 → 生效配置（agents.defaults ← agents.tasks[task]）。未登记/字段不合法抛 LLMError。"""
+    cfg = load_ai_config() if cfg is None else cfg
+    agents = cfg.get("agents") or {}
+    tasks = agents.get("tasks") or {}
+    if task not in tasks:
+        raise LLMError("agents.tasks.%s：config/ai.yaml 没有登记这个 agent" % task)
+    spec = dict(agents.get("defaults") or {})
+    spec.update(tasks.get(task) or {})
+    where = "agents.tasks.%s" % task
+    runner = spec.get("runner") or "claude"
+    auth = spec.get("auth") or "subscription"
+    if runner not in AGENT_RUNNERS:
+        raise LLMError("%s：runner=%r 不支持（%s）" % (where, runner, "/".join(AGENT_RUNNERS)))
+    if auth not in AGENT_AUTHS:
+        raise LLMError("%s：auth=%r 不支持（%s）" % (where, auth, "/".join(AGENT_AUTHS)))
+    tools = spec.get("allowed_tools") or []
+    if runner == "claude" and (not tools or not isinstance(tools, list)
+                               or not all(isinstance(t, str) and t for t in tools)):
+        raise LLMError("%s：allowed_tools 必须是非空字符串列表" % where)
+    bad = [t for t in tools if isinstance(t, str) and t.startswith("Write(")]
+    if bad:
+        raise LLMError("%s：%s 不生效——Claude Code 的文件权限只认 Edit(路径)，请改成 Edit(...)" % (where, bad[0]))
+    effort = spec.get("effort")
+    if effort and effort not in EFFORTS:
+        raise LLMError("%s：effort=%r 不合法（%s）" % (where, effort, "/".join(EFFORTS)))
+    return {"task": task, "runner": runner, "auth": auth, "model": spec.get("model") or None, "effort": effort,
+            "allowed_tools": list(tools), "timeout_seconds": int(spec.get("timeout_seconds") or 1800)}
 
 
 def key_for(spec, env=None, use_os_environ=True, use_env_file=True):

@@ -47,7 +47,7 @@ launchd（Label 前缀 com.crypto-research.）
 | 单轮耗时 | 约 20–40 秒（40 个源），跑完进程退出 |
 | 每日维护 | 当天首轮自动执行 `tools/prune.py --apply`（raw 90d / logs 30d / exports 7d / 单日志 2MB 上限） |
 | 健康检查 | **不单独定时**：每轮 collect 结束后顺带跑 `tools/healthcheck.py --quiet --notify --fix --agent`，见 §6 |
-| AI 深度分析（按需、异步） | 健康检查发现异常后才**后台**拉起 `dsh headless`（不单独定时、无需 DSH 常开、不阻塞主任务），见 §6.1 |
+| AI 深度分析（按需、异步） | 健康检查发现异常后才**后台**拉起 headless agent（默认 `claude -p`，见 `config/ai.yaml`；不单独定时、不阻塞主任务），见 §6.1 |
 
 **一轮里发生了什么**
 
@@ -310,17 +310,17 @@ cat data/state/watchdog.json                           # 每模块最近结论 +
 
 主任务每 10 分钟跑一轮、健康检查嵌在每轮末尾；另有**仓库级看门狗**每 5 分钟兜底
 「主任务完全不跑」的场景——两者都只在异常时才会拉起 AI。
-需要"分析原因"时不另设定时器，而是由健康检查在**发现异常时后台拉起** `tools/agent_repair.py`，它再调用 `dsh headless` 起一个新会话做分析和修复；主任务不等待它，跑完自己发修复报告：
+需要"分析原因"时不另设定时器，而是由健康检查在**发现异常时后台拉起** `tools/agent_repair.py`，它再通过 `tools/agent_run.py` 起一个新会话（默认 `claude -p`）做分析和修复；主任务不等待它，跑完自己发修复报告：
 
 | 项 | 说明 |
 |---|---|
 | 触发条件 | `healthcheck --agent`：只有 `state != ok`（FAIL）才触发；**首次立即调用**，之后按「自上次恢复以来已调用次数」多级退避：**15 / 30 / 60 / 120 / 240 / 360 分钟**（`agent_attempts` 存 `health.json`，恢复正常即清零）。正常日 **0 次调用** |
-| 执行 | `tools/agent_repair.py`（后台，独立进程组）→ `crypto-news/scripts/inspect.sh` → `dsh headless`（新会话、最小上下文） |
+| 执行 | `tools/agent_repair.py`（后台，独立进程组）→ `crypto-news/scripts/inspect.sh` → `tools/agent_run.py news.inspect`（新会话、最小上下文） |
 | 提示词 | [`tools/agents/inspect-prompt.md`](../tools/agents/inspect-prompt.md)（决定它看什么、允许修什么） |
-| 允许动作 | 重装/重载任务、清锁、prune、kickstart；**禁止**改代码/config/.env、禁止删 data |
+| 允许动作 | 重装/重载任务、清锁、prune；**禁止**改代码/config/.env、禁止删 data。`claude` runner 下由 `config/ai.yaml` 的 `allowed_tools` 强制执行（其余工具调用自动拒绝），不只靠提示词 |
 | 产物 | 修复后统一推一条「修复报告」（处理前问题/原因推断/AI 是否执行/处理后是否恢复）；`data/logs/agent-repair.log`（执行器日志）+ `data/logs/inspect.out.log` + `data/state/health-agent.json` |
 | 并发 / 超时 | 单实例锁 `data/state/agent.lock`（旧锁 15 分钟自动清）；单次**600 秒**超时，超时也会发「超时/仍异常」报告 |
-| 依赖 | 本机 `dsh` CLI + `~/.dsh/.credentials.yaml` 里的 `DEEPSEEK_API_KEY`（`inspect.sh` 自动读取，无需 DSH GUI 常开） |
+| 依赖 | 默认：本机 Claude Code（`claude`，订阅登录）；改 `config/ai.yaml` 的 `agents` 可换成 `auth: api`（`.env` 的 `ANTHROPIC_API_KEY`）或 `runner: dsh`（`DEEPSEEK_API_KEY`） |
 | 成本 | 每次约 **1–2 万 tokens**（新会话最小上下文）；正常日 0 次；持续故障时按上述退避节奏，最长每 6 小时 1 次 |
 | 停用 | 把 `crypto-news/deploy/launchd/healthcheck.plist.tmpl` 里的 `--agent` 去掉并重装（或直接不管，正常日不触发） |
 | 可选独立看门狗 | 若想"主任务挂了也能被发现"，可额外装 `… --template healthcheck --install`（每 30 分钟），不装也正常 |
@@ -420,25 +420,21 @@ launchctl kickstart -k gui/$(id -u)/com.crypto-research.<模块>[.<任务>]
 - `data/` 全部 gitignored；下线前归档备份即可带走。
 - 卸载/下线都不会改动 git 历史，随时可以 `git checkout` 恢复代码。
 
-## 10. headless 会话复用（2026-11-10）
+## 10. headless agent（2026-11-16 起默认 Claude Code）
 
-每次 `dsh headless` 默认新建会话，自动任务（日报 AI / 周报 AI / 月季年 AI / 巡检 / 政策解读）反复运行会在工作区里不断堆积会话。现统一改为**固定会话复用**：
+自动任务（analyst 日报/周报/月季年 AI、crypto-news 巡检、crypto-policy 解读推送）统一由 `tools/agent_run.py <功能名> <prompt>` 启动，用哪个 AI 写在 `config/ai.yaml` 的 `agents`（ADR 0011）：
 
-- **隔离 home**：自动化 headless 使用独立 `DSH_HOME=~/.dsh-automation`（`headless_session.sh` 自动导出；可用 `DSH_AUTOMATION_HOME` 覆盖），会话写进隔离库，**不出现在 Web 主库工作区**
-- 初始化（一次）：`mkdir -p ~/.dsh-automation && cp -RL ~/.dsh/profiles ~/.dsh-automation/profiles && mkdir -p ~/.dsh-automation/logs`
-- 公共函数：`tools/headless_session.sh` 的 `headless_run <repo> <sid_file> <prompt>`
-- 首次运行：创建会话并把 id 写入 `<module>/data/state/headless-session-<任务>`
-- 之后运行：`dsh headless --session-id <id>` 追加到同一会话，**不再新建**
-- 会话文件丢失时自动重建并重新锁定
-- 覆盖任务：analyst 日报/周报/周期 AI、crypto-news 巡检、crypto-policy 解读
+| 配置 | 含义 |
+|---|---|
+| `runner: claude` + `auth: subscription`（默认） | `claude -p`，用本机 Claude Code 登录，占订阅额度、不另计费；运行时会从环境里去掉 `ANTHROPIC_API_KEY`，避免被改成按量计费 |
+| `runner: claude` + `auth: api` | `claude -p --bare`，用 `.env` 的 `ANTHROPIC_API_KEY` 按量计费，与日常 Claude Code 完全隔离 |
+| `runner: dsh` | 原 DeepSeek `dsh headless`（`tools/headless_session.sh` 复用固定会话，见下） |
 
-### 10.1 隐藏自动化会话
+`claude` runner 的约束：每次新会话（`--no-session-persistence`，不进你的会话列表）；不读用户级设置/hooks（`--setting-sources project,local`）；只放行该任务的 `allowed_tools`，其余工具调用自动拒绝（`--permission-prompts none`）；另有写死在 `agent_run.py` 的拒绝清单（读写 `.env`、WebFetch/WebSearch）。只读命令（`ls`、`echo` 等）由 Claude Code 内置规则放行。
+排查：`.venv/bin/python tools/agent_run.py <功能名> <prompt> --dry-run` 打印完整命令（不含 key）。
 
-自动化 headless 会话创建后（或历史上每次运行留下的），用下面命令加入归档集（从分组中隐藏，历史保留）：
+### 10.1 dsh 会话复用（仅 `runner: dsh`）
 
-```bash
-python3 tools/dsh_sessions_archive.py --list    # 预览
-python3 tools/dsh_sessions_archive.py --apply   # 备份后写入；重启 DSH 生效
-```
-
-Web 里点「显示已归档」可查看；需要恢复时从归档集移除对应 id 即可（`workspace.json` 已自动备份）。
+- 隔离 home：`DSH_HOME=~/.dsh-automation`（`headless_session.sh` 自动导出；可用 `DSH_AUTOMATION_HOME` 覆盖）
+- 首次运行创建会话并把 id 写入 `data/state/headless-session-<功能名>`；之后 `dsh headless --session-id <id>` 追加，不再新建
+- 隐藏历史自动化会话：`python3 tools/dsh_sessions_archive.py --list` / `--apply`（备份后写入；重启 DSH 生效）
