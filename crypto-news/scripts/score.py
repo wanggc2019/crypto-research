@@ -379,6 +379,51 @@ def independent_count(s):
     return sum(1 for t in (s.get("source_tiers") or {}).values() if t != "T3")
 
 
+def _level_by_score(score, lv):
+    for level in ("P0", "P1", "P2"):
+        if score >= lv[level]:
+            return level
+    return "ARCHIVE"
+
+
+def _level_hard(s, best, lv, cfg):
+    """命中硬条件时的分级；返回 (level, backfill)。"""
+    age = s.get("age_hours")
+    fresh = age is None or age <= cfg["window"]
+    recent_strong = fresh and (s.get("components") or {}).get("D", 1.0) >= cfg["min_decay"]
+    if s["confirmed"] and recent_strong:
+        return "P0", False
+    if s["confirmed"] and (age is None or age <= cfg["stale_window"]):
+        return "P1", False
+    if best in ("T0", "T1", "T2") and recent_strong:
+        # 单一可信源（T0/T1/T2）的近期硬事件：推到 P1 并标「未确认」，避免漏掉真新闻
+        return "P1", False
+    if fresh and s["score"] >= lv["P1"] and best != "T3":
+        # T3（聚合/Google News）永远只作线索，不能靠分数升 P1
+        return "P1", False
+    return ("P2" if s["score"] >= lv["P2"] else "ARCHIVE"), True
+
+
+def _cap_level(s):
+    """按类别/来源封顶（只降不升）。"""
+    high = s["level"] in ("P0", "P1")
+    # 美股/宏观：无 BTC/ETH/BNB 关联最高 P2；有关联最高 P1（不 P0）
+    if s.get("category") == "macro":
+        if not s.get("assets"):
+            if high:
+                s["level"], s["backfill"] = "P2", True
+        elif s["level"] == "P0":
+            s["level"] = "P1"
+    # T3（聚合/Google News/社区）永远只作线索：即使分数高也不高于 P2
+    # 页面更新类（html_diff 无正文）：最多 P2，避免“CSS 变了”被推成 P1
+    if (s.get("best_tier") == "T3" or s.get("kind") == "page_update") and s["level"] in ("P0", "P1"):
+        s["level"], s["backfill"] = "P2", True
+    # 组织动向（裁员/重组/高管离职）：只做“降级封顶”，不无条件升级
+    # P0 → 已确认 P1 / 未确认 P2；P1 → 未确认降 P2；P2/ARCHIVE 保持
+    if s.get("category") == "industry_labor" and s["level"] in ("P0", "P1"):
+        s["level"] = "P1" if s.get("confirmed") else "P2"
+
+
 def grade_scored(scored, thresholds):
     """统一分级。
 
@@ -389,9 +434,9 @@ def grade_scored(scored, thresholds):
     """
     lv = thresholds["scoring"]["levels"]
     hard_cfg = thresholds["scoring"].get("hard", {})
-    window = hard_cfg.get("window_hours", 48)
-    stale_window = hard_cfg.get("stale_window_hours", 96)
-    min_decay = hard_cfg.get("min_decay", 0.1)
+    cfg = {"window": hard_cfg.get("window_hours", 48),
+           "stale_window": hard_cfg.get("stale_window_hours", 96),
+           "min_decay": hard_cfg.get("min_decay", 0.1)}
     for s in scored:
         tiers = s.get("source_tiers") or {}
         best = min(tiers.values(), key=lambda t: TIER_RANK.get(t, 9)) if tiers else "T3"
@@ -400,56 +445,13 @@ def grade_scored(scored, thresholds):
         s["best_tier"] = best
         s["confirmed"] = indep >= 2 or best == "T0"
         s["unconfirmed"] = bool(s.get("hard")) and not s["confirmed"]
-        age = s.get("age_hours")
-        fresh = age is None or age <= window
-        d = (s.get("components") or {}).get("D", 1.0)
         if s.get("hard"):
-            if s["confirmed"] and fresh and d >= min_decay:
-                s["level"] = "P0"
-            elif s["confirmed"] and (age is None or age <= stale_window):
-                s["level"] = "P1"
-            elif best in ("T0", "T1", "T2") and fresh and d >= min_decay:
-                # 单一可信源（T0/T1/T2）的近期硬事件：推到 P1 并标「未确认」，避免漏掉真新闻
-                s["level"] = "P1"
-            elif fresh and s["score"] >= lv["P1"] and best != "T3":
-                # T3（聚合/Google News）永远只作线索，不能靠分数升 P1
-                s["level"] = "P1"
-            elif s["score"] >= lv["P2"]:
-                s["level"] = "P2"
-                s["backfill"] = True
-            else:
-                s["level"] = "ARCHIVE"
+            s["level"], backfill = _level_hard(s, best, lv, cfg)
+            if backfill:
                 s["backfill"] = True
         else:
-            if s["score"] >= lv["P0"]:
-                s["level"] = "P0"
-            elif s["score"] >= lv["P1"]:
-                s["level"] = "P1"
-            elif s["score"] >= lv["P2"]:
-                s["level"] = "P2"
-            else:
-                s["level"] = "ARCHIVE"
-        # 美股/宏观：无 BTC/ETH/BNB 关联最高 P2；有关联最高 P1（不 P0）
-        if s.get("category") == "macro":
-            if not s.get("assets"):
-                if s["level"] in ("P0", "P1"):
-                    s["level"] = "P2"
-                    s["backfill"] = True
-            elif s["level"] == "P0":
-                s["level"] = "P1"
-        # T3（聚合/Google News/社区）永远只作线索：即使分数高也不高于 P2
-        if s.get("best_tier") == "T3" and s["level"] in ("P0", "P1"):
-            s["level"] = "P2"
-            s["backfill"] = True
-        # 页面更新类（html_diff 无正文）：最多 P2，避免“CSS 变了”被推成 P1
-        if s.get("kind") == "page_update" and s["level"] in ("P0", "P1"):
-            s["level"] = "P2"
-            s["backfill"] = True
-        # 组织动向（裁员/重组/高管离职）：只做“降级封顶”，不无条件升级
-        # P0 → 已确认 P1 / 未确认 P2；P1 → 未确认降 P2；P2/ARCHIVE 保持
-        if s.get("category") == "industry_labor":
-            if s["level"] in ("P0", "P1"):
-                s["level"] = "P1" if s.get("confirmed") else "P2"
+            s["level"] = _level_by_score(s["score"], lv)
+        _cap_level(s)
     return scored
 
 
@@ -478,32 +480,56 @@ def latest_social_items(items):
 
 
 # ---------------------------------------------------------------- 主流程
-def main():
-    ensure_dirs()
-    args = sys.argv[1:]
+def _parse_date(args):
     date = today_str()
     for i, a in enumerate(args):
         if a == "--date" and i + 1 < len(args):
             date = args[i + 1]
+    return date
 
+
+def _read_raw_lines(date):
     raw_path = os.path.join(RAW_DIR, date, "items.jsonl")
-    if os.path.exists(raw_path):
-        with open(raw_path, "r", encoding="utf-8") as f:
-            raw_lines = f.readlines()
-    else:
+    if not os.path.exists(raw_path):
         # 跨天首轮常见：fetch 本轮 0 新增，当天 raw 尚未生成。按「当天 0 条」正常评分，
         # 照常写出空的 alerts/报告/exports，下游（notify、crypto-analyst）不必特殊处理缺文件。
         print("当天暂无原始条目（%s 不存在），按 0 条评分" % raw_path)
-        raw_lines = []
+        return []
+    with open(raw_path, "r", encoding="utf-8") as f:
+        return f.readlines()
 
-    thresholds = load_config("thresholds.yaml")
-    max_age_days = thresholds.get("scoring", {}).get("max_age_days", 7)
-    people = load_config("people.yaml").get("people", [])
-    patterns, stable_rx = build_asset_patterns()
-    labor_kw_rx, labor_emp_rx = build_labor_matchers()
-    wl = load_config("watchlist.yaml")
-    watch = [a["symbol"] for a in wl.get("assets", [])]
 
+def _is_promo(item, promo):
+    low_title = (item.get("title") or "").lower()
+    return any(k in low_title for k in promo.get("keywords", [])) and not any(
+        k in low_title for k in promo.get("exempt_keywords", []))
+
+
+def _annotate(it, ctx):
+    """给条目打标的/系统性/组织/宏观标签；与三标的都无关的返回 False（丢弃）。"""
+    text = it.get("title", "") + " " + (it.get("body", "") or "")
+    patterns, stable_rx = ctx["patterns"], ctx["stable_rx"]
+    labor_kw_rx, labor_emp_rx = ctx["labor"]
+    assets = [sym for sym in ctx["watch"] if patterns.get(sym) and patterns[sym].search(text)]
+    systemic = bool(stable_rx and stable_rx.search(text))
+    # 组织动向（裁员/重组/高管离职）：即使没提 BTC/ETH/BNB 也保留，作为 P2 线索
+    labor = bool(labor_kw_rx and labor_emp_rx and labor_kw_rx.search(text) and labor_emp_rx.search(text))
+    macro = is_macro_news(text)
+    if not assets and not systemic and not it.get("asset_symbols") and not labor and not macro:
+        return False
+    pub = parse_ts(it.get("published_at"))
+    if pub and (datetime.datetime.now(pub.tzinfo) - pub).total_seconds() > ctx["max_age_days"] * 86400:
+        return False  # 太旧的 RSS 历史条目直接丢
+    it["_assets"] = assets if assets else it.get("asset_symbols", [])
+    it["_systemic"] = systemic
+    it["_labor"] = labor
+    it["_macro"] = macro
+    it["_sh"] = simhash(it.get("title", ""))
+    return True
+
+
+def _filter_items(raw_lines, ctx):
+    """解析 + 去重 + 去营销 + 标的匹配 + 时效过滤；返回 (原始条数, 保留条目)。"""
     items, seen_url = [], set()
     total = 0
     for line in raw_lines:
@@ -515,85 +541,77 @@ def main():
             it = json.loads(line)
         except Exception:
             continue
-        text = it.get("title", "") + " " + (it.get("body", "") or "")
-        # 去重
         key = item_key(it)
         if key in seen_url:
             continue
         seen_url.add(key)
-        # 促销/营销活动直接丢弃
-        promo = load_config("rules.yaml").get("promo", {})
-        low_title = (it.get("title") or "").lower()
-        if any(k in low_title for k in promo.get("keywords", [])) and not any(
-                k in low_title for k in promo.get("exempt_keywords", [])):
+        if _is_promo(it, load_config("rules.yaml").get("promo", {})):
             continue
-        # 匹配标的
-        assets = [sym for sym in watch if patterns.get(sym) and patterns[sym].search(text)]
-        systemic = bool(stable_rx and stable_rx.search(text))
-        # 组织动向（裁员/重组/高管离职）：即使没提 BTC/ETH/BNB 也保留，作为 P2 线索
-        labor = bool(labor_kw_rx and labor_emp_rx and labor_kw_rx.search(text) and labor_emp_rx.search(text))
-        macro = is_macro_news(text)
-        if not assets and not systemic and not it.get("asset_symbols") and not labor and not macro:
+        if _annotate(it, ctx):
+            items.append(it)
+    return total, items
+
+
+def _clean_md(line):
+    line = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", line)
+    line = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", line)
+    line = re.sub(r"\s+", " ", line).strip(" -*>\t")
+    return line
+
+
+_SNIPPET_TOPIC = re.compile(r"listing|上币|delist|下架|regulat|监管|\bsec\b|etf|hack|被盗|burn|销毁|unlock|解锁|tvl|"
+                            r"reserve|储备|withdraw|bnb|btc|eth")
+
+
+def _snippet_score(ln, patterns):
+    low = ln.lower()
+    if len(ln) < 40:
+        return 0
+    if re.search(r"pbs\.twimg\.com|twimg|abs\.twimg", low):
+        return 0
+    if low.startswith(("title:", "url source:", "markdown content", "##", "image")):
+        return 0
+    score = 0
+    if any(p.search(ln) for p in patterns.values() if p):
+        score += 2
+    if _SNIPPET_TOPIC.search(low):
+        score += 1
+    return score
+
+
+def social_snippets(it, patterns):
+    """高管帖子正文里挑出与三标的/关键主题相关的句子（最多 6 句，按相关度）。"""
+    keep = []
+    for raw in (x.strip() for x in (it.get("body") or "").split("\n")):
+        if not raw:
             continue
-        pub = parse_ts(it.get("published_at"))
-        if pub and (datetime.datetime.now(pub.tzinfo) - pub).total_seconds() > max_age_days * 86400:
-            continue  # 太旧的 RSS 历史条目直接丢
-        it["_assets"] = assets if assets else it.get("asset_symbols", [])
-        it["_systemic"] = systemic
-        it["_labor"] = labor
-        it["_macro"] = macro
-        it["_sh"] = simhash(it.get("title", ""))
-        items.append(it)
+        ln = _clean_md(raw)
+        score = _snippet_score(ln, patterns)
+        if score >= 2:
+            keep.append((score, ln[:300]))
+    keep.sort(key=lambda x: -x[0])
+    return [x[1] for x in keep[:6]]
 
-    def _clean_md(line):
-        line = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", line)
-        line = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", line)
-        line = re.sub(r"\s+", " ", line).strip(" -*>\t")
-        return line
 
-    def social_snippets(it):
-        raw_lines = [x.strip() for x in (it.get("body") or "").split("\n") if x.strip()]
-        keep = []
-        for raw in raw_lines:
-            ln = _clean_md(raw)
-            low = ln.lower()
-            if len(ln) < 40:
-                continue
-            if re.search(r"pbs\.twimg\.com|twimg|abs\.twimg", low):
-                continue
-            if low.startswith(("title:", "url source:", "markdown content", "##", "image")):
-                continue
-            score = 0
-            if any(p.search(ln) for p in patterns.values() if p):
-                score += 2
-            if re.search(r"listing|上币|delist|下架|regulat|监管|\bsec\b|etf|hack|被盗|burn|销毁|unlock|解锁|tvl|reserve|储备|withdraw|bnb|btc|eth", low):
-                score += 1
-            if score >= 2:
-                keep.append((score, ln[:300]))
-        keep.sort(key=lambda x: -x[0])
-        return [x[1] for x in keep[:6]]
-
-    items = latest_social_items(items)
-
-    news_items, social_hits, social_quiet = [], [], []
+def _split_social(items, patterns):
+    """返回 (新闻条目, 有内容的高管帖)；高管帖改写标题/正文为相关片段。"""
+    news_items, social_hits = [], []
     for it in items:
-        if it.get("kind") == "social":
-            sn = social_snippets(it)
-            if not sn:
-                social_quiet.append(it)
-                continue
-            it["title"] = "%s 新帖：%s" % (it.get("handle") or it.get("source_name"), sn[0][:60])
-            it["body"] = "\n".join(sn)
-            it["_social"] = True
-            social_hits.append(it)
+        if it.get("kind") != "social":
+            news_items.append(it)
             continue
-        news_items.append(it)
+        sn = social_snippets(it, patterns)
+        if not sn:
+            continue
+        it["title"] = "%s 新帖：%s" % (it.get("handle") or it.get("source_name"), sn[0][:60])
+        it["body"] = "\n".join(sn)
+        it["_social"] = True
+        social_hits.append(it)
+    return news_items, social_hits
 
-    clusters = cluster_items(news_items)
-    # 社交媒体每条单独成簇，绝不跨人合并
-    clusters += [[it] for it in social_hits]
+
+def _score_all(clusters, thresholds, patterns, people):
     scored = [score_cluster(c, thresholds, patterns) for c in clusters]
-
     for s in scored:
         s["hard"] = hard_triggers(" ".join(s["titles"]), s["meta"], s["assets"], people)
         s["backfill"] = False
@@ -604,68 +622,34 @@ def main():
         s["age_hours"] = round(age_h, 1) if age_h is not None else None
     grade_scored(scored, thresholds)
     scored.sort(key=lambda x: (-len(x["hard"]), -x["score"]))
+    return scored
 
-    counts = {"P0": 0, "P1": 0, "P2": 0, "ARCHIVE": 0}
-    for s in scored:
-        counts[s["level"]] += 1
 
-    # ---------- 报告 ----------
-    lines = []
-    lines.append("# 情报日报 %s" % date)
+def _report_alert_entry(s):
+    tags = " ".join(s["assets"]) or ("稳定币/系统性" if "stablecoin" in s["category"] else "—")
+    conf = ("已确认（%d 独立源）" % s["independent_sources"]
+            if s.get("confirmed") else "未确认（低可信源）")
+    lines = ["### [%s 分] %s" % (s["score"], s["titles"][0][:90]), ""]
+    lines.append("- 类别：%s · 标的：%s · 来源：%s（%s）" %
+                 (_events.category_cn(s["category"]), tags, conf, ", ".join(s["sources"])))
+    lines.append("- 时间：%s" % (s["published_at"] or "未知"))
+    if s.get("cn_summary"):
+        lines.append("- **中文解读**：%s" % s["cn_summary"])
+    c = s["components"]
+    lines.append("- 评分：S=%s T=%s M=%s C=%s D=%s" % (c["S"], c["T"], c["M"], c["C"], c["D"]))
+    if s["hard"]:
+        lines.append("- **硬条件命中**：%s" % "、".join(_events.hard_cn(h) for h in s["hard"]))
+    if s.get("points"):
+        lines.append("- **要点**：")
+        lines.extend("  %d. %s" % (i, pt[:120]) for i, pt in enumerate(s["points"], 1))
+    if s["url"]:
+        lines.append("- 链接：%s" % s["url"])
     lines.append("")
-    lines.append("> 自动生成 · 零成本采集 · 本地日报（推送由 notify.py 负责）")
-    lines.append("")
-    lines.append("## 概览")
-    lines.append("")
-    lines.append("| 指标 | 数值 |")
-    lines.append("|---|---|")
-    lines.append("| 原始条目 | %d |" % total)
-    lines.append("| 去重后匹配三标的 | %d |" % len(items))
-    lines.append("| 事件簇 | %d |" % len(clusters))
-    lines.append("| P0 | %d |" % counts["P0"])
-    lines.append("| P1 | %d |" % counts["P1"])
-    lines.append("| P2 | %d |" % counts["P2"])
-    lines.append("| 归档 | %d |" % counts["ARCHIVE"])
-    lines.append("")
-    lines.append("> 说明：P0/P1 按评分与硬条件判定（含高管动态）；本报告为本地留档，Telegram 推送见 notify.py。"
-                 "首次运行会回填最近 7 天，之后只处理增量，故部分条目看起来是\"旧闻\"。")
-    lines.append("")
+    return lines
 
-    for lvl in ("P0", "P1"):
-        arr = [s for s in scored if s["level"] == lvl and not s.get("social")]
-        lines.append("## %s（%d 条）" % (lvl, len(arr)))
-        lines.append("")
-        if not arr:
-            lines.append("_今日无_")
-            lines.append("")
-            continue
-        for s in arr:
-            tags = " ".join(s["assets"]) or ("稳定币/系统性" if "stablecoin" in s["category"] else "—")
-            lines.append("### [%s 分] %s" % (s["score"], s["titles"][0][:90]))
-            lines.append("")
-            conf = ("已确认（%d 独立源）" % s["independent_sources"]
-                    if s.get("confirmed") else "未确认（低可信源）")
-            lines.append("- 类别：%s · 标的：%s · 来源：%s（%s）" %
-                         (_events.category_cn(s["category"]), tags, conf, ", ".join(s["sources"])))
-            lines.append("- 时间：%s" % (s["published_at"] or "未知"))
-            if s.get("cn_summary"):
-                lines.append("- **中文解读**：%s" % s["cn_summary"])
-            lines.append("- 评分：S=%s T=%s M=%s C=%s D=%s" % (
-                s["components"]["S"], s["components"]["T"], s["components"]["M"],
-                s["components"]["C"], s["components"]["D"]))
-            if s["hard"]:
-                lines.append("- **硬条件命中**：%s" % "、".join(_events.hard_cn(h) for h in s["hard"]))
-            if s.get("points"):
-                lines.append("- **要点**：")
-                for i, pt in enumerate(s["points"], 1):
-                    lines.append("  %d. %s" % (i, pt[:120]))
-            if s["url"]:
-                lines.append("- 链接：%s" % s["url"])
-            lines.append("")
-        lines.append("")
 
-    lines.append("## 高管动态（%d 个账号有新内容）" % len(social_hits))
-    lines.append("")
+def _report_social(social_hits, scored):
+    lines = ["## 高管动态（%d 个账号有新内容）" % len(social_hits), ""]
     if not social_hits:
         lines.append("_无_")
     for it in social_hits:
@@ -676,27 +660,43 @@ def main():
             if ln.strip():
                 lines.append("  - %s" % ln.strip()[:160])
     lines.append("")
+    return lines
 
-    lines.append("## P2 摘要（%d 条，仅列前 15）" % counts["P2"])
-    lines.append("")
+
+def render_report(date, stats, counts, scored, social_hits):
+    """本地日报 Markdown（stats: total/items/clusters 三个计数）。"""
+    lines = ["# 情报日报 %s" % date, "",
+             "> 自动生成 · 零成本采集 · 本地日报（推送由 notify.py 负责）", "",
+             "## 概览", "", "| 指标 | 数值 |", "|---|---|",
+             "| 原始条目 | %d |" % stats["total"],
+             "| 去重后匹配三标的 | %d |" % stats["items"],
+             "| 事件簇 | %d |" % stats["clusters"]]
+    lines += ["| %s | %d |" % (name, counts[k]) for k, name in
+              (("P0", "P0"), ("P1", "P1"), ("P2", "P2"), ("ARCHIVE", "归档"))]
+    lines += ["",
+              "> 说明：P0/P1 按评分与硬条件判定（含高管动态）；本报告为本地留档，Telegram 推送见 notify.py。"
+              "首次运行会回填最近 7 天，之后只处理增量，故部分条目看起来是\"旧闻\"。", ""]
+    for lvl in ("P0", "P1"):
+        arr = [s for s in scored if s["level"] == lvl and not s.get("social")]
+        lines += ["## %s（%d 条）" % (lvl, len(arr)), ""]
+        if not arr:
+            lines += ["_今日无_", ""]
+            continue
+        for s in arr:
+            lines += _report_alert_entry(s)
+        lines.append("")
+    lines += _report_social(social_hits, scored)
+    lines += ["## P2 摘要（%d 条，仅列前 15）" % counts["P2"], ""]
     for s in [x for x in scored if x["level"] == "P2" and not x.get("social")][:15]:
         mark = "（历史回填）" if s.get("backfill") else ""
         cn = ("〔%s〕" % s["cn_summary"][:50]) if s.get("cn_summary") else ""
         lines.append("- [%s] %s（%s）%s%s" % (s["score"], s["titles"][0][:80],
                                             ", ".join(s["assets"]) or "—", mark, cn))
     lines.append("")
+    return "\n".join(lines)
 
-    out_md = os.path.join(REPORT_DIR, "%s.md" % date)
-    with open(out_md, "w", encoding="utf-8") as f:
-        f.write("\n".join(lines))
 
-    alerts = {
-        "date": date, "generated_at": ts_iso(),
-        "counts": counts,
-        "items": [s for s in scored if s["level"] in ("P0", "P1")],
-    }
-    safe_json_dump(os.path.join(STATE_DIR, "alerts-%s.json" % date), alerts)
-
+def _export_daily(date, counts, scored):
     # 跨模块只读契约：当日 P0/P1/P2 摘要（crypto-analyst 消费；只增字段不改语义）
     export_dir = os.path.join(DATA_DIR, "exports")
     os.makedirs(export_dir, exist_ok=True)
@@ -721,6 +721,45 @@ def main():
         "counts": counts,
         "items": export_items[:100],
     })
+
+
+def main():
+    ensure_dirs()
+    date = _parse_date(sys.argv[1:])
+    raw_lines = _read_raw_lines(date)
+
+    thresholds = load_config("thresholds.yaml")
+    people = load_config("people.yaml").get("people", [])
+    patterns, stable_rx = build_asset_patterns()
+    ctx = {
+        "patterns": patterns, "stable_rx": stable_rx, "labor": build_labor_matchers(),
+        "watch": [a["symbol"] for a in load_config("watchlist.yaml").get("assets", [])],
+        "max_age_days": thresholds.get("scoring", {}).get("max_age_days", 7),
+    }
+    total, items = _filter_items(raw_lines, ctx)
+    items = latest_social_items(items)
+    news_items, social_hits = _split_social(items, patterns)
+
+    clusters = cluster_items(news_items)
+    # 社交媒体每条单独成簇，绝不跨人合并
+    clusters += [[it] for it in social_hits]
+    scored = _score_all(clusters, thresholds, patterns, people)
+
+    counts = {"P0": 0, "P1": 0, "P2": 0, "ARCHIVE": 0}
+    for s in scored:
+        counts[s["level"]] += 1
+
+    out_md = os.path.join(REPORT_DIR, "%s.md" % date)
+    stats = {"total": total, "items": len(items), "clusters": len(clusters)}
+    with open(out_md, "w", encoding="utf-8") as f:
+        f.write(render_report(date, stats, counts, scored, social_hits))
+
+    safe_json_dump(os.path.join(STATE_DIR, "alerts-%s.json" % date), {
+        "date": date, "generated_at": ts_iso(),
+        "counts": counts,
+        "items": [s for s in scored if s["level"] in ("P0", "P1")],
+    })
+    _export_daily(date, counts, scored)
 
     print("评分完成：原始 %d → 匹配 %d → 事件簇 %d" % (total, len(items), len(clusters)))
     print("P0=%d  P1=%d  P2=%d  归档=%d" % (counts["P0"], counts["P1"], counts["P2"], counts["ARCHIVE"]))

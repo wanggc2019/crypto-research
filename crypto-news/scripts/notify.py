@@ -150,86 +150,85 @@ def quiet_enabled():
 
 
 # ---------------------------------------------------------------- 主流程
-def main():
-    args = sys.argv[1:]
-    dry_run = True
-    do_test = False
-    do_discover = False
-    do_check = False
-    level = None
-    date = today_str()
-    force = False
+def parse_args(args):
+    opts = {"dry_run": True, "test": False, "discover": False, "check": False,
+            "level": None, "date": today_str(), "force": False}
     for i, a in enumerate(args):
         if a == "--send":
-            dry_run = False
-        elif a == "--test":
-            do_test = True
-            dry_run = False
-        elif a == "--discover":
-            do_discover = True
-            dry_run = False
+            opts["dry_run"] = False
+        elif a in ("--test", "--discover"):
+            opts[a[2:]] = True
+            opts["dry_run"] = False
         elif a == "--check":
-            do_check = True
+            opts["check"] = True
         elif a == "--dry-run":
-            dry_run = True
+            opts["dry_run"] = True
         elif a == "--force":
-            force = True
+            opts["force"] = True
         elif a == "--level" and i + 1 < len(args):
-            level = args[i + 1].upper()
+            opts["level"] = args[i + 1].upper()
         elif a == "--date" and i + 1 < len(args):
-            date = args[i + 1]
+            opts["date"] = args[i + 1]
+    return opts
 
-    env = load_env()
-    token, chat_id, problems = check_credentials(env)
 
-    if do_check:
-        print("token :", "✅ 格式正确" if not problems or "TOKEN" not in " ".join(problems) else "❌ 未填或格式错误")
-        print("chat_id:", "✅ 已填" if str(chat_id).lstrip("-").isdigit() else "❌ 未填（可用 --discover 自动补）")
-        if problems:
-            print("\n还差：")
-            for p in problems:
-                print(" -", p)
-            print("\n请编辑仓库根的 .env（不是 env.example），填好后保存。")
-            return 2
-        print("\n凭据就绪，可以 --test 或 --send 了。")
-        return 0
-
-    if not dry_run and problems and not do_discover:
-        print("凭据不完整，无法发送：")
+def _cmd_check(chat_id, problems):
+    print("token :", "✅ 格式正确" if not problems or "TOKEN" not in " ".join(problems) else "❌ 未填或格式错误")
+    print("chat_id:", "✅ 已填" if str(chat_id).lstrip("-").isdigit() else "❌ 未填（可用 --discover 自动补）")
+    if problems:
+        print("\n还差：")
         for p in problems:
             print(" -", p)
-        print("请编辑仓库根 .env，填入真实值：")
-        print("  TELEGRAM_BOT_TOKEN=<bot_token>")
-        print("  TELEGRAM_CHAT_ID=<your_chat_id>")
+        print("\n请编辑仓库根的 .env（不是 env.example），填好后保存。")
         return 2
+    print("\n凭据就绪，可以 --test 或 --send 了。")
+    return 0
 
-    if do_discover:
-        if not TOKEN_RE.match(token):
-            print("TELEGRAM_BOT_TOKEN 未填或格式不对，无法自动发现 CHAT_ID。")
-            print("请先在 .env 里填真实 token（形如 123456789:AAH...），保存后再试。")
-            return 2
-        try:
-            found = discover_chat_id(token)
-        except Exception as e:  # noqa: BLE001 - 网络错误直接提示
-            print("调用 getUpdates 失败：%s" % e)
-            return 2
-        if not found:
-            print("没有拿到 chat_id。请先在 Telegram 里给你的 Bot 发一条消息（比如 hi），再重试。")
-            return 2
-        save_env_value("TELEGRAM_CHAT_ID", found)
-        print("已自动写入 TELEGRAM_CHAT_ID=%s 到 .env" % found)
+
+def _report_missing_credentials(problems):
+    print("凭据不完整，无法发送：")
+    for p in problems:
+        print(" -", p)
+    print("请编辑仓库根 .env，填入真实值：")
+    print("  TELEGRAM_BOT_TOKEN=<bot_token>")
+    print("  TELEGRAM_CHAT_ID=<your_chat_id>")
+    return 2
+
+
+def _cmd_discover(token):
+    if not TOKEN_RE.match(token):
+        print("TELEGRAM_BOT_TOKEN 未填或格式不对，无法自动发现 CHAT_ID。")
+        print("请先在 .env 里填真实 token（形如 123456789:AAH...），保存后再试。")
+        return 2
+    try:
+        found = discover_chat_id(token)
+    except Exception as e:  # noqa: BLE001 - 网络错误直接提示
+        print("调用 getUpdates 失败：%s" % e)
+        return 2
+    if not found:
+        print("没有拿到 chat_id。请先在 Telegram 里给你的 Bot 发一条消息（比如 hi），再重试。")
+        return 2
+    save_env_value("TELEGRAM_CHAT_ID", found)
+    print("已自动写入 TELEGRAM_CHAT_ID=%s 到 .env" % found)
+    return 0
+
+
+def _cmd_test(token, chat_id, dry_run):
+    text = (
+        "✅【crypto-news】<b>通道测试</b>\n"
+        "通知级别：P0 即时 / P1 小时级 / P2 日报\n"
+        "时间：%s" % ts_iso()
+    )
+    if dry_run:
+        print("[dry-run] 测试消息：\n" + text)
         return 0
+    ok, err = send_message(token, chat_id, text, meta={"module": "crypto-news", "kind": "test"})
+    print("测试消息%s%s" % ("发送成功 ✅" if ok else "发送失败 ❌", (" | " + err) if err else ""))
+    return 0 if ok else 2
 
-    alerts_path = os.path.join(STATE_DIR, "alerts-%s.json" % date)
-    if not os.path.exists(alerts_path):
-        print("没有找到 %s，请先跑 score.py" % alerts_path)
-        return 1
-    alerts = safe_json_load(alerts_path, {"items": []})
-    items = alerts.get("items", [])
-    if level:
-        items = [x for x in items if x.get("level") == level]
 
-    notified = DailyKeys(NOTIFIED_PATH, date)
+def pending_alerts(items, notified, force):
+    """过滤已推送；夜间静默开启时 P1 延后（--force 例外）。返回 [(event_key, alert)]。"""
     quiet = quiet_enabled() and in_quiet_hours(span=quiet_span())
     todo = []
     for a in items:
@@ -239,46 +238,68 @@ def main():
         if quiet and a.get("level") == "P1" and not force:
             continue
         todo.append((k, a))
+    return todo
 
-    if do_test:
-        text = (
-            "✅【crypto-news】<b>通道测试</b>\n"
-            "通知级别：P0 即时 / P1 小时级 / P2 日报\n"
-            "时间：%s" % ts_iso()
-        )
-        if dry_run:
-            print("[dry-run] 测试消息：\n" + text)
-            return 0
-        ok, err = send_message(token, chat_id, text, meta={"module": "crypto-news", "kind": "test"})
-        print("测试消息%s%s" % ("发送成功 ✅" if ok else "发送失败 ❌", (" | " + err) if err else ""))
-        return 0 if ok else 2
 
-    translate_alerts(todo)
+def _send_one(token, chat_id, k, a, notified):
+    """推送一条；返回是否真实送达。"""
+    title = (a.get("titles") or [""])[0][:50]
+    ok, err = send_signal(token, chat_id, format_alert(a), module="crypto-news", severity=a.get("level"),
+                          assets=a.get("assets"), key=k)
+    if ok and err.startswith("suppressed"):
+        notified.mark(k)   # 预算拦截 = 已处理（内容仍在日报里），不再重试
+        print("  ⏸ 全局预算拦截 %s %s（%s）" % (a.get("level"), title, err))
+        return False
+    if ok:
+        notified.mark(k)
+        print("  ✅ %s %s" % (a.get("level"), title))
+        return True
+    print("  ❌ 发送失败：%s" % err)
+    return False
 
-    print("今日待推送：%d 条（P0/P1 合计 %d 条，已过滤已推送）" % (len(todo), len(items)))
+
+def deliver(todo, notified, token, chat_id, dry_run):
     sent = 0
     for k, a in todo:
         a.setdefault("module", "crypto-news")
-        text = format_alert(a)
         if dry_run:
-            print("\n---- %s ----\n%s" % (a.get("level"), text))
-        else:
-            ok, err = send_signal(token, chat_id, text, module="crypto-news", severity=a.get("level"),
-                                  assets=a.get("assets"), key=k)
-            if ok and err.startswith("suppressed"):
-                notified.mark(k)   # 预算拦截 = 已处理（内容仍在日报里），不再重试
-                print("  ⏸ 全局预算拦截 %s %s（%s）" % (a.get("level"), (a.get("titles") or [""])[0][:50], err))
-            elif ok:
-                notified.mark(k)
-                sent += 1
-                print("  ✅ %s %s" % (a.get("level"), (a.get("titles") or [""])[0][:50]))
-            else:
-                print("  ❌ 发送失败：%s" % err)
-            time.sleep(0.6)
-
+            print("\n---- %s ----\n%s" % (a.get("level"), format_alert(a)))
+            continue
+        sent += 1 if _send_one(token, chat_id, k, a, notified) else 0
+        time.sleep(0.6)
     if not dry_run:
         notified.save()
         print("已发送 %d 条" % sent)
+
+
+def main():
+    opts = parse_args(sys.argv[1:])
+    dry_run, date = opts["dry_run"], opts["date"]
+    token, chat_id, problems = check_credentials(load_env())
+
+    if opts["check"]:
+        return _cmd_check(chat_id, problems)
+    if not dry_run and problems and not opts["discover"]:
+        return _report_missing_credentials(problems)
+    if opts["discover"]:
+        return _cmd_discover(token)
+
+    alerts_path = os.path.join(STATE_DIR, "alerts-%s.json" % date)
+    if not os.path.exists(alerts_path):
+        print("没有找到 %s，请先跑 score.py" % alerts_path)
+        return 1
+    items = safe_json_load(alerts_path, {"items": []}).get("items", [])
+    if opts["level"]:
+        items = [x for x in items if x.get("level") == opts["level"]]
+
+    notified = DailyKeys(NOTIFIED_PATH, date)
+    todo = pending_alerts(items, notified, opts["force"])
+    if opts["test"]:
+        return _cmd_test(token, chat_id, dry_run)
+
+    translate_alerts(todo)
+    print("今日待推送：%d 条（P0/P1 合计 %d 条，已过滤已推送）" % (len(todo), len(items)))
+    deliver(todo, notified, token, chat_id, dry_run)
     return 0
 
 
