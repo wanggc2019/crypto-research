@@ -42,6 +42,7 @@ jobs:
       # config/ai.yaml 的 ci.pr-review 默认用 claude-code（Claude Code 订阅）：
       # 订阅凭据 = `claude setup-token` 生成的长期 token，存为 secret CLAUDE_CODE_OAUTH_TOKEN；没配就不装、审查跳过
       - name: Install Claude Code
+        continue-on-error: true   # 安装失败（npm/网络）→ 没有 claude 命令 → 审查跳过，不让 job 变红
         env:
           HAS_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
         run: |
