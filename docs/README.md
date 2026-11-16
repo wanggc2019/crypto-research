@@ -43,6 +43,7 @@
 | crypto-policy · 国内政策/法规/案例雷达 | MVP 运行中 | [docs/crypto-policy/](crypto-policy/README.md) | [`crypto-policy/`](../crypto-policy/README.md) | 3600s 抓取（14 源：国内 5 + 国外 9）· 规则门 · P0/P1 推送 · 首次基线不推 |
 | crypto-jobs · 加密行业技术岗位市场情报 | MVP 已实现 | [docs/crypto-jobs/](crypto-jobs/README.md) | [`crypto-jobs/`](../crypto-jobs/README.md) | 每日 18:00 全量快照/日报 · 周日 10:00 周报 · 每 2 小时新岗位速报 |
 | crypto-onchain · 链上/交易所卖压归因 | M2 + 链上大额转账（影子） | [docs/crypto-onchain/](crypto-onchain/README.md) | [`crypto-onchain/`](../crypto-onchain/README.md) | 300s 影子采集 + 归因 + 链上大额转账（≥$5M）· 只落盘不推送 · exports `onchain/pressure/v1` |
+| crypto-futures · 合约持仓结构（多空比）告警 | 需求已通过，M1 待实现 | [docs/crypto-futures/](crypto-futures/requirement.md) | （未建） | 300s（规划）· 即时类 · Binance USD-M 单所 |
 | crypto-knowledge · 每日 4 条学习内容 | 运行中 | [docs/crypto-knowledge/](crypto-knowledge/README.md) | [`crypto-knowledge/`](../crypto-knowledge/README.md) | 13:00 / 19:00 / 21:00 / 23:00 四班 · 间隔复习 1/3/7/14/30/60 天 · 160 条内容 |
 
 ## 新增需求
