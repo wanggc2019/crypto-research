@@ -328,15 +328,8 @@ def run(argv=None):
         print("app.yaml enabled=false，已停用")
         return EXIT_OK
 
-    content_dir = args.content or args.fixtures or common.CURRICULUM_DIR
-    items = content.load_all(content_dir)
-    if not items:
-        print("没有课程内容：%s" % content_dir)
-        return EXIT_CONFIG
-    try:
-        content.validate_or_raise(items)
-    except ValueError as exc:
-        print(str(exc))
+    items = _load_items(args)
+    if items is None:
         return EXIT_CONFIG
 
     job_label = common.job_label()
@@ -355,13 +348,10 @@ def run(argv=None):
             print("%s 今天所有到点时段都已发送" % date)
         return EXIT_OK
 
-    if schedule.already_sent(state, date, slot):
-        if not args.force:
-            print("%s %s 已发送，跳过（--force 可重发）" % (date, SLOT_LABELS[slot]))
-            return EXIT_OK
-        plan = build_resend(state, items, slot, date, job_label)
-    else:
-        plan = build(state, items, slot, date, job_label, cfg, force_weekly=args.weekly)
+    if schedule.already_sent(state, date, slot) and not args.force:
+        print("%s %s 已发送，跳过（--force 可重发）" % (date, SLOT_LABELS[slot]))
+        return EXIT_OK
+    plan = _make_plan(args, state, items, slot, date, job_label, cfg)
     if not plan:
         print("没有可用内容（内容库为空？）")
         return EXIT_CONFIG
@@ -376,7 +366,31 @@ def run(argv=None):
     if args.dry_run:
         print(text)
         return EXIT_OK
+    return _deliver(args, plan, text, ids, slot, date, state, state_path, data_dir, cfg)
 
+
+def _load_items(args):
+    """读取并校验课程内容；失败打印原因并返回 None。"""
+    content_dir = args.content or args.fixtures or common.CURRICULUM_DIR
+    items = content.load_all(content_dir)
+    if not items:
+        print("没有课程内容：%s" % content_dir)
+        return None
+    try:
+        content.validate_or_raise(items)
+    except ValueError as exc:
+        print(str(exc))
+        return None
+    return items
+
+
+def _make_plan(args, state, items, slot, date, job_label, cfg):
+    if schedule.already_sent(state, date, slot):
+        return build_resend(state, items, slot, date, job_label)
+    return build(state, items, slot, date, job_label, cfg, force_weekly=args.weekly)
+
+
+def _deliver(args, plan, text, ids, slot, date, state, state_path, data_dir, cfg):
     if args.notify:
         ok, err = send(common.load_bot_env(), text)
         if not ok:
