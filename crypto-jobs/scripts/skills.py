@@ -37,19 +37,7 @@ _RB = r"(?![A-Za-z0-9_])"
 
 # ---------------------------------------------------------------- 分类法加载
 
-def _validate(data, path):
-    """校验并归一化 skills.yaml；结构错误直接抛 ValueError（配置错要早暴露）。"""
-    if not isinstance(data, dict):
-        raise ValueError("%s: 技能分类法必须是映射" % path)
-    if data.get("schema_version") != 1:
-        raise ValueError("%s: schema_version 必须为 1，实际 %r" % (path, data.get("schema_version")))
-    raw_categories = data.get("categories")
-    raw_skills = data.get("skills")
-    if not isinstance(raw_categories, list) or not raw_categories:
-        raise ValueError("%s: categories 不能为空" % path)
-    if not isinstance(raw_skills, list) or not raw_skills:
-        raise ValueError("%s: skills 不能为空" % path)
-
+def _validate_categories(raw_categories, path):
     categories = []
     category_ids = set()
     for item in raw_categories:
@@ -65,43 +53,47 @@ def _validate(data, path):
             raise ValueError("%s: category %s 缺少 label" % (path, cid))
         category_ids.add(cid)
         categories.append({"id": cid, "label": label})
+    return categories, category_ids
 
-    skills = []
-    skill_ids = set()
-    for item in raw_skills:
-        if not isinstance(item, dict):
-            raise ValueError("%s: skill 必须是映射" % path)
-        sid = str(item.get("id") or "")
-        label = str(item.get("label") or "")
-        cid = str(item.get("category") or "")
-        aliases = item.get("aliases") or []
-        regex = item.get("regex")
-        if not _ID_RE.match(sid):
-            raise ValueError("%s: 非法 skill id %r" % (path, sid))
-        if sid in skill_ids:
-            raise ValueError("%s: skill id 重复: %s" % (path, sid))
-        if not label:
-            raise ValueError("%s: skill %s 缺少 label" % (path, sid))
-        if cid not in category_ids:
-            raise ValueError("%s: skill %s 的 category 不存在: %r" % (path, sid, cid))
-        if not isinstance(aliases, list):
-            raise ValueError("%s: skill %s 的 aliases 必须是列表" % (path, sid))
-        normalized = []
-        for alias in aliases:
-            alias = str(alias).strip()
-            if alias and alias not in normalized:
-                normalized.append(alias)
-        if not normalized:
-            raise ValueError("%s: skill %s 缺少 aliases" % (path, sid))
-        if regex is not None and not isinstance(regex, str):
-            raise ValueError("%s: skill %s 的 regex 必须是字符串" % (path, sid))
-        skill = {"id": sid, "label": label, "category": cid, "aliases": normalized}
-        if regex and regex.strip():
-            skill["regex"] = regex.strip()
-        skills.append(skill)
-        skill_ids.add(sid)
 
-    raw_drilldown = data.get("drilldown") or {}
+def _normalize_aliases(aliases, sid, path):
+    if not isinstance(aliases, list):
+        raise ValueError("%s: skill %s 的 aliases 必须是列表" % (path, sid))
+    normalized = []
+    for alias in aliases:
+        alias = str(alias).strip()
+        if alias and alias not in normalized:
+            normalized.append(alias)
+    if not normalized:
+        raise ValueError("%s: skill %s 缺少 aliases" % (path, sid))
+    return normalized
+
+
+def _validate_skill(item, path, skill_ids, category_ids):
+    if not isinstance(item, dict):
+        raise ValueError("%s: skill 必须是映射" % path)
+    sid = str(item.get("id") or "")
+    label = str(item.get("label") or "")
+    cid = str(item.get("category") or "")
+    regex = item.get("regex")
+    if not _ID_RE.match(sid):
+        raise ValueError("%s: 非法 skill id %r" % (path, sid))
+    if sid in skill_ids:
+        raise ValueError("%s: skill id 重复: %s" % (path, sid))
+    if not label:
+        raise ValueError("%s: skill %s 缺少 label" % (path, sid))
+    if cid not in category_ids:
+        raise ValueError("%s: skill %s 的 category 不存在: %r" % (path, sid, cid))
+    normalized = _normalize_aliases(item.get("aliases") or [], sid, path)
+    if regex is not None and not isinstance(regex, str):
+        raise ValueError("%s: skill %s 的 regex 必须是字符串" % (path, sid))
+    skill = {"id": sid, "label": label, "category": cid, "aliases": normalized}
+    if regex and regex.strip():
+        skill["regex"] = regex.strip()
+    return skill
+
+
+def _validate_drilldown(raw_drilldown, path, skill_ids):
     if not isinstance(raw_drilldown, dict):
         raise ValueError("%s: drilldown 必须是映射" % path)
     drilldown = {}
@@ -119,7 +111,30 @@ def _validate(data, path):
             if cid not in normalized_children:
                 normalized_children.append(cid)
         drilldown[pid] = normalized_children
+    return drilldown
 
+
+def _validate(data, path):
+    """校验并归一化 skills.yaml；结构错误直接抛 ValueError（配置错要早暴露）。"""
+    if not isinstance(data, dict):
+        raise ValueError("%s: 技能分类法必须是映射" % path)
+    if data.get("schema_version") != 1:
+        raise ValueError("%s: schema_version 必须为 1，实际 %r" % (path, data.get("schema_version")))
+    raw_categories = data.get("categories")
+    raw_skills = data.get("skills")
+    if not isinstance(raw_categories, list) or not raw_categories:
+        raise ValueError("%s: categories 不能为空" % path)
+    if not isinstance(raw_skills, list) or not raw_skills:
+        raise ValueError("%s: skills 不能为空" % path)
+
+    categories, category_ids = _validate_categories(raw_categories, path)
+    skills = []
+    skill_ids = set()
+    for item in raw_skills:
+        skill = _validate_skill(item, path, skill_ids, category_ids)
+        skills.append(skill)
+        skill_ids.add(skill["id"])
+    drilldown = _validate_drilldown(data.get("drilldown") or {}, path, skill_ids)
     return {"schema_version": 1, "categories": categories, "skills": skills,
             "drilldown": drilldown}
 

@@ -143,6 +143,56 @@ def role_rows(jobs, maps, target_roles, taxonomy=None, top_n=8):
     return out
 
 
+def _add_to_company_bucket(buckets, job, new_keys):
+    slug = job.get("company_slug") or job.get("company") or ""
+    if not slug:
+        return
+    bucket = buckets.setdefault(slug, {
+        "company": job.get("company") or slug,
+        "company_slug": slug,
+        "jobs": 0,
+        "new_jobs": 0,
+        "remote": 0,
+        "roles": collections.Counter(),
+        "skills": collections.Counter(),
+        "titles": [],
+        "role_titles": {},
+    })
+    bucket["jobs"] += 1
+    if job.get("key") in (new_keys or set()):
+        bucket["new_jobs"] += 1
+    if job.get("remote") == "remote":
+        bucket["remote"] += 1
+    bucket["roles"][job.get("role") or "other"] += 1
+    for sid in set(job.get("skills") or []):
+        bucket["skills"][sid] += 1
+    title = job.get("title") or ""
+    if title:
+        if title not in bucket["titles"]:
+            bucket["titles"].append(title)
+        role_titles = bucket["role_titles"].setdefault(job.get("role") or "other", [])
+        if title not in role_titles and len(role_titles) < 4:
+            role_titles.append(title)
+
+
+def _sample_titles(bucket, role_list):
+    """代表岗位：从岗位数最多的角色里各取 1 个 title，保证跨职能多样；不足 3 个再按出现顺序补。"""
+    sample_titles = []
+    for role_item in role_list:
+        for title in bucket["role_titles"].get(role_item["role"], []):
+            if title not in sample_titles:
+                sample_titles.append(title)
+                break
+        if len(sample_titles) >= 3:
+            break
+    for title in bucket["titles"]:
+        if len(sample_titles) >= 3:
+            break
+        if title not in sample_titles:
+            sample_titles.append(title)
+    return sample_titles
+
+
 def company_rows(jobs, new_keys, maps, limit=None):
     """每个公司的招聘统计：岗位数/新增/远程/角色构成/Top 技能/代表岗位。
 
@@ -150,55 +200,14 @@ def company_rows(jobs, new_keys, maps, limit=None):
     """
     buckets = {}
     for job in jobs:
-        slug = job.get("company_slug") or job.get("company") or ""
-        if not slug:
-            continue
-        bucket = buckets.setdefault(slug, {
-            "company": job.get("company") or slug,
-            "company_slug": slug,
-            "jobs": 0,
-            "new_jobs": 0,
-            "remote": 0,
-            "roles": collections.Counter(),
-            "skills": collections.Counter(),
-            "titles": [],
-            "role_titles": {},
-        })
-        bucket["jobs"] += 1
-        if job.get("key") in (new_keys or set()):
-            bucket["new_jobs"] += 1
-        if job.get("remote") == "remote":
-            bucket["remote"] += 1
-        bucket["roles"][job.get("role") or "other"] += 1
-        for sid in set(job.get("skills") or []):
-            bucket["skills"][sid] += 1
-        title = job.get("title") or ""
-        if title:
-            if title not in bucket["titles"]:
-                bucket["titles"].append(title)
-            role_titles = bucket["role_titles"].setdefault(job.get("role") or "other", [])
-            if title not in role_titles and len(role_titles) < 4:
-                role_titles.append(title)
+        _add_to_company_bucket(buckets, job, new_keys)
 
     rows = []
     for slug, bucket in buckets.items():
         total = bucket["jobs"]
         role_list = [{"role": role, "jobs": int(n)}
                      for role, n in bucket["roles"].most_common()]
-        # 代表岗位：从岗位数最多的角色里各取 1 个 title，保证跨职能多样
-        sample_titles = []
-        for role_item in role_list:
-            for title in bucket["role_titles"].get(role_item["role"], []):
-                if title not in sample_titles:
-                    sample_titles.append(title)
-                    break
-            if len(sample_titles) >= 3:
-                break
-        for title in bucket["titles"]:
-            if len(sample_titles) >= 3:
-                break
-            if title not in sample_titles:
-                sample_titles.append(title)
+        sample_titles = _sample_titles(bucket, role_list)
         rows.append({
             "company": bucket["company"],
             "company_slug": slug,
