@@ -46,10 +46,17 @@ class TestDataLayout(unittest.TestCase):
 class TestApplyTimezone(unittest.TestCase):
     def test_noop_and_set(self):
         self.assertIsNone(timeutil.apply_timezone(""))
-        with mock.patch.dict(os.environ, {}, clear=False), mock.patch.object(time, "tzset") as tzset:
+        # create=True：部分 Python 构建（如 uv 的 macOS 3.12）没有 time.tzset
+        with mock.patch.dict(os.environ, {}, clear=False), mock.patch.object(time, "tzset", create=True) as tzset:
             self.assertEqual(timeutil.apply_timezone("UTC"), "UTC")
             self.assertEqual(os.environ["TZ"], "UTC")
             tzset.assert_called_once()
+
+    def test_missing_tzset_degrades(self):
+        with mock.patch.dict(os.environ, {}, clear=False), \
+                mock.patch.object(time, "tzset", side_effect=AttributeError, create=True):
+            self.assertEqual(timeutil.apply_timezone("UTC"), "UTC")
+            self.assertEqual(os.environ["TZ"], "UTC")
 
 
 class TestAppendLogLine(unittest.TestCase):
