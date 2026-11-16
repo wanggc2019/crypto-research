@@ -117,6 +117,7 @@ def steps_offline():
                 lint_dirs.append(rel)
     if RUFF:
         steps.append(("ruff", [RUFF, "check", "--no-cache"] + lint_dirs, None))
+        steps.append(("复杂度棘轮", [PY, os.path.join(REPO, "tools/complexity_check.py")] + lint_dirs, None))
     steps.append(("libs 单测", [PY, "-m", "unittest", "discover",
                                 "-s", os.path.join(REPO, "libs/crypto_core/tests")], None))
     steps.append(("tools 单测", [PY, "-m", "unittest", "discover",

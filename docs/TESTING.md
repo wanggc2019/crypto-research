@@ -45,7 +45,7 @@ E2E 用临时目录，不写生产状态。`make verify` 只是兼容别名，�
 
 1. 目录名 `crypto-<领域词>`，带 `scripts/` 或 `tests/`；
 2. `tests/` 放离线 unittest（自动 `discover`）；
-3. `scripts/` 自动纳入 ruff；
+3. `scripts/` 自动纳入 ruff 与复杂度棘轮（新函数 McCabe ≤ 15）；
 4. 提供 `scripts/e2e.py`（脚手架默认生成），退出码 0 即通过；gate 不再内置任何模块的回放命令；
 5. 重复消息审计自动扫描 `data/state/alerts-*.json`（有 `delivery.decision` 列表格式的模块）。
 
