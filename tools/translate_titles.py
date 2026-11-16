@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""translate_titles.py —— 把英文新闻标题批量翻译成自然中文（DeepSeek API，零第三方依赖）。
+"""translate_titles.py —— 把英文新闻标题批量翻译成自然中文（Claude Haiku，effort=low）。
 
 用法：
     echo '["title a","title b"]' | python3 tools/translate_titles.py
 输出：
     {"translations": ["译文 a", "译文 b"]}
 
-凭据：环境变量 DEEPSEEK_API_KEY；没有则从 ~/.dsh/.credentials.yaml 的 refs 读取（与 headless 一致）。
+凭据：环境变量 ANTHROPIC_API_KEY；没有则读仓库根 .env。
 失败时退出码 1 并输出 {"error": "..."}，调用方应回退到规则翻译。
 """
 import argparse
@@ -28,7 +28,7 @@ SYSTEM_PROMPT = (
 
 
 def find_api_key():
-    """环境变量 DEEPSEEK_API_KEY → ~/.dsh/.credentials.yaml（见 crypto_core.llm.find_api_key）。"""
+    """环境变量 ANTHROPIC_API_KEY → 仓库根 .env（见 crypto_core.llm.find_api_key）。"""
     return llm.find_api_key()
 
 
@@ -49,13 +49,14 @@ def parse_translations(content, expected):
 def translate(titles, timeout=45):
     key = find_api_key()
     if not key:
-        return {"error": "missing DEEPSEEK_API_KEY"}
+        return {"error": "missing ANTHROPIC_API_KEY"}
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": json.dumps(titles, ensure_ascii=False)},
     ]
     try:
-        out = parse_translations(llm.chat(messages, key, timeout=timeout, temperature=0.2), len(titles))
+        out = parse_translations(llm.chat(messages, key, model=llm.FAST_MODEL, effort="low", timeout=timeout),
+                                 len(titles))
         if out is None:
             return {"error": "unparseable model output"}
         return {"translations": out}

@@ -65,7 +65,7 @@ gh pr merge <n> --squash --delete-branch
 - r.jina.ai 的 X 主页 Markdown 不含时间/互动数/status id；原帖链接需 HTML 解析；
 - 整页 hash 会因 `blob:` URL 变化误判；用逐帖指纹；
 - X 登录墙记 SKIP（不失败）；全部跳过才 rc=3；抓取要节流（匿名 20 RPM）；
-- DeepSeek 翻译/总结要批量+缓存+无 key 降级；
+- AI 调用统一走 `crypto_core.llm`（Claude），批量+缓存+无 key 降级，测试不得真调模型；
 - Telegram 消息长度/预览/限额；测试消息要标明样例；
 - CI：runner 无 `.venv`（Makefile 已回退 python3）；`tests/fixtures/` 可入库（hygiene 已放行）。
 

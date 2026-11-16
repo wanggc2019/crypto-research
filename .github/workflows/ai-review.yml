@@ -27,7 +27,7 @@ jobs:
 
       - uses: actions/setup-python@7f4fc3e22c37d6ff65e88745f38bd3157c663f7c  # v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
       - name: Fetch base commit
         env:
@@ -36,9 +36,12 @@ jobs:
         run: |
           git fetch --no-tags origin "$BASE_SHA" || git fetch --no-tags origin "$BASE_REF"
 
+      - name: Install
+        run: pip install -r requirements.txt
+
       - name: Run AI review
         env:
-          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}

@@ -18,6 +18,7 @@ PATTERNS = [
     (re.compile(r"TELEGRAM_[A-Z_]*CHAT_ID\s*=\s*\d{6,}"), "真实 Telegram chat_id"),
     (re.compile(r"\b(ghp_|gho_|github_pat_)[A-Za-z0-9_]{20,}"), "GitHub token"),
     (re.compile(r"\bsk-[A-Za-z0-9]{20,}"), "OpenAI/DeepSeek 风格 key"),
+    (re.compile(r"\bsk-ant-[A-Za-z0-9_-]{20,}"), "Anthropic API key"),
     # 个人信息/位置/内部称呼（当前仓库不应出现；checker 自身除外）
     (re.compile(r"Asia/Dubai|UTC\+4|迪拜"), "位置/时区信息"),
     (re.compile(r"中国公民"), "个人身份信息"),

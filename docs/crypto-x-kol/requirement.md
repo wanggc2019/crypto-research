@@ -17,7 +17,7 @@
   丢弃置顶帖、转推、纯图片帖（没有可读文本）。
 - **增量去重**：首轮只建基线（不把主页历史帖当新帖）；之后按「账号 + 正文归一化」指纹增量识别，
   同一推文只推送一次。
-- **中文翻译 + 一句话总结**：外文推文用 DeepSeek 翻成中文，并给每条一句话总结；
+- **中文翻译 + 一句话总结**：外文推文用 Claude 翻成中文，并给每条一句话总结；
   报告/告警只展示中文（原文留在 raw）；翻译过的推文标 **[翻译]**；无 key 时自动降级显示原文。
 - **作者可识别**：每条推文展示 `@handle（name · 职业）`，职业来自 `kol.yaml` 的 `role`（如
   「Michael Saylor · Strategy 执行主席」），避免只看到账号名不知道是谁。
@@ -59,7 +59,7 @@
 | X 主页 | `https://r.jina.ai/https://x.com/<handle>` | 300s/账号 | 0（匿名 20 RPM） | 免 key、不计 token；页面无时间戳/互动数 |
 | 可选 `JINA_API_KEY` | 同上，带 `Authorization` 头 | 300s/账号 | 一次性 10M token，之后 $0.05/M | 仅提额到 500 RPM；默认关闭 |
 | Telegram Bot | 仓库根 `.env` 的 `TELEGRAM_BOT_TOKEN/CHAT_ID` | 有新帖时 | 0 | 与 crypto-news 共用通道 |
-| DeepSeek API | `https://api.deepseek.com/chat/completions`（`deepseek-chat`） | 每条新帖一次（批量 8 条/请求，带缓存） | 约几分钱/天 | 翻译 + 一句话总结；无 key 降级为原文 |
+| Claude API | Anthropic Messages API（`claude-haiku-5-5`，effort=low） | 每条新帖一次（批量 8 条/请求，带缓存） | 约几分钱/天 | 翻译 + 一句话总结；无 key 降级为原文 |
 
 ## 5. 验收标准（可测量）
 
@@ -75,7 +75,7 @@
    （见 `tests/test_score.py` 与现场 dry-run）。
 7. 每日推送不超过 `alert.caps.per_day`；全天即时发送（无夜间静默）。
 8. 翻译/总结：外文推文报告与告警只展示中文、带 **[翻译]** 标记；同一条推文只调用一次 API（缓存命中）；
-   无 `DEEPSEEK_API_KEY` 时降级为原文且不报错。
+   无 `ANTHROPIC_API_KEY` 时降级为原文且不报错。
 9. 作者信息：日报与告警都显示 `@handle（name · 职业）`；`kol.yaml` 的 `role` 缺失时至少显示 name。
 10. 告警里的 @handle 链接指向**具体推文**（`/status/<id>`）；解析失败回退主页且不阻塞推送。
 11. `make gate` 通过（本模块单测 + `scripts/e2e.py` 自动纳入）。
@@ -84,7 +84,7 @@
 
 - `libs/crypto_core`：`paths/env/config/store/text/timeutil`、`http.get_text`、
   `notify.check_credentials/send_message`、`timeutil.in_quiet_hours`。
-- 需要新增：DeepSeek API 凭据 `DEEPSEEK_API_KEY`（`.env` 或 `~/.dsh/.credentials.yaml` 的 refs）。
+- 需要：Anthropic API 凭据 `ANTHROPIC_API_KEY`（仓库根 `.env`）。
 
 ## 7. 风险与对策
 
@@ -100,6 +100,6 @@
 | 关键信息被误判为 P2/MUTE | 所有新帖都在日报里带分数/理由；调 `alert.thresholds`/`topics` 关键词即可，不用改代码 |
 | 告警过多（阈值偏松） | 调高 `thresholds.P1`、调低 `weights.strong`，或收紧 `alert.caps.per_day` |
 | 机器休眠漏跑 | launchd 唤醒后补跑；首轮会补推未推送条目 |
-| DeepSeek 不可用/超时 | 该批翻译跳过，报告回退原文；缓存保证下轮只重试未翻译的推文 |
+| Claude 不可用/超时 | 该批翻译跳过，报告回退原文；缓存保证下轮只重试未翻译的推文 |
 | 翻译误译/漏信息 | 原文保留在 raw；报告标注「AI 生成」；重要事件以原帖/官方为准 |
-| 推文内容发送到第三方 API | 只发推文正文/引用给 DeepSeek，不发送凭据；介意可 `analysis.enabled: false` |
+| 推文内容发送到第三方 API | 只发推文正文/引用给 Claude，不发送凭据；介意可 `analysis.enabled: false` |

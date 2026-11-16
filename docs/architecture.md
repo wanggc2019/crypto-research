@@ -38,7 +38,7 @@
 | D3 | 共享代码形态 | **`libs/crypto_core/` 纯 Python 包 + `PYTHONPATH`**，不做 pip 发包 | 零网络、零安装、系统 python3 也能跑；发包/版本管理对个人项目是负担 |
 | D4 | 依赖方向 | **模块 → libs 单向；模块之间禁止 import** | 共享能力不依赖业务，业务之间不被耦合；跨模块只走数据契约 |
 | D5 | 运行时 | **统一 Python 3.12**（2026-11-16 起，ADR 0010）；Node 只在某个模块确有硬需求时**模块内自带**，不进 libs | 当前双运行时（Python 情报 + Node 价格）已消失，不再引入第二套 |
-| D6 | 环境 | **单根 `.venv`**（仅 ruff/PyYAML 开发增强）；模块脚本无 venv 时回退 `python3` | 避免每个模块重建 venv；零依赖原则下不会有版本冲突 |
+| D6 | 环境 | **单根 `.venv`**（`requirements.txt`：PyYAML、ruff、anthropic SDK）；模块脚本无 venv 时回退 `python3`，此时 LLM 功能（ADR 0011）不可用并按调用方逻辑降级 | 避免每个模块重建 venv；依赖少且精确锁版本，不会有冲突 |
 | D7 | 数据 | **模块内 `data/`**：`raw/ state/ reports/ exports/ logs/`；跨模块只读 `exports/` | 数据归属清晰、备份/清理简单；不建中央数据库 |
 | D8 | 凭据 | **根 `.env` 唯一来源**，`.env.example` 列 key；CI 做"密钥/数据未入库"检查 | 一处维护，入库风险最小 |
 | D9 | 事件与告警 | **统一 `alert/v1` 事件模型**（P0/P1/P2、去重键、三行摘要、证据链） | 多模块都要推送时不必再造一套严重度词汇 |

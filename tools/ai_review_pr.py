@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""用 DeepSeek 审查 PR diff，并把结果评论回 GitHub PR。
+"""用 Claude（Opus，effort=high）审查 PR diff，并把结果评论回 GitHub PR。
 
 安全边界：
 - 只读 git diff，不执行 PR 代码；
@@ -87,14 +87,14 @@ def get_diff(base, head, base_ref=None):
 def require_review_content(content):
     """模型返回的 content 必须是非空字符串（choices 结构由 crypto_core.llm.chat 校验）。"""
     if not isinstance(content, str) or not content.strip():
-        raise RuntimeError("DeepSeek 响应缺少 message.content")
+        raise RuntimeError("Claude 响应里没有审查文本")
     return content.strip()
 
 
 def review(diff):
-    key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
+    key = os.environ.get(llm.API_KEY_ENV, "").strip()
     if not key:
-        print("::warning::DEEPSEEK_API_KEY 未配置，跳过 AI 审查")
+        print("::warning::%s 未配置，跳过 AI 审查" % llm.API_KEY_ENV)
         return ""
     prompt = """你是资深代码审查员。只审查下面 git diff 中的改动，不要臆测未出现的代码。
 重点找：真实 bug、安全问题、边界条件、回归风险、测试缺失。
@@ -112,10 +112,10 @@ LGTM 或 需要修改
 DIFF_JSON（JSON 字符串，避免代码围栏被 diff 内容破坏）:
 %s""" % json.dumps(diff, ensure_ascii=False)
     try:
-        content = llm.chat([{"role": "user", "content": prompt}], key, timeout=90,
-                           temperature=0.2, max_tokens=3000)
+        content = llm.chat([{"role": "user", "content": prompt}], key, model=llm.DEFAULT_MODEL,
+                           effort="high", timeout=300)
     except llm.LLMError as e:
-        raise RuntimeError("DeepSeek %s" % e)
+        raise RuntimeError("Claude %s" % e)
     return require_review_content(content)
 
 
@@ -217,7 +217,7 @@ def main():
     if not review_text:
         return 0
     body = (MARKER + "\n" + review_text +
-            "\n\n> 由 DeepSeek 自动审查；仅供参考，不替代人工 review。")
+            "\n\n> 由 Claude 自动审查；仅供参考，不替代人工 review。")
     action = comment(trim_comment(body), required_env("GITHUB_TOKEN"), repo, pr)
     print("AI 审查评论已%s" % ("更新" if action == "updated" else "发布"))
     return 0

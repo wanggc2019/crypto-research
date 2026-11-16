@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.join(ROOT, "scripts"))
 
 import analyze  # noqa: E402
 
-CFG = {"enabled": True, "model": "deepseek-chat", "batch_size": 2, "max_tweet_chars": 50}
+CFG = {"enabled": True, "model": "claude-haiku-5-5", "effort": "low", "batch_size": 2, "max_tweet_chars": 50}
 
 
 def post(pid, text, handle="tester"):
@@ -27,8 +27,9 @@ class TestTextHelpers(unittest.TestCase):
 
     def test_build_request_and_truncate(self):
         body = analyze.build_request([post("a", "x" * 120)], CFG)
-        self.assertEqual(body["model"], "deepseek-chat")
-        self.assertEqual(body["response_format"], {"type": "json_object"})
+        self.assertEqual(body["model"], "claude-haiku-5-5")
+        self.assertEqual(body["effort"], "low")
+        self.assertNotIn("temperature", body)
         user = body["messages"][1]["content"]
         self.assertIn('"id": "a"', user)
         self.assertIn("…", user)          # 超长被截断
@@ -54,11 +55,11 @@ class TestAnalyzeFlow(unittest.TestCase):
                     for p in batch}
 
         posts = [post(str(i), "hello") for i in range(5)]
-        cache = analyze.analyze(posts, CFG, env={"DEEPSEEK_API_KEY": "k"}, caller=caller, log=lambda *_: None)
+        cache = analyze.analyze(posts, CFG, env={"ANTHROPIC_API_KEY": "k"}, caller=caller, log=lambda *_: None)
         self.assertEqual(len(calls), 3)                # batch_size=2 → 2+2+1
         self.assertEqual(len(cache), 5)
         # 二次调用：全部命中缓存，不再请求
-        cache2 = analyze.analyze(posts, CFG, env={"DEEPSEEK_API_KEY": "k"}, caller=caller,
+        cache2 = analyze.analyze(posts, CFG, env={"ANTHROPIC_API_KEY": "k"}, caller=caller,
                                  cache=cache, log=lambda *_: None)
         self.assertEqual(len(calls), 3)
         self.assertEqual(cache2["3"]["summary"], "总结3")
@@ -68,7 +69,7 @@ class TestAnalyzeFlow(unittest.TestCase):
             raise RuntimeError("api down")
 
         posts = [post("a", "hello")]
-        cache = analyze.analyze(posts, CFG, env={"DEEPSEEK_API_KEY": "k"}, caller=boom,
+        cache = analyze.analyze(posts, CFG, env={"ANTHROPIC_API_KEY": "k"}, caller=boom,
                                 log=lambda *_: None)
         self.assertEqual(cache, {})
 
