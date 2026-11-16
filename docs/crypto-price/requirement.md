@@ -2,7 +2,7 @@
 
 > 状态：已立项并实现（2026-11-08）｜模块目录：[`crypto-price/`](../../crypto-price/README.md)
 > 文档区：本目录（需求 / 设计 / 业务架构）｜仓库技术架构：[architecture.md](../architecture.md)
-> 关联：[设计文档](design.md) · [业务架构图](architecture.md) · [HANDOFF §5](../HANDOFF.md) · [约定](../conventions.md)
+> 关联：[设计文档](design.md) · [业务架构图](architecture.md) · [HANDOFF §6](../HANDOFF.md) · [约定](../conventions.md)
 
 ## 1. 要解决什么问题（一句话）
 

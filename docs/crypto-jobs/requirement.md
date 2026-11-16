@@ -81,7 +81,7 @@
 1. **离线全绿**：`make gate` 通过（ruff + libs/tools/各模块单测 + crypto-jobs e2e 回放）。
 2. **离线 e2e**：`python3 crypto-jobs/scripts/e2e.py` 退出 0，且生成快照/索引/日报/周报/exports。
 3. **联网日更**：`cd crypto-jobs && ./scripts/run.sh --dry-run --json` 退出码 ∈ {0,1}，
-   `overview.jobs > 0`，至少 3 个源健康（当前实测值见 HANDOFF）。
+   `overview.jobs > 0`，至少 3 个源健康（当前实测值见 [模块 README](../../crypto-jobs/README.md)）。
 4. **周报**：`./scripts/run.sh --weekly --dry-run` 输出包含「技能需求 Top」「方法与局限」两节。
 5. **词典可扩展**：新增一个技能到 `config/skills.yaml` 后，`tests/test_skills.py` 通过，
    周报里无需改代码即可出现该技能。
