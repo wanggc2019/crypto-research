@@ -16,7 +16,7 @@
     python3 tools/healthcheck.py --module crypto-news --fix           # 自愈
     python3 tools/healthcheck.py --module crypto-news --notify        # 有问题时推 Telegram
     python3 tools/healthcheck.py --module crypto-news --notify --fix  # 定时任务用这个
-    python3 tools/healthcheck.py --module crypto-news --agent          # 异常时后台异步调 dsh headless（首次立即，之后多级退避）
+    python3 tools/healthcheck.py --module crypto-news --agent          # 异常时后台异步调 AI agent（首次立即，之后多级退避）
     python3 tools/healthcheck.py --module crypto-news --stale-min 0 --notify  # 测试告警
 """
 import argparse
@@ -453,7 +453,7 @@ def notify_digest(checks):
 
 def run_agent(module, worst, last_ts=0, dry_run=False, cooldown_min=AGENT_COOLDOWN_MIN,
               timeout=600, attempts=0):
-    """异步拉起 tools/agent_repair.py（内部 dsh headless 巡检），不阻塞采集主流程。"""
+    """异步拉起 tools/agent_repair.py（内部 tools/agent_run.py 巡检），不阻塞采集主流程。"""
     if not should_run_agent(worst, last_ts, cooldown_min=cooldown_min, attempts=attempts):
         return {"ran": False, "reason": "ok 或冷却中"}
     script = module_dir(module) / "scripts" / "inspect.sh"
@@ -720,7 +720,7 @@ def main(argv=None):
     parser.add_argument("--json", action="store_true", help="输出 JSON")
     parser.add_argument("--quiet", action="store_true", help="正常时不输出（异常才打印，适合嵌入每轮任务）")
     parser.add_argument("--agent", action="store_true",
-                        help="异常时调 dsh headless 做深度分析（首次立即，之后多级退避 15/30/60/120/240/360 分钟）")
+                        help="异常时调 AI agent 做深度分析（首次立即，之后多级退避 15/30/60/120/240/360 分钟）")
     parser.add_argument("--agent-min-interval", type=int, default=AGENT_COOLDOWN_MIN,
                         help="AI 冷却上限（分钟，默认 360；实际取多级退避与上限的较小值）")
     parser.add_argument("--agent-timeout", type=int, default=600, help="单次 AI 分析超时秒数（异步，默认 600）")

@@ -5,7 +5,6 @@ export PATH="$HOME/.local/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/us
 cd "$(dirname "$0")/.."
 REPO_ROOT="$(cd .. && pwd)"
 PROMPT_FILE="$REPO_ROOT/tools/agents/daily-analysis-prompt.md"
-DSH_BIN="$(command -v dsh || true)"
 TODAY="$(date +%F)"
 
 if [ -z "${PYTHON:-}" ]; then
@@ -16,21 +15,6 @@ fi
 
 echo "===== $(date '+%F %T') ai-daily start ====="
 [ -f "$PROMPT_FILE" ] || { echo "缺少 prompt：$PROMPT_FILE"; exit 2; }
-[ -n "$DSH_BIN" ] || { echo "未找到 dsh"; exit 2; }
-
-if [ -z "${DEEPSEEK_API_KEY:-}" ] && [ -f "$HOME/.dsh/.credentials.yaml" ]; then
-  DEEPSEEK_API_KEY="$("$PY" -c '
-import sys
-try:
-    import yaml
-    data = yaml.safe_load(open(sys.argv[1], encoding="utf-8")) or {}
-    print((data.get("refs") or {}).get("DEEPSEEK_API_KEY", ""))
-except Exception:
-    print("")
-' "$HOME/.dsh/.credentials.yaml")"
-  export DEEPSEEK_API_KEY
-fi
-[ -n "${DEEPSEEK_API_KEY:-}" ] || { echo "缺少 DEEPSEEK_API_KEY"; exit 2; }
 
 # 1) 当日日报必须存在（正常由 10:00 日报生成；缺失则补生成，不推送）
 if [ ! -f "data/reports/$TODAY-daily-brief.md" ]; then
@@ -40,8 +24,7 @@ fi
 
 # 2) AI 综合（新会话，最小上下文，仓库根执行）
 export CRYPTO_JOB_LABEL="${CRYPTO_JOB_LABEL:-crypto-analyst.ai-daily}"
-source "$REPO_ROOT/tools/headless_session.sh"
-headless_run "$REPO_ROOT" "data/state/headless-session-ai-daily" "$PROMPT_FILE"
+"$PY" "$REPO_ROOT/tools/agent_run.py" analyst.daily "$PROMPT_FILE"
 rc=$?
 echo "===== $(date '+%F %T') ai-daily done (rc=$rc) ====="
 

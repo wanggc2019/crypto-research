@@ -4,7 +4,7 @@
 
 由 `healthcheck --agent` 在发现异常时【后台拉起】，不阻塞采集主任务：
   1. 读 health.json 里「处理前」的 checks / diagnosis
-  2. 运行 `<module>/scripts/inspect.sh`（内部 dsh headless，新会话最小上下文）
+  2. 运行 `<module>/scripts/inspect.sh`（内部 tools/agent_run.py，新会话最小上下文；用哪个 AI 见 config/ai.yaml）
   3. 复检一次（healthcheck --module X --json）
   4. 统一发一条「修复报告」到 Telegram（恢复 / 仍异常 / 超时都会发）
   5. 结果写回 health.json（last_agent_ts / rc / state_after / tail）
