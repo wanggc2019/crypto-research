@@ -130,23 +130,9 @@ def _truncate(text):
     return cut + "…"
 
 
-def format_price_alert(alert):
-    """渲染一条价格告警（alert 为 delivery.event_to_alert() 产出的 dict）。"""
-    sev = alert.get("severity") or "P1"
-    assets = alert.get("assets") or []
-    asset = assets[0] if assets else ""
-    icon = ICON.get(sev, "⚠️")
-    title = alert.get("title") or ""
-
-    lines = ["%s【crypto-price】<b>%s · %s 价格异动</b>" % (
-        icon, SEVERITY_LABEL.get(sev, sev), esc(asset))]
-    if alert.get("simulated"):
-        lines.append("🧪 <b>【模拟测试】</b> 离线回放数据，不是真实行情（仅验证告警链路）")
-    if alert.get("escalated"):
-        lines.append("🔥 <b>波动加剧</b>（同方向幅度继续扩大，已绕过冷却再报）")
-    lines.append("<b>%s</b>" % esc(title))
-
-    metrics = alert.get("metrics") or {}
+def _price_lines(alert, metrics):
+    """现价（缺失时用标记价）+ 变动金额。"""
+    lines = []
     price_value = metrics.get("price")
     price_label = "现价"
     if price_value is None and metrics.get("mark_price") is not None:
@@ -163,7 +149,11 @@ def format_price_alert(alert):
             "fast_move", "day_move", "volume_spike", "open_interest"):
         amount = float(price_value) * float(change_pct) / 100.0
         lines.append("<b>变动</b>：%s（%s USDT）" % (fmt_pct(change_pct), fmt_amount(amount)))
+    return lines
 
+
+def _summary_lines(alert):
+    lines = []
     detail = alert.get("detail") or []
     if detail:
         lines.append("")
@@ -179,7 +169,11 @@ def format_price_alert(alert):
         if "不构成投资建议" not in action:
             action += "（不构成投资建议）"
         lines.append("<b>动作参考</b>：%s" % esc(action))
+    return lines
 
+
+def _verify_lines(alert, metrics):
+    """多源核验 / 核验（价差、来源中位数）。"""
     spread = metrics.get("spread_bps")
     status = source_status_text(alert)
     src = _sources_line(alert.get("evidence") or [])
@@ -188,15 +182,20 @@ def format_price_alert(alert):
         if spread is not None:
             extra.append("价差 %s" % fmt_bps(spread))
         line = status + (" · " + " · ".join(extra) if extra else "")
-        lines.append("<b>多源核验</b>：%s" % esc(line))
-    elif src or spread is not None:
+        return ["<b>多源核验</b>：%s" % esc(line)]
+    if src or spread is not None:
         bits = []
         if src:
             bits.append("%s 中位数" % src)
         if spread is not None:
             bits.append("三源价差 %s" % fmt_bps(spread))
-        lines.append("<b>核验</b>：%s" % esc(" · ".join(bits)))
+        return ["<b>核验</b>：%s" % esc(" · ".join(bits))]
+    return []
 
+
+def _footer_lines(alert):
+    """触发规则 / 时间与轮询 / 行情链接 / 任务名。"""
+    lines = []
     rule = alert.get("rule")
     if rule:
         rule_text = RULE_CN.get(rule)
@@ -222,5 +221,28 @@ def format_price_alert(alert):
     if alert.get("simulated"):
         job += "（模拟测试）"
     lines.append("🏷 任务：%s" % esc(job))
+    return lines
 
+
+def format_price_alert(alert):
+    """渲染一条价格告警（alert 为 delivery.event_to_alert() 产出的 dict）。"""
+    sev = alert.get("severity") or "P1"
+    assets = alert.get("assets") or []
+    asset = assets[0] if assets else ""
+    icon = ICON.get(sev, "⚠️")
+    title = alert.get("title") or ""
+
+    lines = ["%s【crypto-price】<b>%s · %s 价格异动</b>" % (
+        icon, SEVERITY_LABEL.get(sev, sev), esc(asset))]
+    if alert.get("simulated"):
+        lines.append("🧪 <b>【模拟测试】</b> 离线回放数据，不是真实行情（仅验证告警链路）")
+    if alert.get("escalated"):
+        lines.append("🔥 <b>波动加剧</b>（同方向幅度继续扩大，已绕过冷却再报）")
+    lines.append("<b>%s</b>" % esc(title))
+
+    metrics = alert.get("metrics") or {}
+    lines += _price_lines(alert, metrics)
+    lines += _summary_lines(alert)
+    lines += _verify_lines(alert, metrics)
+    lines += _footer_lines(alert)
     return _truncate("\n".join(lines))
