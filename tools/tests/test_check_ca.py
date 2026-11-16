@@ -31,6 +31,19 @@ class CaStatusTest(unittest.TestCase):
             _, ok = check_ca.ca_status(_paths("/nonexistent/cert.pem", d), {})
         self.assertFalse(ok)
 
+    def test_capath_needs_hashed_certs(self):
+        with tempfile.TemporaryDirectory() as d:
+            open(os.path.join(d, "README"), "w").close()
+            _, ok = check_ca.ca_status(_paths("/nonexistent/cert.pem", d), {})
+            self.assertFalse(ok)
+            open(os.path.join(d, "9d6523ce.0"), "w").close()
+            _, ok = check_ca.ca_status(_paths("/nonexistent/cert.pem", d), {})
+            self.assertTrue(ok)
+
+    def test_no_default_cafile(self):
+        _, ok = check_ca.ca_status(_paths(None, None), {})
+        self.assertFalse(ok)
+
     def test_env_override_wins(self):
         with tempfile.NamedTemporaryFile(suffix=".pem") as f:
             cafile, ok = check_ca.ca_status(_paths("/nonexistent/cert.pem", "/nonexistent"),
