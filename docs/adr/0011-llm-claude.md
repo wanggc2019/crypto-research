@@ -23,7 +23,7 @@
 - 后果：
   - 默认不产生 API 费用：所有 Claude 调用（直接调用 + agent）都走本机 Claude Code 订阅，与你日常使用共享 5 小时/7 天额度；高频的 x-kol/标题翻译用 Haiku + low，Opus 只用于低频任务。额度紧张时可把单个功能改成 deepseek 或 anthropic。
   - 依赖本机：Mac 上要装着 Claude Code 并保持登录。
-  - CI（GitHub Actions）的 PR 审查也走订阅（2026-11-17 用户决定）：`claude setup-token` 生成的长期 token 存为 secret `CLAUDE_CODE_OAUTH_TOKEN`，workflow 装固定版本 `@anthropic-ai/claude-code@2.1.325` 后由 `claude -p` 审查；未配 secret 时不装、审查跳过（warning，不失败）。token 过期需重新 `claude setup-token` 并更新 secret。workflow 运行的是 PR head 的代码（只对同仓库 PR 运行，fork 跳过），因此有推送权限的人能接触到该 token——本仓库只有本人推送。
+  - CI（GitHub Actions）的 PR 审查也走订阅（2026-11-17 用户决定）：`claude setup-token` 生成的长期 token 存为 secret `CLAUDE_CODE_OAUTH_TOKEN`，workflow 装固定版本 `@anthropic-ai/claude-code@2.1.325` 后由 `claude -p` 审查；未配 secret 时不装、审查跳过（warning，不失败）。token 过期需重新 `claude setup-token` 并更新 secret。workflow 运行的是 PR head 的代码（只对同仓库 PR 运行，fork 跳过），因此有推送权限的人能接触到该 token——本仓库只有本人推送。为缩小供应链面，该 job 只装 `.github/ai-review-requirements.txt`（PyYAML，`--no-deps --require-hashes` 按 sha256 锁定）和锁定版本的 Claude Code 2.1.325（其 npm 依赖只有 Anthropic 自己的同版本平台包，npm 按 registry 完整性哈希校验），不装 `requirements.txt` 里的 anthropic SDK 及其未锁版本的间接依赖。`tools/tests/test_workflows.py` 校验：只有一处 pip 安装且只装锁定文件、每个包锁版本+哈希且与 `requirements.txt` 一致、Claude Code 只有一个写死的版本且与本 ADR 一致。
   - 没有 `.venv`（回退系统 `python3`）时 `import anthropic` 失败；SDK 是延迟导入，调用方都已 `except Exception` 降级，不会拖垮采集主链路。
   - 外发数据对象取决于各功能所选提供商（推文、标题、政策原文、PR diff；agent 读到的本地报告/数据）。
   - 额度用尽或登录过期时调用失败，各调用方按原逻辑降级（原文/规则抽取/报告照发、AI 部分跳过）。
