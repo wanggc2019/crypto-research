@@ -3,6 +3,7 @@
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -25,8 +26,15 @@ class TestParseTranslations(unittest.TestCase):
         self.assertIsNone(tt.parse_translations("not json", 1))
 
     def test_missing_key_without_network(self):
-        # find_api_key 只读文件/环境；这里只验证不会抛异常
-        self.assertIsInstance(tt.find_api_key(), str)
+        # 没有 key：直接返回错误（调用方回退规则翻译），不发请求
+        with mock.patch.object(tt.llm, "key_for", return_value=""), \
+                mock.patch.object(tt.llm, "complete", side_effect=AssertionError("不应联网")):
+            out = tt.translate(["hello"])
+        self.assertTrue(out["error"].startswith("missing "), out)
+
+    def test_bad_ai_config_returns_error(self):
+        with mock.patch.object(tt.llm, "resolve", side_effect=tt.llm.LLMError("tasks.news.translate：没有登记")):
+            self.assertIn("没有登记", tt.translate(["hello"])["error"])
 
 
 if __name__ == "__main__":

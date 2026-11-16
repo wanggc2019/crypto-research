@@ -4,7 +4,7 @@
 
 两种引擎：
 - 规则抽取（无模型 key 时的默认/兜底）：原文要点 + 按主题给影响清单；
-- Claude（仓库根 .env 有 ANTHROPIC_API_KEY 时）：Opus 生成结构化解读（crypto_core.llm）。
+- AI（config/ai.yaml 的 policy.interpret；有对应 key 时）：生成结构化解读（crypto_core.llm）。
 
 产物：data/reports/interpret-<id>.md；状态：data/state/interpreted.json。
 用法：
@@ -178,10 +178,14 @@ def _packet(rec, idx):
 
 
 def _llm_draft(rec, idx):
-    key = llm.find_api_key()
+    try:
+        spec = llm.resolve("policy.interpret")
+    except llm.LLMError as e:
+        print("⚠️ AI 配置有误，回退规则抽取：%s" % e)
+        return None
+    key = llm.key_for(spec)
     if not key:
         return None
-    model = os.environ.get("LLM_MODEL") or llm.DEFAULT_MODEL
     system = (
         "你是中国金融监管法律研究助手。只依据给定原文作答，不编造条款、案号、日期。"
         "输出严格 JSON：{summary,key_points:[],changes:[],impact:[],risks:[],confidence}。"
@@ -192,11 +196,11 @@ def _llm_draft(rec, idx):
         {"role": "user", "content": _packet(rec, idx)},
     ]
     try:
-        text = llm.chat(messages, key, model=model, timeout=180) or ""
+        text = llm.complete(spec, messages, key, timeout=180) or ""
         m = re.search(r"\{.*\}", text, re.S)
         out = json.loads(m.group(0) if m else text)
-        out["engine"] = "claude"
-        out["engine_label"] = "Claude（%s）" % model
+        out["engine"] = spec["provider"]
+        out["engine_label"] = "%s（%s）" % (spec["label"], spec["model"])
         out.setdefault("confidence", 0.6)
         return out
     except Exception as e:  # noqa: BLE001 - 模型失败一律回退规则

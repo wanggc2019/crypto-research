@@ -93,7 +93,7 @@ tail -f <module>/data/logs/collect.log
 - **Mac 休眠**：launchd 不唤醒，夜间会出现 70–90 分钟空档；要连续监控需防休眠或 VPS；
 - **送达策略**：全天即时（无静默时段，设计要求）；测试消息要标明样例；同轮 P1 不应被 P0 轮次误标 digest（crypto-x-kol 已修复）；
 - **Telegram**：消息长度/预览/分片；告警限额；测试样例要标明，避免与真实告警混淆；
-- **AI（Claude）**：统一走 `crypto_core.llm`（ADR 0011）；高频简单任务用 Haiku + effort=low，需要判断力的用 Opus；批量+缓存；无 `ANTHROPIC_API_KEY` 降级；推文/标题/政策原文/diff 会发给 Anthropic；测试与回放不得真调模型；
+- **AI**：统一走 `crypto_core.llm`，按功能名取 `config/ai.yaml` 的提供商/模型/effort（ADR 0011；默认 Claude，高频简单任务 Haiku + low，需要判断力的 Opus）；新功能先在 `config/ai.yaml` 登记（gate 校验）；批量+缓存；无 key 降级；内容会发给所选提供商；测试与回放不得真调模型；
 - **CI**：GitHub runner 无 `.venv`（Makefile 已回退 python3）；`data/` 不入库，但 `tests/fixtures/` 例外（hygiene 已放行）。
 
 ## 8. 文档地图

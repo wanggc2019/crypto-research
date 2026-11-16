@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""用 Claude（Opus，effort=high）审查 PR diff，并把结果评论回 GitHub PR。
+"""用 AI 审查 PR diff（用哪个 AI 见 config/ai.yaml 的 ci.pr-review），并把结果评论回 GitHub PR。
 
 安全边界：
 - 只读 git diff，不执行 PR 代码；
@@ -23,6 +23,7 @@ GITHUB_API = "https://api.github.com"
 MAX_DIFF = 40000
 MAX_COMMENT = 60000
 MARKER = "<!-- ai-review -->"
+TASK = "ci.pr-review"  # config/ai.yaml 里的功能名
 
 
 def required_env(name):
@@ -87,14 +88,15 @@ def get_diff(base, head, base_ref=None):
 def require_review_content(content):
     """模型返回的 content 必须是非空字符串（choices 结构由 crypto_core.llm.chat 校验）。"""
     if not isinstance(content, str) or not content.strip():
-        raise RuntimeError("Claude 响应里没有审查文本")
+        raise RuntimeError("AI 响应里没有审查文本")
     return content.strip()
 
 
 def review(diff):
-    key = os.environ.get(llm.API_KEY_ENV, "").strip()
+    spec = llm.resolve(TASK)
+    key = os.environ.get(spec["key_env"], "").strip()
     if not key:
-        print("::warning::%s 未配置，跳过 AI 审查" % llm.API_KEY_ENV)
+        print("::warning::%s 未配置，跳过 AI 审查" % spec["key_env"])
         return ""
     prompt = """你是资深代码审查员。只审查下面 git diff 中的改动，不要臆测未出现的代码。
 重点找：真实 bug、安全问题、边界条件、回归风险、测试缺失。
@@ -112,10 +114,9 @@ LGTM 或 需要修改
 DIFF_JSON（JSON 字符串，避免代码围栏被 diff 内容破坏）:
 %s""" % json.dumps(diff, ensure_ascii=False)
     try:
-        content = llm.chat([{"role": "user", "content": prompt}], key, model=llm.DEFAULT_MODEL,
-                           effort="high", timeout=300)
+        content = llm.complete(spec, [{"role": "user", "content": prompt}], key, timeout=300)
     except llm.LLMError as e:
-        raise RuntimeError("Claude %s" % e)
+        raise RuntimeError("%s %s" % (spec["label"], e))
     return require_review_content(content)
 
 
@@ -216,8 +217,9 @@ def main():
     review_text = review(diff)
     if not review_text:
         return 0
+    spec = llm.resolve(TASK)
     body = (MARKER + "\n" + review_text +
-            "\n\n> 由 Claude 自动审查；仅供参考，不替代人工 review。")
+            "\n\n> 由 %s（%s）自动审查；仅供参考，不替代人工 review。" % (spec["label"], spec["model"]))
     action = comment(trim_comment(body), required_env("GITHUB_TOKEN"), repo, pr)
     print("AI 审查评论已%s" % ("更新" if action == "updated" else "发布"))
     return 0

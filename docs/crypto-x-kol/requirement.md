@@ -59,7 +59,7 @@
 | X 主页 | `https://r.jina.ai/https://x.com/<handle>` | 300s/账号 | 0（匿名 20 RPM） | 免 key、不计 token；页面无时间戳/互动数 |
 | 可选 `JINA_API_KEY` | 同上，带 `Authorization` 头 | 300s/账号 | 一次性 10M token，之后 $0.05/M | 仅提额到 500 RPM；默认关闭 |
 | Telegram Bot | 仓库根 `.env` 的 `TELEGRAM_BOT_TOKEN/CHAT_ID` | 有新帖时 | 0 | 与 crypto-news 共用通道 |
-| Claude API | Anthropic Messages API（`claude-haiku-5-5`，effort=low） | 每条新帖一次（批量 8 条/请求，带缓存） | 约几分钱/天 | 翻译 + 一句话总结；无 key 降级为原文 |
+| AI API | 按 `config/ai.yaml` 的 `x-kol.analyze`（默认 Claude `claude-haiku-5-5`，effort=low） | 每条新帖一次（批量 8 条/请求，带缓存） | 约几分钱/天 | 翻译 + 一句话总结；无 key 降级为原文 |
 
 ## 5. 验收标准（可测量）
 
@@ -75,7 +75,7 @@
    （见 `tests/test_score.py` 与现场 dry-run）。
 7. 每日推送不超过 `alert.caps.per_day`；全天即时发送（无夜间静默）。
 8. 翻译/总结：外文推文报告与告警只展示中文、带 **[翻译]** 标记；同一条推文只调用一次 API（缓存命中）；
-   无 `ANTHROPIC_API_KEY` 时降级为原文且不报错。
+   没有对应 AI 的 key 时降级为原文且不报错。
 9. 作者信息：日报与告警都显示 `@handle（name · 职业）`；`kol.yaml` 的 `role` 缺失时至少显示 name。
 10. 告警里的 @handle 链接指向**具体推文**（`/status/<id>`）；解析失败回退主页且不阻塞推送。
 11. `make gate` 通过（本模块单测 + `scripts/e2e.py` 自动纳入）。
@@ -84,7 +84,7 @@
 
 - `libs/crypto_core`：`paths/env/config/store/text/timeutil`、`http.get_text`、
   `notify.check_credentials/send_message`、`timeutil.in_quiet_hours`。
-- 需要：Anthropic API 凭据 `ANTHROPIC_API_KEY`（仓库根 `.env`）。
+- 需要：所选 AI 提供商的凭据（默认 Claude：仓库根 `.env` 的 `ANTHROPIC_API_KEY`）。
 
 ## 7. 风险与对策
 

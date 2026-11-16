@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""analyze.py —— 用 Claude（Haiku，effort=low）把外文 KOL 推文翻成中文，并给每条一句话总结。
+"""analyze.py —— 用 AI 把外文 KOL 推文翻成中文，并给每条一句话总结（用哪个 AI 见 config/ai.yaml 的 x-kol.analyze）。
 
 设计：
 - 只在 digest 运行时批量调用（默认每批 8 条），结果缓存到 data/state/analysis-<date>.json，
   同一推文不重复付费；报告/告警只展示中文译文 + 一句话总结（原文留在 raw 里备查，不再展示）。
 - 中文推文不翻译（原文本就是中文），但仍生成一句话总结。
-- 没有 ANTHROPIC_API_KEY（仓库根 .env）时**优雅降级**：不报错，报告/告警回退显示原文。
-- 网络调用集中在 call_llm()（crypto_core.llm → Anthropic SDK），测试可注入 caller 做离线回放。
+- 没有对应提供商的 key（仓库根 .env）或 AI 配置有误时**优雅降级**：不报错，报告/告警回退显示原文。
+- 网络调用集中在 call_llm()（crypto_core.llm），测试可注入 caller 做离线回放。
 
 用法（一般不单独跑，digest 内部调用）：
     python3 scripts/analyze.py --fixtures ...   # 预留；当前仅暴露纯函数供测试
@@ -22,11 +22,9 @@ from common import load_config, load_env, ts_iso  # noqa: E402
 from crypto_core import llm  # noqa: E402
 
 CJK_RE = re.compile(r"[\u4e00-\u9fff]")
+TASK = "x-kol.analyze"  # config/ai.yaml 里的功能名
 DEFAULT_ANALYSIS = {
     "enabled": True,
-    "model": llm.FAST_MODEL,
-    "effort": "low",
-    "api_key_env": llm.API_KEY_ENV,
     "batch_size": 8,
     "timeout_seconds": 60,
     "retries": 1,
@@ -48,11 +46,27 @@ def analysis_config(cfg):
     return merged
 
 
-def load_api_key(cfg, env=None):
-    """读 Anthropic key：只看 env（默认即 .env 内容），不读进程环境、不再读文件（测试可完全控制）。"""
+def ai_spec():
+    """config/ai.yaml 里 x-kol.analyze 的生效配置；配置有误返回 None（调用方降级）。"""
+    try:
+        return llm.resolve(TASK)
+    except llm.LLMError as exc:
+        print("  [analyze] AI 配置有误，跳过翻译/总结：%s" % exc)
+        return None
+
+
+def ai_label():
+    """报告/消息里展示的 AI 名（如 Claude / DeepSeek）。"""
+    spec = ai_spec()
+    return spec["label"] if spec else "AI"
+
+
+def load_api_key(spec, env=None):
+    """按 spec 的 key_env 读 key：只看 env（默认即 .env 内容），不读进程环境、不再读文件（测试可完全控制）。"""
+    if not spec:
+        return ""
     env = env if env is not None else load_env()
-    name = cfg.get("api_key_env") or llm.API_KEY_ENV
-    return llm.find_api_key(env=env, names=(name,), use_os_environ=False, use_env_file=False)
+    return llm.key_for(spec, env=env, use_os_environ=False, use_env_file=False)
 
 
 def is_chinese(text, ratio=0.3):
@@ -79,11 +93,9 @@ def _tweet_payload(posts, cfg):
 
 
 def build_request(posts, cfg):
-    """构造 crypto_core.llm.chat 的参数（纯函数，便于测试）。"""
+    """构造请求 messages（纯函数，便于测试；用哪个模型由 config/ai.yaml 决定）。"""
     user = json.dumps({"tweets": _tweet_payload(posts, cfg)}, ensure_ascii=False)
     return {
-        "model": cfg.get("model") or llm.FAST_MODEL,
-        "effort": cfg.get("effort") or None,
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": user},
@@ -119,12 +131,13 @@ def parse_response(content):
 def call_llm(posts, cfg, api_key):
     """真实网络调用；失败抛异常（由 analyze 捕获并降级）。网络/429/5xx 由 SDK 重试，这里只重试解析失败。"""
     body = build_request(posts, cfg)
+    spec = cfg.get("_spec") or llm.resolve(TASK)
     last_err = None
     for attempt in range(int(cfg.get("retries") or 0) + 1):
         try:
-            content = llm.chat(body["messages"], api_key, model=body["model"], effort=body["effort"],
-                               timeout=float(cfg.get("timeout_seconds") or 60),
-                               retries=int(cfg.get("retries") or 0))
+            content = llm.complete(spec, body["messages"], api_key,
+                                   timeout=float(cfg.get("timeout_seconds") or 60),
+                                   retries=int(cfg.get("retries") or 0))
             return parse_response(content)
         except Exception as exc:  # noqa: BLE001 - 网络/解析失败统一记录后重试
             last_err = exc
@@ -144,9 +157,11 @@ def analyze(posts, cfg_in=None, env=None, cache=None, caller=None, log=print):
     todo = [p for p in posts if p.get("id") and str(p["id"]) not in cache]
     if not todo:
         return cache
-    key = load_api_key(cfg, env)
+    spec = cfg.get("_spec") or ai_spec()
+    cfg["_spec"] = spec
+    key = load_api_key(spec, env)
     if not key and caller is None:
-        log("  [analyze] 没有 ANTHROPIC_API_KEY，跳过翻译/总结（报告回退原文）")
+        log("  [analyze] 没有 %s，跳过翻译/总结（报告回退原文）" % ((spec or {}).get("key_env") or "可用的 AI 配置"))
         return cache
     caller = caller or call_llm
     batch_size = max(1, int(cfg.get("batch_size") or 8))
@@ -167,7 +182,7 @@ def analyze(posts, cfg_in=None, env=None, cache=None, caller=None, log=print):
                 "zh": row.get("zh") or "",
                 "summary": row.get("summary") or "",
                 "ts": stamp,
-                "model": cfg.get("model") or "",
+                "model": (spec or {}).get("model") or "",
             }
     return cache
 
@@ -194,7 +209,7 @@ def main(argv=None):  # pragma: no cover - 预留 CLI，方便手工验证单条
     post = {"id": "manual-1", "handle": args.handle, "text": args.text, "quote": ""}
     cfg = analysis_config(load_config("app.yaml") or {})
     if args.dry_run:
-        print(json.dumps(build_request([post], cfg), ensure_ascii=False, indent=1))
+        print(json.dumps({"ai": ai_spec(), **build_request([post], cfg)}, ensure_ascii=False, indent=1))
         return 0
     cache = analyze([post], cfg, env=load_env())
     print(json.dumps(cache.get("manual-1") or {}, ensure_ascii=False, indent=1))

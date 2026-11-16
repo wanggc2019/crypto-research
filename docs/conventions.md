@@ -15,7 +15,7 @@
 
 ## 2. 代码
 
-- Python 3.12 标准库为主；第三方依赖只用 `requirements.txt` 已列出的（PyYAML、ruff、Anthropic SDK），新增需在 PR 里说明理由；LLM 调用统一走 `crypto_core.llm`（Claude）。
+- Python 3.12 标准库为主；第三方依赖只用 `requirements.txt` 已列出的（PyYAML、ruff、Anthropic SDK），新增需在 PR 里说明理由；LLM 调用统一走 `crypto_core.llm`，用哪个 AI 写在 `config/ai.yaml`（按功能名登记，代码里不写模型名）。
 - 单文件 < 500 行；模块脚本总量 > 800 行时考虑拆 `src/` + 薄 CLI。
 - 函数复杂度（McCabe）≤ 15：gate 的「复杂度棘轮」(`tools/complexity_check.py`) 拦截新超标函数；存量超标函数登记在 `tools/complexity_baseline.json`，只许变简单，拆分后用 `--update` 收紧基线。
 - 共享逻辑只能进 `libs/crypto_core`，模块见 diff 复制粘贴即视为 bug。

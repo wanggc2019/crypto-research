@@ -131,7 +131,7 @@ def build_report(posts, date, rules, generated_at, cache=None):
         "> 生成时间：%s｜新帖 %d 条｜告警 %d 条（P0 %d / P1 %d）｜仅日报 %d 条" % (
             generated_at, len(posts), len(alerts), counts.get("P0", 0), counts.get("P1", 0),
             counts.get("P2", 0) + counts.get("MUTE", 0)),
-        "> 外文推文已由 Claude 翻成中文并给出一句话总结；原文保留在 `data/raw/<date>/posts.jsonl`。",
+        "> 外文推文已由 %s 翻成中文并给出一句话总结；原文保留在 `data/raw/<date>/posts.jsonl`。" % analyzer.ai_label(),
         "",
         "## 🔔 需关注（P0/P1，%d 条）" % len(alerts),
         "",
@@ -332,10 +332,10 @@ def _cmd_test(args, cfg, policy, caps):
     text = ("✅【crypto-x-kol】<b>通道测试</b>\n"
             "监控账号：%d 个（每 %s 秒抓一次）｜抓取：r.jina.ai（免 key）\n"
             "告警：价值分 P0≥%s / P1≥%s，每日最多 %s 条\n"
-            "中文：Claude %s｜原文见日报\n🏷 任务：%s" % (
+            "中文：%s %s｜原文见日报\n🏷 任务：%s" % (
                 len(accounts), (cfg.get("poll_seconds") or 300),
                 policy["thresholds"].get("P0"), policy["thresholds"].get("P1"),
-                caps.get("per_day"), "翻译+总结" if analysis_on else "未启用",
+                caps.get("per_day"), analyzer.ai_label(), "翻译+总结" if analysis_on else "未启用",
                 job_name()))
     if args.dry_run:
         print("[dry-run] 测试消息：\n" + text)
@@ -346,7 +346,7 @@ def _cmd_test(args, cfg, policy, caps):
 
 
 def _analyze_posts(args, cfg, posts, paths, date):
-    """翻译 + 一句话总结（Claude；dry-run / --no-analyze 跳过；无 key 自动降级）→ 分析缓存。"""
+    """翻译 + 一句话总结（config/ai.yaml 的 x-kol.analyze；dry-run / --no-analyze 跳过；无 key 自动降级）→ 分析缓存。"""
     analysis_cache = load_analysis_cache(paths, date)
     analysis_cfg = analyzer.analysis_config(cfg)
     if posts and not args.dry_run and not args.no_analyze:
@@ -357,13 +357,13 @@ def _analyze_posts(args, cfg, posts, paths, date):
                 todo, analysis_cfg, env=load_env(), cache=analysis_cache, log=print)
             if len(analysis_cache) > before:
                 save_analysis_cache(paths, date, analysis_cache,
-                                    model=str(analysis_cfg.get("model") or ""))
+                                    model=str((analyzer.ai_spec() or {}).get("model") or ""))
                 print("翻译/总结：新分析 %d 条（缓存共 %d 条）" % (
                     len(analysis_cache) - before, len(analysis_cache)))
     elif args.no_analyze:
         print("（--no-analyze：跳过翻译/总结，显示原文）")
     elif args.dry_run:
-        print("（dry-run：跳过翻译/总结，不调用 Claude）")
+        print("（dry-run：跳过翻译/总结，不调用 AI）")
     return analysis_cache
 
 
@@ -537,7 +537,7 @@ def main(argv=None):
     parser.add_argument("--notify", action="store_true", help="只推送 P0/P1（默认只写日报）")
     parser.add_argument("--test", action="store_true", help="发一条通道测试消息")
     parser.add_argument("--dry-run", action="store_true", help="只打印，不写文件/不推送（不调用翻译 API）")
-    parser.add_argument("--no-analyze", action="store_true", help="跳过 Claude 翻译/总结（报告显示原文）")
+    parser.add_argument("--no-analyze", action="store_true", help="跳过 AI 翻译/总结（报告显示原文）")
     parser.add_argument("--date", help="处理日期（默认今天）")
     parser.add_argument("--data-dir", help="数据目录覆盖（测试/回放）")
     parser.add_argument("--json", action="store_true", help="机器可读摘要")

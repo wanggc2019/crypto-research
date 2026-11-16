@@ -29,7 +29,7 @@
 | `notify.ledger` / `notify.budget` | 全仓推送台账（每条发送自动记账）与全局预算：`send_signal(token, chat, text, module, severity, assets, key)` 统一即时信号出口（P0 放行、日预算、跨模块同资产去重；observe/enforce/off，见 `config/notify-budget.yaml`） |
 | `contracts` | 跨模块 exports 契约登记表：`read(schema, date=, repo=)`（降级不抛）/ `export_path()` / `validate()` / `example()` / `write_example_repo()`；见 ADR 0008 |
 | `ratelimit` | 跨进程共享滑动窗口限速（文件锁）；`http` 对 `r.jina.ai` 自动套用（匿名 18/min、带 key 90/min，`JINA_RPM`/`JINA_RPM_KEYED` 覆盖，`CRYPTO_RATELIMIT=0` 关闭）；超时抛 `RateLimited`（含 "Too Many Requests"，被各模块按 SKIP 处理） |
-| `llm` | Claude（Anthropic SDK，ADR 0011）：`find_api_key()`（env dict → 环境变量 → 根 .env 的 `ANTHROPIC_API_KEY`）、`chat()`（`model` 默认 Opus，`FAST_MODEL`=Haiku；`effort`；Opus 自动开服务端拒答回退；`LLMError` 含 HTTP 码/拒答/截断）、`extract_json()`；提示词/缓存/降级留在调用方 |
+| `llm` | 按功能名路由的 AI 入口（ADR 0011）：`resolve(task)` 读 `config/ai.yaml` → `key_for(spec)` → `complete(spec, messages, key)`，或一步 `chat_for(task, messages)`；提供商 anthropic（官方 SDK，Opus 自动开服务端拒答回退）/ deepseek（OpenAI 兼容）；`validate_config()`；`LLMError` 含 HTTP 码/拒答/截断；`extract_json()`；提示词/缓存/降级留在调用方 |
 | `sources.*` | RSS/Atom 解析、Binance/OKX/Bybit 公告解析、Telegram 预览页、页面指纹与纯文本 |
 | `market.*` | Binance 资金费率/24h ticker/K 线/持仓量、OKX ticker/K 线、Coinbase 24h stats/ticker、DefiLlama 稳定币脱锚（全部免 key、坏数据返 None/[]） |
 | `events` 展示词表 | `category_cn()` / `hard_cn()` / `impact_cn()` / `action_cn()`（中文类别、硬条件、影响、动作参考） |

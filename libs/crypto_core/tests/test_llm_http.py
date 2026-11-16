@@ -56,6 +56,10 @@ class _Handler(BaseHTTPRequestHandler):
                 "stop_reason": stop, "stop_sequence": None,
                 "usage": {"input_tokens": 3, "output_tokens": 2},
             })
+        if self.path == "/ds/chat/completions":  # OpenAI 兼容（DeepSeek）
+            if self.headers.get("Authorization") == "Bearer bad":
+                return self._send(401, {"error": "invalid key"})
+            return self._send(200, {"choices": [{"message": {"content": "ds " + body["model"]}}]})
         self._send(404, {})
 
 
@@ -154,6 +158,67 @@ class HttpLlmTest(unittest.TestCase):
                                           {"role": "user", "content": "u"}])
         self.assertEqual(system, "a\n\nb")
         self.assertEqual(rest, [{"role": "user", "content": "u"}])
+
+    # ---------------- config/ai.yaml 路由
+    CFG = {
+        "providers": {"anthropic": {"label": "Claude", "key_env": "ANTHROPIC_API_KEY"},
+                      "deepseek": {"label": "DeepSeek", "key_env": "DEEPSEEK_API_KEY",
+                                   "base_url": "http://unused", "default_model": "deepseek-chat"}},
+        "defaults": {"provider": "anthropic", "model": "claude-opus-5-5", "effort": "medium"},
+        "tasks": {"a.fast": {"model": "claude-haiku-5-5", "effort": "low"},
+                  "a.inherit": {},
+                  "d.cheap": {"provider": "deepseek"},
+                  "d.named": {"provider": "deepseek", "model": "deepseek-reasoner", "effort": "high"}},
+    }
+
+    def test_resolve_inherits_defaults_within_provider(self):
+        spec = llm.resolve("a.inherit", cfg=self.CFG)
+        self.assertEqual((spec["provider"], spec["model"], spec["effort"], spec["key_env"]),
+                         ("anthropic", "claude-opus-5-5", "medium", "ANTHROPIC_API_KEY"))
+        spec = llm.resolve("a.fast", cfg=self.CFG)
+        self.assertEqual((spec["model"], spec["effort"]), ("claude-haiku-5-5", "low"))
+
+    def test_resolve_other_provider_does_not_inherit_model(self):
+        spec = llm.resolve("d.cheap", cfg=self.CFG)
+        self.assertEqual((spec["provider"], spec["model"], spec["effort"], spec["label"]),
+                         ("deepseek", "deepseek-chat", None, "DeepSeek"))
+        self.assertIsNone(llm.resolve("d.named", cfg=self.CFG)["effort"], "deepseek 不支持 effort")
+
+    def test_resolve_unknown_task_and_validate(self):
+        with self.assertRaisesRegex(llm.LLMError, "没有登记"):
+            llm.resolve("nope", cfg=self.CFG)
+        bad = dict(self.CFG, tasks={"x": {"provider": "openai"}, "y": {"effort": "huge"}})
+        problems = llm.validate_config(bad, tasks_in_code=["x", "z"])
+        self.assertEqual(len(problems), 3, problems)
+        self.assertEqual(llm.validate_config(self.CFG, tasks_in_code=["a.fast"]), [])
+
+    def test_complete_routes_to_deepseek(self):
+        spec = llm.resolve("d.cheap", cfg=self.CFG)
+        out = llm.complete(spec, [{"role": "system", "content": "s"}, {"role": "user", "content": "x"}], "k",
+                           base_url=self.base + "/ds", retries=0)
+        self.assertEqual(out, "ds deepseek-chat")
+        _, path, headers, body = _Handler.calls[-1]
+        self.assertEqual(path, "/ds/chat/completions")
+        self.assertEqual(headers.get("Authorization"), "Bearer k")
+        self.assertEqual(body["messages"][0], {"role": "system", "content": "s"}, "OpenAI 兼容保留 system 消息")
+        self.assertLessEqual(body["max_tokens"], 8192)
+        before = len(_Handler.calls)
+        with self.assertRaisesRegex(llm.LLMError, "HTTP 401"):
+            llm.complete(spec, [], "bad", base_url=self.base + "/ds", retries=3)
+        self.assertEqual(len(_Handler.calls) - before, 1, "4xx 不重试")
+
+    def test_complete_routes_to_anthropic(self):
+        spec = llm.resolve("a.fast", cfg=self.CFG)
+        out = llm.complete(spec, [{"role": "user", "content": "x"}], "k", base_url=self.base, retries=0)
+        self.assertEqual(out, "hi claude-haiku-5-5")
+        self.assertEqual(self._last_llm_call()[3]["output_config"], {"effort": "low"})
+
+    def test_chat_for_without_key_raises(self):
+        with mock.patch.object(llm, "load_ai_config", return_value=self.CFG), \
+                mock.patch.object(llm._env, "load_env", lambda: {}), \
+                mock.patch.dict(os.environ, {"ANTHROPIC_API_KEY": ""}):
+            with self.assertRaisesRegex(llm.LLMError, "missing ANTHROPIC_API_KEY"):
+                llm.chat_for("a.fast", [{"role": "user", "content": "x"}])
 
     def test_extract_json(self):
         self.assertEqual(llm.extract_json('```json\n{"a": 1}\n```'), {"a": 1})
