@@ -1,6 +1,4 @@
 {
-  "crypto-knowledge/scripts/content.py::_validate_item": 24,
-  "crypto-knowledge/scripts/main.py::run": 18,
   "crypto-price/scripts/cards.py::format_price_alert": 24,
   "crypto-price/scripts/delivery.py::deliver": 20,
   "crypto-price/scripts/run.py::main": 17,
