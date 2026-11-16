@@ -469,13 +469,13 @@ def _run_source(src, out_path, global_seen, stats):
     st_path = os.path.join(STATE_DIR, sid + ".json")
     state = safe_json_load(st_path, {})
     state.setdefault("seen", {})
-    fn, with_hash = _collector(src)
-    if fn is None:
-        stats["sources"].append({"id": sid, "status": "skipped", "type": src["type"]})
-        return 0
     t0 = time.time()
     new_items, new_hash = [], None
     try:
+        fn, with_hash = _collector(src)   # 放在 try 内：源配置缺字段也只算该源失败
+        if fn is None:
+            stats["sources"].append({"id": sid, "status": "skipped", "type": src.get("type")})
+            return 0
         if with_hash:
             new_items, new_hash = fn(src, state)
         else:

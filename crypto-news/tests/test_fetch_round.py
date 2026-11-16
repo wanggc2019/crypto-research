@@ -64,6 +64,12 @@ class RunSourceTest(unittest.TestCase):
         self.assertIn("OSError: boom", self.stats["errors"][0]["error"])
         self.assertFalse(os.path.exists(self.out))
 
+    def test_malformed_source_config_only_fails_that_source(self):
+        n = fetch._run_source({"id": "s4"}, self.out, self.seen, self.stats)
+        self.assertEqual(n, 0)
+        self.assertEqual(self.stats["errors"][0]["id"], "s4")
+        self.assertIn("KeyError", self.stats["errors"][0]["error"])
+
     def test_unknown_type_is_skipped_without_state_write(self):
         n = fetch._run_source({"id": "s3", "type": "carrier_pigeon"}, self.out, self.seen, self.stats)
         self.assertEqual(n, 0)
