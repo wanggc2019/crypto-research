@@ -1,7 +1,7 @@
 # crypto-research 仓库级任务入口
 #
 # 用法：
-#   make setup     # 建根 .venv（可选；没有 venv 也能跑，脚本会回退 python3）
+#   make setup     # 建根 .venv（可选；没有 venv 也能跑，脚本会回退 python3）；解释器见 SETUP_PYTHON / ADR 0010
 #   make lint      # ruff 静态检查（libs / tools / 各模块）
 #   make test      # libs 单测 + 各模块单测（全部离线）
 #   make verify    # 兼容别名 = make gate
@@ -30,9 +30,14 @@ LINT_DIRS := libs/crypto_core/src tools $(foreach m,$(ALL_MODULES),$(wildcard $(
 
 .PHONY: setup lint test verify gate hooks new-module launchd jobs jobs-alert healthcheck-jobs notify-report prune clean
 
+# 线上 .venv 用 python.org 3.12（带 time.tzset，见 ADR 0010）；不存在时回退 python3
+SETUP_PYTHON ?= $(shell p=/Library/Frameworks/Python.framework/Versions/3.12/bin/python3.12; if [ -x $$p ]; then echo $$p; else echo python3; fi)
+
 setup:
-	@test -x $(PY) || (python3 -m venv $(REPO)/.venv && $(PY) -m pip install -q pyyaml ruff)
-	@echo "venv: $(PY)"
+	@test -x $(REPO)/.venv/bin/python || (\
+		$(SETUP_PYTHON) -m venv $(REPO)/.venv && \
+		$(REPO)/.venv/bin/python -m pip install -q pyyaml ruff)
+	@echo "venv: $$($(REPO)/.venv/bin/python -V) at $(REPO)/.venv"
 
 lint:
 	@$(REPO)/.venv/bin/ruff check $(LINT_DIRS)

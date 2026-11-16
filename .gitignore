@@ -6,6 +6,7 @@ data/
 __pycache__/
 *.py[cod]
 .venv/
+.venv-*/
 venv/
 # 系统 / 编辑器缓存
 .DS_Store

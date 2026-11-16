@@ -46,7 +46,7 @@
 - **抓取限速**：`crypto_core.http` 对 `r.jina.ai` 做跨进程共享限速（默认 18/min，`JINA_RPM` 可调）。
 - **跨模块契约**：`crypto_core.contracts` 登记 6 个 exports 契约，消费方统一 `contracts.read()`（ADR 0008）。
 - **推送台账 + 全局预算**：每条 Telegram 消息记入 `data/state/notify-ledger/<date>.jsonl`；即时信号走 `notify.send_signal`；预算当前 **observe（只记录不拦截）**，`config/notify-budget.yaml`；`make notify-report days=7` 看统计（ADR 0009）。
-- **环境**：根 `.venv`（Python 3.9 + ruff/PyYAML）；无 venv 时回退 `python3`。
+- **环境**：根 `.venv` = python.org **Python 3.12.10**（带 `time.tzset`）+ ruff/PyYAML，2026-11-16 从 3.9 切换；旧 venv 留在 `.venv-py39` 供回退；换解释器后必须 `tools/watchdog.py --install`，python.org 构建需链接系统 CA（ADR 0010）。代码下限仍按 3.9 写，CI 跑 3.9 + 3.12。无 venv 时回退 `python3`。
 
 ## 4. 常用命令
 
@@ -75,7 +75,7 @@ tail -f <module>/data/logs/collect.log
 ## 6. 待办
 
 1. **约 2026-11-23**：看 `make notify-report days=7`，定 `daily_signal_cap` 与是否切 `enforce`（需用户确认）。首日数据（2026-11-16 00:00–10:00，`make notify-report days=1`）：即时信号 23 条，cap=10 时 07:00 前即耗尽，主要是 price 与 news 对 BTC 的近重复 P1。
-2. 架构评审遗留：长函数拆分 + ruff 复杂度门禁；Python 3.9 → 3.12 升级（单独窗口）。
+2. **约 2026-11-23**（3.12 线上稳定一周后）：下限提到 3.12（`requires-python`、ruff `target-version`、AGENTS/conventions 文案），CI 去掉 3.9，删除 `.venv-py39`（ADR 0010 第二阶段收尾）。
 3. 模块业务待办（可选，按需排期）：
    - crypto-news：Phase 4 早警指标、LLM 三行摘要、周报校准（[方案 §5–§8](crypto-intel-plan.md)）；
    - crypto-price：关键位自动校准；
