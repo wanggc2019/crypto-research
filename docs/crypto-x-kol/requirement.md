@@ -84,7 +84,7 @@
 
 - `libs/crypto_core`：`paths/env/config/store/text/timeutil`、`http.get_text`、
   `notify.check_credentials/send_message`、`timeutil.in_quiet_hours`。
-- 需要：所选 AI 提供商的凭据（默认 Claude：仓库根 `.env` 的 `ANTHROPIC_API_KEY`）。
+- 需要：默认用本机 Claude Code 订阅（装好并登录即可，不需要 key）；改用 anthropic / deepseek 时才需要对应 key（仓库根 `.env`）。
 
 ## 7. 风险与对策
 

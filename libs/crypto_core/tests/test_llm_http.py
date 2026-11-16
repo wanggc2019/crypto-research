@@ -220,6 +220,59 @@ class HttpLlmTest(unittest.TestCase):
             with self.assertRaisesRegex(llm.LLMError, "missing ANTHROPIC_API_KEY"):
                 llm.chat_for("a.fast", [{"role": "user", "content": "x"}])
 
+    # ---------------- claude-code（订阅，claude -p）：用假的 claude 脚本，不真调
+    def _fake_claude(self, tmp, payload):
+        script = os.path.join(tmp, "claude")
+        with open(script, "w") as f:
+            f.write("#!/bin/sh\n"
+                    "printf '%%s\\n' \"$@\" > \"%s/args\"\n"
+                    "cat > \"%s/stdin\"\n"
+                    "env > \"%s/env\"\n"
+                    "cat <<'EOF'\n%s\nEOF\n" % (tmp, tmp, tmp, payload))
+        os.chmod(script, 0o755)
+        return script
+
+    def test_claude_code_success_args_and_env(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            fake = self._fake_claude(tmp, json.dumps({"type": "result", "subtype": "success", "is_error": False,
+                                                      "stop_reason": "end_turn", "result": " 你好 "}))
+            with mock.patch.dict(os.environ, {"ANTHROPIC_API_KEY": "should-be-removed"}):
+                out = llm._claude_code_chat([{"role": "system", "content": "SYS"}, {"role": "user", "content": "Q"}],
+                                            "claude-haiku-5-5", effort="low", binary=fake)
+            self.assertEqual(out, "你好")
+            args = open(os.path.join(tmp, "args")).read().split("\n")
+            self.assertEqual(args[args.index("--tools") + 1], "", "不给任何工具")
+            self.assertEqual(args[args.index("--model") + 1], "claude-haiku-5-5")
+            self.assertEqual(args[args.index("--effort") + 1], "low")
+            self.assertEqual(args[args.index("--system-prompt") + 1], "SYS")
+            for flag in ("-p", "--no-session-persistence", "--output-format"):
+                self.assertIn(flag, args)
+            self.assertEqual(open(os.path.join(tmp, "stdin")).read(), "Q")
+            self.assertNotIn("ANTHROPIC_API_KEY", open(os.path.join(tmp, "env")).read(), "订阅模式不能带 API key")
+
+    def test_claude_code_errors(self):
+        cases = [
+            ({"subtype": "error_during_execution", "is_error": True, "result": "quota"}, "失败"),
+            ({"subtype": "success", "is_error": False, "stop_reason": "refusal", "result": "x"}, "拒绝"),
+            ({"subtype": "success", "is_error": False, "stop_reason": "end_turn", "result": "  "}, "没有返回文本"),
+        ]
+        for payload, pattern in cases:
+            with tempfile.TemporaryDirectory() as tmp:
+                fake = self._fake_claude(tmp, json.dumps(payload))
+                with self.assertRaisesRegex(llm.LLMError, pattern):
+                    llm._claude_code_chat([{"role": "user", "content": "x"}], "m", binary=fake)
+        with tempfile.TemporaryDirectory() as tmp:
+            fake = self._fake_claude(tmp, "not json")
+            with self.assertRaisesRegex(llm.LLMError, "退出码"):
+                llm._claude_code_chat([{"role": "user", "content": "x"}], "m", binary=fake)
+
+    def test_claude_code_key_for_depends_on_binary(self):
+        spec = {"provider": "claude-code", "key_env": ""}
+        with mock.patch.object(llm, "claude_binary", return_value="/x/claude"):
+            self.assertEqual(llm.key_for(spec), llm.SUBSCRIPTION)
+        with mock.patch.object(llm, "claude_binary", return_value=""):
+            self.assertEqual(llm.key_for(spec), "")
+
     def test_extract_json(self):
         self.assertEqual(llm.extract_json('```json\n{"a": 1}\n```'), {"a": 1})
         self.assertEqual(llm.extract_json('前言 [1, 2] 结尾', kind="array"), [1, 2])
