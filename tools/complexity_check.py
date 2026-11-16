@@ -3,7 +3,8 @@
 """函数复杂度棘轮（ruff C901 / McCabe）：新代码不得超过上限，存量超标函数只许变简单、不许变复杂。
 
     python3 tools/complexity_check.py <dir> [<dir> ...]            # gate 调用：对比基线
-    python3 tools/complexity_check.py --update <dir> [<dir> ...]   # 拆分函数后收紧基线
+    python3 tools/complexity_check.py --update <dir> [<dir> ...]   # 拆分函数后收紧基线（只改所扫目录的条目）
+    可选 --ruff <path>：指定 ruff 可执行文件（gate 传入与 ruff 步骤同一个）
 
 基线 tools/complexity_baseline.json：{"<相对路径>::<函数名>": 复杂度}，只记录 > MAX 的存量函数。
 - 不在基线里的函数超过 MAX → 失败（新函数请拆小）；
@@ -42,12 +43,28 @@ def measure(dirs, ruff=None):
     found = {}
     for item in json.loads(proc.stdout or "[]"):
         m = _MSG.search(item.get("message", ""))
-        if not m:
-            continue
+        if not m:  # 文案变了就大声失败，绝不静默放行
+            raise RuntimeError("无法解析 ruff C901 消息：%r" % item.get("message"))
         rel = os.path.relpath(item["filename"], REPO).replace(os.sep, "/")
         key = "%s::%s" % (rel, m.group("func"))
         found[key] = max(found.get(key, 0), int(m.group("score")))
     return found
+
+
+def _under(key, dirs):
+    path = key.split("::", 1)[0]
+    for d in dirs:
+        rel = os.path.relpath(os.path.join(REPO, d), REPO).replace(os.sep, "/")
+        if rel == "." or path == rel or path.startswith(rel.rstrip("/") + "/"):
+            return True
+    return False
+
+
+def merge_baseline(baseline, current, dirs):
+    """--update：只替换本次扫描目录下的条目，其它目录的基线原样保留。"""
+    kept = {k: v for k, v in baseline.items() if not _under(k, dirs)}
+    kept.update(current)
+    return kept
 
 
 def compare(current, baseline):
@@ -82,21 +99,32 @@ def save_baseline(data, path=BASELINE):
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     update = "--update" in argv
+    ruff = None
+    if "--ruff" in argv:
+        i = argv.index("--ruff")
+        ruff = argv[i + 1]
+        del argv[i:i + 2]
     dirs = [a for a in argv if a != "--update"] or ["."]
     missing = [d for d in dirs if not os.path.exists(os.path.join(REPO, d))]
     if missing:
         print("❌ 路径不存在：%s" % ", ".join(missing))
         return 2
     try:
-        current = measure(dirs)
+        current = measure(dirs, ruff)
     except RuntimeError as exc:
         print("❌ %s" % exc)
         return 2
+    baseline = load_baseline()
     if update:
-        save_baseline(current)
-        print("基线已更新：%d 个超标函数（上限 %d）" % (len(current), MAX))
+        new = merge_baseline(baseline, current, dirs)
+        for key in sorted(set(baseline) | set(new)):
+            if baseline.get(key) != new.get(key):
+                print("   %s: %s → %s" % (key, baseline.get(key, "-"), new.get(key, "-")))
+        save_baseline(new)
+        print("基线已更新：%d 个超标函数（上限 %d）" % (len(new), MAX))
         return 0
-    errors, improved = compare(current, load_baseline())
+    baseline = {k: v for k, v in baseline.items() if _under(k, dirs)}
+    errors, improved = compare(current, baseline)
     for line in errors:
         print("❌ " + line)
     if improved:

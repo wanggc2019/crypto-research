@@ -29,6 +29,13 @@ class CompareTest(unittest.TestCase):
     def test_missing_path_is_an_error_not_silent_pass(self):
         self.assertEqual(cc.main(["no-such-dir-xyz"]), 2)
 
+    def test_update_with_partial_dirs_keeps_other_entries(self):
+        base = {"crypto-a/scripts/x.py::f": 20, "crypto-b/scripts/y.py::g": 30}
+        new = cc.merge_baseline(base, {"crypto-a/scripts/x.py::f": 18}, ["crypto-a/scripts"])
+        self.assertEqual(new, {"crypto-a/scripts/x.py::f": 18, "crypto-b/scripts/y.py::g": 30})
+        gone = cc.merge_baseline(base, {}, ["crypto-a"])
+        self.assertEqual(gone, {"crypto-b/scripts/y.py::g": 30})
+
 
 class MeasureTest(unittest.TestCase):
     def setUp(self):
@@ -39,13 +46,22 @@ class MeasureTest(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
+    def test_unparseable_message_fails_loudly(self):
+        fake = os.path.join(self.tmp, "fake-ruff")
+        with open(fake, "w") as f:
+            f.write("#!/bin/sh\necho '[{\"filename\": \"/x.py\", \"message\": \"function f is complex: 20\"}]'\n")
+        os.chmod(fake, 0o755)
+        with self.assertRaises(RuntimeError):
+            cc.measure([self.tmp], ruff=fake)
+
     def test_measures_only_functions_over_limit(self):
         branches = "".join("    if x == %d:\n        return %d\n" % (i, i) for i in range(20))
         with open(os.path.join(self.tmp, "m.py"), "w") as f:
             f.write("def big(x):\n%s    return -1\n\n\ndef small(x):\n    return x\n" % branches)
         found = cc.measure([self.tmp])
         rel = os.path.relpath(os.path.join(self.tmp, "m.py"), cc.REPO)
-        self.assertEqual(list(found), [rel + "::big"])
+        self.assertIn(rel + "::big", found)
+        self.assertNotIn(rel + "::small", found)
         self.assertGreater(found[rel + "::big"], cc.MAX)
 
 
