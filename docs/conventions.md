@@ -17,6 +17,7 @@
 
 - 只用 Python 3.9 标准库；PyYAML / ruff 仅开发增强（缺失要能降级运行）。
 - 单文件 < 500 行；模块脚本总量 > 800 行时考虑拆 `src/` + 薄 CLI。
+- 函数复杂度（McCabe）≤ 15：gate 的「复杂度棘轮」(`tools/complexity_check.py`) 拦截新超标函数；存量超标函数登记在 `tools/complexity_baseline.json`，只许变简单，拆分后用 `--update` 收紧基线。
 - 共享逻辑只能进 `libs/crypto_core`，模块见 diff 复制粘贴即视为 bug。
 - 所有对外副作用（网络、推送、写盘）必须能 `--dry-run` 或注入关闭。
 - 单源失败不拖垮整轮：记录 `errors` 继续跑，结束汇总退出码。
