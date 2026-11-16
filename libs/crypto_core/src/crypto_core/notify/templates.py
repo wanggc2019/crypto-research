@@ -73,6 +73,32 @@ def format_alert(a):
     lines.append("<b>标的</b>：%s" % esc(assets))
 
     url = a.get("url") or ((a.get("urls") or [""])[0])
+    lines.append("<b>来源</b>：%s" % _source_text(a, url))
+
+    for d in (a.get("detail") or [])[:3]:
+        lines.append("• %s" % esc(d))
+
+    lines.append("<b>影响</b>：%s" % ev.impact_cn(category))
+    lines.append("<b>动作参考</b>：%s（不构成投资建议）" % ev.action_cn(category))
+
+    hard = a.get("hard") or []
+    if hard:
+        lines.append("<b>触发</b>：%s" % "、".join(ev.hard_cn(h) for h in hard))
+
+    meta = _meta_bits(a)
+    if meta:
+        lines.append("<b>时间/分（）</b>：%s" % " · ".join(meta))
+
+    if url:
+        lines.append('🔗 <a href="%s">查看原文</a>' % html.escape(url, quote=True))
+    if job:
+        lines.append("🏷 任务：%s" % esc(job))
+
+    return _truncate("\n".join(lines))
+
+
+def _source_text(a, url):
+    """来源行：确认度 + 独立源数 + 聚合站提示。"""
     count = a.get("count") or 0
     confirmed = a.get("confirmed")
     indep = a.get("independent_sources")
@@ -92,18 +118,10 @@ def format_alert(a):
         src_txt = "%d 家" % count if count else "—"
     if "news.google." in urlparse(url or "").netloc.lower():
         src_txt += "（聚合站跳转）"
-    lines.append("<b>来源</b>：%s" % src_txt)
+    return src_txt
 
-    for d in (a.get("detail") or [])[:3]:
-        lines.append("• %s" % esc(d))
 
-    lines.append("<b>影响</b>：%s" % ev.impact_cn(category))
-    lines.append("<b>动作参考</b>：%s（不构成投资建议）" % ev.action_cn(category))
-
-    hard = a.get("hard") or []
-    if hard:
-        lines.append("<b>触发</b>：%s" % "、".join(ev.hard_cn(h) for h in hard))
-
+def _meta_bits(a):
     meta = []
     if a.get("score") is not None:
         meta.append("评分 %.1f" % float(a["score"]))
@@ -112,12 +130,4 @@ def format_alert(a):
     abs_t = _abs_time(a.get("published_at"))
     if abs_t:
         meta.append(abs_t)
-    if meta:
-        lines.append("<b>时间/分（）</b>：%s" % " · ".join(meta))
-
-    if url:
-        lines.append('🔗 <a href="%s">查看原文</a>' % html.escape(url, quote=True))
-    if job:
-        lines.append("🏷 任务：%s" % esc(job))
-
-    return _truncate("\n".join(lines))
+    return meta
