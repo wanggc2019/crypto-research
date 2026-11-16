@@ -90,9 +90,10 @@ make healthcheck module=crypto-x-kol
 - 告警里的 @handle 链接指向**具体推文**（`https://x.com/<handle>/status/<id>`）：推送前按需抓一次
   X 主页 HTML 还原 status id；找不到时回退主页链接，不阻塞推送。
 - 批量调用（默认每批 8 条）+ 按推文缓存（`data/state/analysis-<date>.json`），同一推文不重复付费；
-  每天几十条约几千 token；Haiku 5.5 单价 $0.10 / $0.50 每百万 token（输入/输出），成本可以忽略。
+  每天几十条约几千 token；默认用 Claude Haiku 5.5（$0.10 / $0.50 每百万 token），成本可以忽略。
+  换 AI（如改回 DeepSeek）：改仓库 `config/ai.yaml` 的 `x-kol.analyze`。
 - **没有 key 时自动降级**：不报错，报告回退显示原文。key 优先级：
-  仓库根 `.env` 的 `ANTHROPIC_API_KEY`。
+  所选提供商的 key（默认 `ANTHROPIC_API_KEY`），放仓库根 `.env`。
 - 关闭：`app.yaml` 的 `analysis.enabled: false`，或单次 `digest.py --no-analyze`；`--dry-run` 不会调用 API。
 - 注意：翻译/总结由 LLM 生成，可能误译或漏掉语气；以 raw 原文为准。
 

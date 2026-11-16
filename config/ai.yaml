@@ -1,0 +1,41 @@
+# 全仓 AI 选择（ADR 0011）：按「功能」决定用哪个提供商 / 模型 / effort。
+# 改这里即可换 AI，不用改代码；只写环境变量名，key 本身只放仓库根 .env。
+# 校验：make gate 会检查本文件（未知提供商 / 代码里用到但这里没登记的功能 → 失败）。
+schema_version: 1
+
+# 提供商：代码里实现了 anthropic（官方 SDK）与 deepseek（OpenAI 兼容 /chat/completions）两种调用方式。
+providers:
+  anthropic:
+    label: Claude
+    key_env: ANTHROPIC_API_KEY
+  deepseek:
+    label: DeepSeek
+    key_env: DEEPSEEK_API_KEY
+    base_url: https://api.deepseek.com
+    default_model: deepseek-chat
+
+# 功能未单独写的字段，从这里继承。
+defaults:
+  provider: anthropic
+  model: claude-opus-5-5
+  # effort：anthropic 专用（low / medium / high / xhigh / max）；不写 = 模型默认；deepseek 忽略
+  # max_tokens：含思考 token，默认 16000
+
+# 直接调用（单次请求）的功能。功能名 = <模块>.<功能>，代码里用这个名字取配置。
+tasks:
+  x-kol.analyze:            # 推文中文翻译 + 一句话总结（每 5 分钟一轮，批量 8 条，有缓存）
+    model: claude-haiku-5-5
+    effort: low
+  news.translate:           # crypto-news 标题翻译（批量一次调用，有缓存）
+    model: claude-haiku-5-5
+    effort: low
+  policy.interpret:         # crypto-policy P0/P1 解读草稿（低频）
+    model: claude-opus-5-5
+  ci.pr-review:             # GitHub Actions 的 PR 审查（CI 里 key 来自 secret，变量名同 key_env）
+    model: claude-opus-5-5
+    effort: high
+
+# 例：某个功能换回 DeepSeek 省钱
+#   x-kol.analyze:
+#     provider: deepseek
+#     model: deepseek-chat

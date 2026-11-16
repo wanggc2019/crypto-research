@@ -48,7 +48,7 @@
 ## 2.3 英文标题 AI 中文解读
 
 - 卡片/日报的基础解读是规则版（`libs/text.cn_summary`）；**Telegram 推送前**会对英文标题再走一次 AI 翻译：
-  `crypto-news/scripts/notify.py` → `tools/translate_titles.py`（Claude `claude-haiku-5-5`，effort=low，批量一次调用）。
+  `crypto-news/scripts/notify.py` → `tools/translate_titles.py`（AI 由 `config/ai.yaml` 的 `news.translate` 决定，默认 Claude Haiku；批量一次调用）。
 - 译名统一：Bitcoin/BTC、Ethereum/ETH、Binance/币安、Nvidia/英伟达等；理解后意译，不逐词直译。
 - 结果缓存 `data/state/translate-cache.json`（按标题哈希，最多 500 条），同一标题只翻译一次；
 - 失败/超时/无 key 时自动回退规则版，不阻塞推送；`CRYPTO_TRANSLATE=0` 可关闭。

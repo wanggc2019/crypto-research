@@ -58,7 +58,7 @@ launchd(600s) → collect.sh（锁）
 
 ## 4.1 英文标题翻译（AI）
 
-- `tools/translate_titles.py`：读 JSON 标题数组 → Claude API（Haiku）→ 等长中文数组；
+- `tools/translate_titles.py`：读 JSON 标题数组 → AI（`config/ai.yaml` 的 `news.translate`）→ 等长中文数组；
 - `notify.py` 发送前批量翻译并写 `data/state/translate-cache.json`，失败回退 `libs/text.cn_summary` 规则版。
 
 ## 5. 依赖（libs/crypto_core）

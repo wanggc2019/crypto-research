@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.join(ROOT, "scripts"))
 
 import analyze  # noqa: E402
 
-CFG = {"enabled": True, "model": "claude-haiku-5-5", "effort": "low", "batch_size": 2, "max_tweet_chars": 50}
+CFG = {"enabled": True, "batch_size": 2, "max_tweet_chars": 50}
 
 
 def post(pid, text, handle="tester"):
@@ -27,9 +27,7 @@ class TestTextHelpers(unittest.TestCase):
 
     def test_build_request_and_truncate(self):
         body = analyze.build_request([post("a", "x" * 120)], CFG)
-        self.assertEqual(body["model"], "claude-haiku-5-5")
-        self.assertEqual(body["effort"], "low")
-        self.assertNotIn("temperature", body)
+        self.assertEqual(set(body), {"messages"}, "模型/effort 由 config/ai.yaml 决定，不进请求构造")
         user = body["messages"][1]["content"]
         self.assertIn('"id": "a"', user)
         self.assertIn("…", user)          # 超长被截断

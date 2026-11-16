@@ -9,7 +9,7 @@
 | [`crypto-news/`](crypto-news/README.md) | 行业信息采集 → 过滤聚类 → 评分分级 → Telegram 告警/日报 | Python 3.12（标准库） | 原需求，2026-11-08 从仓库根目录迁入 |
 | [`crypto-price/`](crypto-price/README.md) | BTC/ETH/BNB 价格/衍生品异动实时告警 | Python 3.12（标准库） | 2026-11-08 新建，P4 首个验证架构的新模块 |
 | [`crypto-analyst/`](crypto-analyst/README.md) | 行情分析 / 情景推演（只读 exports + 公开 K 线） | Python 3.12（标准库） | 2026-11-08 新建，**需求定稿 + P2 主体完成**；每日简报/打分/宏观/复盘（22 单测） |
-| [`crypto-x-kol/`](crypto-x-kol/README.md) | 关注的 KOL 的 X 推文监控（r.jina.ai 抓主页 → 价值分过滤 → Claude（Haiku）中文翻译/一句话总结 → 日报/Telegram） | Python 3.12（标准库） | 2026-11-08 新建，白名单 26 个账号（≤30），每 5 分钟；抓取零成本，翻译几分钱/天 |
+| [`crypto-x-kol/`](crypto-x-kol/README.md) | 关注的 KOL 的 X 推文监控（r.jina.ai 抓主页 → 价值分过滤 → AI 中文翻译/一句话总结（默认 Claude Haiku）→ 日报/Telegram） | Python 3.12（标准库） | 2026-11-08 新建，白名单 26 个账号（≤30），每 5 分钟；抓取零成本，翻译几分钱/天 |
 | [`crypto-policy/`](crypto-policy/README.md) | 国内数字货币政策/法规/案例雷达 → 法规库 + 速报 + 解读草稿（规则门过滤，AI 只处理候选） | Python 3.12（标准库） | 2026-11-08 上线：5 个 T0/T1 源（+2 备用）、6 小时、零 API；P0/P1 推送 + AI 解读草稿（每天 08:30） |
 | [`crypto-jobs/`](crypto-jobs/README.md) | 加密行业技术岗位（DevOps/SRE/MLOps/开发）市场情报：多源采集 → 技能词典抽取 → 每日快照/差分 → 周趋势 Telegram | Python 3.12（标准库） | 2026-11-08 新建 MVP：公开 ATS/招聘站、零成本、每日 18:00 日更 + 周日 10:00 周报 + 每 2 小时新岗位速报（两个 launchd 任务）、离线 fixtures 回放；2026-11-09 纳入开发岗位 |
 | [`crypto-onchain/`](crypto-onchain/README.md) | 链上/交易所资金流"卖压归因"（DefiLlama CEX 净流 + Binance 逐笔主动卖 + OKX 清算 + 稳定币净增发 → 4 类归因 + exports） | Python 3.12（标准库） | 2026-11-09 新建，**M2 归因引擎 + 链上大额转账（公共 RPC，≥$5M）**：零 key、零成本、影子模式（只落盘/不推送）；2 周校准后才接 M3 告警 |
@@ -77,7 +77,7 @@ TELEGRAM_CHAT_ID=<your_chat_id>
 
 模板见 [`env.example`](env.example)。模块可以直接读根 `.env`（`crypto-news` 已支持：模块内无 `.env` 时回退到仓库根）。
 
-`env.example` 是**入库的凭据清单/模板**（只有变量名和注释，真实值永远为空）；根 `.env` 是**本机实际值**、被 `.gitignore` 排除。新增可选凭据（不填则对应功能自动关闭）：`JINA_API_KEY`、`ANTHROPIC_API_KEY`（Claude：推文/标题翻译、政策解读、PR 审查）、`CMC_API_KEY`、`ETHERSCAN_API_KEY`（crypto-onchain 链上地址级监控，免费档够用）。
+`env.example` 是**入库的凭据清单/模板**（只有变量名和注释，真实值永远为空）；根 `.env` 是**本机实际值**、被 `.gitignore` 排除。新增可选凭据（不填则对应功能自动关闭）：`JINA_API_KEY`、`ANTHROPIC_API_KEY` / `DEEPSEEK_API_KEY`（AI：推文/标题翻译、政策解读、PR 审查；各功能用哪个见 `config/ai.yaml`）、`CMC_API_KEY`、`ETHERSCAN_API_KEY`（crypto-onchain 链上地址级监控，免费档够用）。
 
 ## 快速开始
 

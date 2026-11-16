@@ -88,11 +88,11 @@ score = 作者层级(T1 18 / T2 10)
 
 ### 3.4 中文翻译与一句话总结（`analyze.py`）
 
-- 外文推文发给 Claude（`claude-haiku-5-5`，effort=low，经 `crypto_core.llm` → Anthropic SDK），要求返回：
+- 外文推文经 `crypto_core.llm` 发给 AI（用哪个 AI 由仓库 `config/ai.yaml` 的 `x-kol.analyze` 决定（默认 Claude `claude-haiku-5-5`，effort=low）），要求返回：
   `{id, lang, zh（中文翻译）, summary（一句话总结）}`；中文推文不翻译、只生成 summary。
 - **批量**：默认 8 条/请求，减少延迟与费用；**缓存**：`data/state/analysis-<date>.json` 按 post id 存
   `{lang, zh, summary, ts, model}`，同一条推文只付费一次。
-- **降级**：仓库根 `.env` 没有 `ANTHROPIC_API_KEY` 时跳过，报告/告警回退原文，不报错；
+- **降级**：仓库根 `.env` 没有所选 AI 的 key（或 AI 配置有误）时跳过，报告/告警回退原文，不报错；
   单批 API 失败只影响该批，下一轮重试（缓存未写入）。
 - **呈现**：报告与 Telegram 告警只展示中文译文 + `一句话：…`；英文原文不再展示（raw 保留）。
   翻译过的推文前缀 **[翻译]**（中文原帖不加）；作者统一显示 `@handle（name · 职业）`，
@@ -122,7 +122,7 @@ Telegram 卡片（仅 P0/P1，保留链接预览：消息下方自动展开原�
 | 文件 | 作用 |
 |---|---|
 | `config/kol.yaml` | KOL 白名单（handle/name/role/tier/tags），默认 26 个 enabled + 2 个 disabled（@saylor、@0xMert_） |
-| `config/app.yaml` | `poll_seconds=300`；`fetch.timeout/retries/min_interval_seconds=4/page_retries=2`、`fetch.tweet_link*`（原帖链接）；`use_api_key=false`；`analysis.*`（Claude 翻译/总结）；`digest.text_chars=140`、`digest.quiet_hold=false` |
+| `config/app.yaml` | `poll_seconds=300`；`fetch.timeout/retries/min_interval_seconds=4/page_retries=2`、`fetch.tweet_link*`（原帖链接）；`use_api_key=false`；`analysis.*`（开关/批量/超时；用哪个 AI 见 `config/ai.yaml`）；`digest.text_chars=140`、`digest.quiet_hold=false` |
 | `config/rules.yaml` | `topics` 主题分组；`alert` 评分权重/惩罚/阈值/`caps`（每日 8、单条 5）；`high_signal`（⚡ 标记） |
 
 ## 6. 测试方案
@@ -152,7 +152,7 @@ Telegram 卡片（仅 P0/P1，保留链接预览：消息下方自动展开原�
 | 报告/日志膨胀 | data 增长 | collect.sh 每日 `prune --apply`（raw 90d/reports 365d/logs 30d/500MB 上限） |
 | Claude API 超时/限流 | 该批翻译缺失 | 跳过该批、下轮重试；报告回退原文，不影响告警主链路 |
 | 原帖链接解析失败 | @handle 指向主页 | `xlink.attach` 静默回退，不阻塞推送；链接不是原帖时可在消息里人工点开主页找 |
-| 无 ANTHROPIC_API_KEY | 报告没中文 | 优雅降级显示原文；补 key 后下一轮自动补齐（缓存按 id 补） |
+| 没有所选 AI 的 key | 报告没中文 | 优雅降级显示原文；补 key 后下一轮自动补齐（缓存按 id 补） |
 
 ## 8. 与 crypto-news 的边界
 

@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""translate_titles.py —— 把英文新闻标题批量翻译成自然中文（Claude Haiku，effort=low）。
+"""translate_titles.py —— 把英文新闻标题批量翻译成自然中文（用哪个 AI 见 config/ai.yaml 的 news.translate）。
 
 用法：
     echo '["title a","title b"]' | python3 tools/translate_titles.py
 输出：
     {"translations": ["译文 a", "译文 b"]}
 
-凭据：环境变量 ANTHROPIC_API_KEY；没有则读仓库根 .env。
+凭据：对应提供商的 key（环境变量优先，否则仓库根 .env）。
 失败时退出码 1 并输出 {"error": "..."}，调用方应回退到规则翻译。
 """
 import argparse
@@ -27,9 +27,12 @@ SYSTEM_PROMPT = (
 )
 
 
-def find_api_key():
-    """环境变量 ANTHROPIC_API_KEY → 仓库根 .env（见 crypto_core.llm.find_api_key）。"""
-    return llm.find_api_key()
+TASK = "news.translate"
+
+
+def find_api_key(spec):
+    """环境变量 → 仓库根 .env（见 crypto_core.llm.key_for）。"""
+    return llm.key_for(spec)
 
 
 def parse_translations(content, expected):
@@ -47,16 +50,19 @@ def parse_translations(content, expected):
 
 
 def translate(titles, timeout=45):
-    key = find_api_key()
+    try:
+        spec = llm.resolve(TASK)
+    except llm.LLMError as e:
+        return {"error": str(e)}
+    key = find_api_key(spec)
     if not key:
-        return {"error": "missing ANTHROPIC_API_KEY"}
+        return {"error": "missing %s" % spec["key_env"]}
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": json.dumps(titles, ensure_ascii=False)},
     ]
     try:
-        out = parse_translations(llm.chat(messages, key, model=llm.FAST_MODEL, effort="low", timeout=timeout),
-                                 len(titles))
+        out = parse_translations(llm.complete(spec, messages, key, timeout=timeout), len(titles))
         if out is None:
             return {"error": "unparseable model output"}
         return {"translations": out}

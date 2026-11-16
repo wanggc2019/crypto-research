@@ -18,7 +18,7 @@ crypto-policy/
 │   ├── brief.py          # 卡片与周报/解读文本渲染
 │   ├── notify.py         # Telegram 发送封装
 │   ├── main.py           # 编排入口（采集→分类→入库→导出→推送）
-│   ├── interpret.py      # 解读草稿（规则抽取；有 ANTHROPIC_API_KEY 时调 Claude Opus）
+│   ├── interpret.py      # 解读草稿（规则抽取；有 key 时调 `config/ai.yaml` 的 policy.interpret）
 │   ├── push_text.py      # 把解读 Markdown 推送并归档 pending（DSH 任务用）
 │   ├── interpret-prompt.md # DSH headless 解读任务卡
 │   ├── interpret.sh      # DSH 解读入口（事件驱动，由 collect.sh 调用）
