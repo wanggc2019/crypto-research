@@ -186,50 +186,54 @@ def _excel_date(value):
     return (_dt.date(1899, 12, 30) + _dt.timedelta(days=n)).isoformat()
 
 
-def parse_ca_warn_xlsx(raw):
-    """解析加州 EDD WARN 报告 xlsx（Detailed WARN Report sheet）→ [{company, county, layoff, employees, notice_date, effective_date}]"""
-    try:
-        z = zipfile.ZipFile(BytesIO(raw))
-    except (zipfile.BadZipFile, TypeError):
-        return []
+def _xlsx_shared_strings(z):
     shared = []
     if "xl/sharedStrings.xml" in z.namelist():
         root = ET.fromstring(z.read("xl/sharedStrings.xml"))
         for si in root.findall("m:si", _WARN_NS):
             shared.append("".join(t.text or "" for t in si.iter(
                 "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}t")))
-    # 找到含 "Company" 表头的 sheet（通常是 Detailed WARN Report）
-    target = None
+    return shared
+
+
+def _xlsx_row_values(row, shared):
+    vals = []
+    for c in row.findall("m:c", _WARN_NS):
+        v = c.find("m:v", _WARN_NS)
+        val = v.text if v is not None else ""
+        if c.get("t") == "s" and val != "":
+            val = shared[int(val)]
+        vals.append(val)
+    return vals
+
+
+def _find_warn_sheet(z, shared):
+    """找到含 "Company" 表头的 sheet（通常是 Detailed WARN Report）→ (sheet 名, 表头) 或 (None, None)。"""
     for name in z.namelist():
         if not name.startswith("xl/worksheets/sheet"):
             continue
         root = ET.fromstring(z.read(name))
-        rows = root.findall(".//m:row", _WARN_NS)
-        for row in rows[:5]:
-            texts = []
-            for c in row.findall("m:c", _WARN_NS):
-                v = c.find("m:v", _WARN_NS)
-                val = v.text if v is not None else ""
-                if c.get("t") == "s" and val != "":
-                    val = shared[int(val)]
-                texts.append(val)
+        for row in root.findall(".//m:row", _WARN_NS)[:5]:
+            texts = _xlsx_row_values(row, shared)
             if "Company" in texts and any("Employees" in t for t in texts):
-                target, header = name, texts
-                break
-        if target:
-            break
+                return name, texts
+    return None, None
+
+
+def parse_ca_warn_xlsx(raw):
+    """解析加州 EDD WARN 报告 xlsx（Detailed WARN Report sheet）→ [{company, county, layoff, employees, notice_date, effective_date}]"""
+    try:
+        z = zipfile.ZipFile(BytesIO(raw))
+    except (zipfile.BadZipFile, TypeError):
+        return []
+    shared = _xlsx_shared_strings(z)
+    target, header = _find_warn_sheet(z, shared)
     if not target:
         return []
     root = ET.fromstring(z.read(target))
     out = []
     for row in root.findall(".//m:row", _WARN_NS):
-        vals = []
-        for c in row.findall("m:c", _WARN_NS):
-            v = c.find("m:v", _WARN_NS)
-            val = v.text if v is not None else ""
-            if c.get("t") == "s" and val != "":
-                val = shared[int(val)]
-            vals.append(val)
+        vals = _xlsx_row_values(row, shared)
         if len(vals) < len(header) or vals[:1] == ["County/Parish"]:
             continue
         rec = {str(k).replace("\r", ""): v for k, v in zip(header, vals)}
@@ -410,9 +414,7 @@ HANDLERS = {
 }
 
 
-def main():
-    ensure_dirs()
-    args = sys.argv[1:]
+def _select_sources(args):
     only = None
     limit = None
     for i, a in enumerate(args):
@@ -420,13 +422,87 @@ def main():
             only = set(args[i + 1].split(","))
         if a == "--limit" and i + 1 < len(args):
             limit = int(args[i + 1])
-
-    sources = load_config("sources.yaml").get("sources", [])
-    sources = [s for s in sources if s.get("verified")]
+    sources = [s for s in load_config("sources.yaml").get("sources", []) if s.get("verified")]
     if only:
         sources = [s for s in sources if s["id"] in only]
     if limit:
         sources = sources[:limit]
+    return sources
+
+
+def _collector(src):
+    """按源 id / 类型选采集函数；返回 (fn, 是否返回 (items, hash))；不支持的类型返回 (None, False)。"""
+    h = HANDLERS.get(src["id"])
+    if h:
+        return h, False
+    typ, url = src["type"], src.get("url") or ""
+    if typ == "rss":
+        return collect_rss, False
+    if typ == "market_api":
+        return collect_market, False
+    if typ == "warn":
+        return collect_warn, False
+    if typ == "html_diff" and "t.me/s/" in url:
+        return collect_tme, False
+    if typ == "html_diff" and "r.jina.ai" in url:
+        return collect_jina, True
+    if typ == "html_diff":
+        return collect_html, True
+    return None, False
+
+
+def _persist(out_path, src, new_items, state, global_seen):
+    sid = src["id"]
+    with open(out_path, "a", encoding="utf-8") as f:
+        for it in new_items:
+            rec = dict(it)
+            rec.update({"source_id": sid, "source_name": src.get("name", sid),
+                        "tier": src.get("tier", "T3"), "fetched_at": ts_iso()})
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+            state["seen"][it["id"]] = 1
+            global_seen["ids"][it["id"]] = 1
+
+
+def _run_source(src, out_path, global_seen, stats):
+    """采集一个源并落盘；返回新增条数。单源异常只记入 stats["errors"]，不中断整轮。"""
+    sid = src["id"]
+    st_path = os.path.join(STATE_DIR, sid + ".json")
+    state = safe_json_load(st_path, {})
+    state.setdefault("seen", {})
+    t0 = time.time()
+    new_items, new_hash = [], None
+    try:
+        fn, with_hash = _collector(src)   # 放在 try 内：源配置缺字段也只算该源失败
+        if fn is None:
+            stats["sources"].append({"id": sid, "status": "skipped", "type": src.get("type")})
+            return 0
+        if with_hash:
+            new_items, new_hash = fn(src, state)
+        else:
+            new_items = fn(src, state)
+        ok = True
+    except Exception as e:  # noqa
+        ok = False
+        stats["errors"].append({"id": sid, "error": "%s: %s" % (type(e).__name__, e)})
+
+    elapsed = round(time.time() - t0, 2)
+    stats["sources"].append({"id": sid, "ok": ok, "new": len(new_items), "seconds": elapsed})
+    if new_items:
+        _persist(out_path, src, new_items, state, global_seen)
+    if new_hash:
+        state["hash"] = new_hash
+    # 控制 seen 规模
+    if len(state["seen"]) > 3000:
+        state["seen"] = dict(list(state["seen"].items())[-1000:])
+    state["last_checked"] = ts_iso()
+    safe_json_dump(st_path, state)
+    print("  %-22s %-4s new=%-3d %5.2fs" % (sid, "OK" if ok else "ERR", len(new_items), elapsed))
+    return len(new_items)
+
+
+def main():
+    ensure_dirs()
+    sources = _select_sources(sys.argv[1:])
 
     date = today_str()
     out_path = os.path.join(RAW_DIR, date, "items.jsonl")
@@ -438,61 +514,7 @@ def main():
         global_seen = {"date": date, "ids": {}}
 
     stats = {"date": date, "started_at": ts_iso(), "sources": [], "errors": []}
-    total_new = 0
-
-    for src in sources:
-        sid = src["id"]
-        st_path = os.path.join(STATE_DIR, sid + ".json")
-        state = safe_json_load(st_path, {})
-        state.setdefault("seen", {})
-        t0 = time.time()
-        new_items, new_hash = [], None
-        try:
-            h = HANDLERS.get(sid)
-            if h:
-                new_items = h(src, state)
-            elif src["type"] == "rss":
-                new_items = collect_rss(src, state)
-            elif src["type"] == "market_api":
-                new_items = collect_market(src, state)
-            elif src["type"] == "warn":
-                new_items = collect_warn(src, state)
-            elif src["type"] == "html_diff" and "t.me/s/" in src["url"]:
-                new_items = collect_tme(src, state)
-            elif src["type"] == "html_diff" and "r.jina.ai" in src["url"]:
-                new_items, new_hash = collect_jina(src, state)
-            elif src["type"] == "html_diff":
-                new_items, new_hash = collect_html(src, state)
-            else:
-                stats["sources"].append({"id": sid, "status": "skipped", "type": src["type"]})
-                continue
-            ok = True
-        except Exception as e:  # noqa
-            ok = False
-            stats["errors"].append({"id": sid, "error": "%s: %s" % (type(e).__name__, e)})
-
-        elapsed = round(time.time() - t0, 2)
-        stats["sources"].append({"id": sid, "ok": ok, "new": len(new_items), "seconds": elapsed})
-
-        # 落盘 + 状态
-        if new_items:
-            with open(out_path, "a", encoding="utf-8") as f:
-                for it in new_items:
-                    rec = dict(it)
-                    rec.update({"source_id": sid, "source_name": src.get("name", sid),
-                                "tier": src.get("tier", "T3"), "fetched_at": ts_iso()})
-                    f.write(json.dumps(rec, ensure_ascii=False) + "\n")
-                    state["seen"][it["id"]] = 1
-                    global_seen["ids"][it["id"]] = 1
-                    total_new += 1
-        if new_hash:
-            state["hash"] = new_hash
-        # 控制 seen 规模
-        if len(state["seen"]) > 3000:
-            state["seen"] = dict(list(state["seen"].items())[-1000:])
-        state["last_checked"] = ts_iso()
-        safe_json_dump(st_path, state)
-        print("  %-22s %-4s new=%-3d %5.2fs" % (sid, "OK" if ok else "ERR", len(new_items), elapsed))
+    total_new = sum(_run_source(src, out_path, global_seen, stats) for src in sources)
 
     # 全局去重表
     if len(global_seen["ids"]) > 20000:
