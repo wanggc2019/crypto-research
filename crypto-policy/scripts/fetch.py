@@ -368,35 +368,19 @@ def _load_detail_html(url, fixtures, source_id, item_id, reader="direct", timeou
     return _http.get_text(url, timeout=timeout, retries=retries)
 
 
-def collect_source(source, app, fixtures=None, detail_budget=None, limit=None, dry_run=False):
-    """采集单个源，返回 (items, errors, stats)。items 带 baseline 标记。"""
-    source_id = source["id"]
-    state = safe_json_load(_state_path(source_id), {"initialized": False, "seen": {}})
-    baseline = not bool(state.get("initialized"))
-    errors = []
-    stats = {"source": source_id, "list_ok": False, "found": 0, "new": 0, "detail_ok": 0, "detail_fail": 0}
-
+def _load_links(source, fixtures):
     reader = source.get("reader") or "direct"
-    detail_reader = source.get("detail_reader") or reader
     src_type = source.get("type") or "list"
-    try:
-        if src_type == "rss":
-            links = _load_rss(source, fixtures)
-        elif src_type == "federal_register":
-            links = _load_federal_register(source, fixtures)
-        else:
-            html_text = _load_source_html(source, fixtures)
-            links = parse_list_markdown(html_text, source) if reader == "jina" else parse_list(html_text, source)
-        stats["list_ok"] = True
-        stats["found"] = len(links)
-    except Exception as e:  # noqa: BLE001 - 单源失败不拖垮整轮
-        errors.append("%s: %s" % (source_id, e))
-        state["last_check"] = ts_iso()
-        state["last_error"] = str(e)[:300]
-        safe_json_dump(_state_path(source_id), state)
-        return [], errors, stats
+    if src_type == "rss":
+        return _load_rss(source, fixtures)
+    if src_type == "federal_register":
+        return _load_federal_register(source, fixtures)
+    html_text = _load_source_html(source, fixtures)
+    return parse_list_markdown(html_text, source) if reader == "jina" else parse_list(html_text, source)
 
-    cap = limit or int(app.get("max_new_per_source") or 20)
+
+def _fresh_links(links, source_id, state, cap, topics):
+    """未见过的新链接（同轮去重、上限 cap），标题命中主题的排前面。"""
     fresh = []
     seen_urls = set()
     for link in links:
@@ -423,71 +407,133 @@ def collect_source(source, app, fixtures=None, detail_budget=None, limit=None, d
             break
 
     # 详情预算有限时，优先抓标题命中主题的条目（42 号这类文件不在列表最前面）
-    topics = app.get("topics") or []
-
     def _title_hit(it):
         low = (it.get("title") or "").lower()
         return 0 if any(str(t).lower() in low for t in topics) else 1
 
     fresh.sort(key=_title_hit)
+    return fresh
 
-    body_max = int(app.get("body_max_chars") or 20000)
+
+def _parse_detail(raw, detail_reader):
+    return parse_detail_markdown(raw) if detail_reader == "jina" else parse_detail(raw)
+
+
+def _fetch_detail(item, ctx, stats, budgets, new_backlog):
+    """按预算抓详情；返回 (正文, 详情标题, 详情解析结果)。失败只降级，不算源失败。"""
+    local_budget, detail_budget = budgets
+    body, detail_title, raw_detail = "", "", {}
+    try:
+        if local_budget[0] > 0:
+            if ctx["source_id"].startswith("csrc"):
+                time.sleep(1.2)  # 证监会反爬：连续请求会超时
+            raw = _load_detail_html(item["url"], ctx["fixtures"], ctx["source_id"], item["id"],
+                                    reader=ctx["detail_reader"], timeout=ctx["detail_timeout"])
+            local_budget[0] -= 1
+            if detail_budget is not None:
+                detail_budget[0] -= 1
+            if raw:
+                raw_detail = _parse_detail(raw, ctx["detail_reader"])
+                detail_title = raw_detail["title"]
+                body = raw_detail["body"][:ctx["body_max"]]
+                stats["detail_ok"] += 1
+            else:
+                stats["detail_fail"] += 1
+        elif ctx["per_source"] > 0:
+            new_backlog.append(item["id"])
+    except Exception as e:  # noqa: BLE001 - 详情失败只降级，不算源失败
+        stats["detail_fail"] += 1
+        stats.setdefault("detail_errors", []).append("%s: %s" % (item["url"], e))
+    return body, detail_title, raw_detail
+
+
+def _build_record(item, source, body, detail_title, raw_detail, baseline):
+    if not body:
+        body = item.get("summary") or ""  # RSS 摘要兜底
+    published_at = item.get("published_at_hint") or ""
+    if raw_detail.get("published_at"):
+        published_at = raw_detail["published_at"]
+    source_id = source["id"]
+    return {
+        "id": item["id"],
+        "source_id": source_id,
+        "source_name": source.get("name", source_id),
+        "tier": source.get("tier", "T2"),
+        "jurisdiction": source.get("jurisdiction") or "CN",
+        "title": clean_text(detail_title) or item["title"],
+        "url": item["url"],
+        "body": body,
+        "body_hash": sha256(body) if body else "",
+        "published_at": published_at,
+        "doc_type_hint": item.get("doc_type_hint") or "",
+        "doc_no_hint": item.get("doc_no_hint") or "",
+        "issuer_hint": item.get("issuer_hint") or "",
+        "effective_hint": item.get("effective_hint") or "",
+        "baseline": baseline,
+        "first_seen": ts_iso(),
+    }
+
+
+def _backfill_one(bid, ctx, dry_run, out, stats):
+    """补抓一条 backlog；返回是否可以移出 backlog（成功或无需再抓）。异常则留待下轮。"""
+    doc = safe_json_load(os.path.join(DOC_DIR, bid + ".json"), {})
+    if not doc or len(doc.get("body") or "") > 200:
+        return True
+    try:
+        if ctx["source_id"].startswith("csrc"):
+            time.sleep(1.2)
+        raw = _load_detail_html(doc["url"], ctx["fixtures"], ctx["source_id"], bid,
+                                reader=ctx["detail_reader"], timeout=ctx["detail_timeout"])
+        if raw:
+            detail = _parse_detail(raw, ctx["detail_reader"])
+            doc["body"] = detail["body"][:ctx["body_max"]]
+            doc["body_hash"] = sha256(doc["body"])
+            doc["published_at"] = doc.get("published_at") or detail["published_at"] or ""
+            doc["baseline"] = True  # 补抓的旧条目只入库，不推送
+            if not dry_run:
+                safe_json_dump(os.path.join(DOC_DIR, bid + ".json"), doc)
+            out.append(doc)
+            stats["backfill"] = stats.get("backfill", 0) + 1
+        return True
+    except Exception:  # noqa: BLE001 - 失败留在 backlog 下轮再试
+        return False
+
+
+def collect_source(source, app, fixtures=None, detail_budget=None, limit=None, dry_run=False):
+    """采集单个源，返回 (items, errors, stats)。items 带 baseline 标记。"""
+    source_id = source["id"]
+    state = safe_json_load(_state_path(source_id), {"initialized": False, "seen": {}})
+    baseline = not bool(state.get("initialized"))
+    errors = []
+    stats = {"source": source_id, "list_ok": False, "found": 0, "new": 0, "detail_ok": 0, "detail_fail": 0}
+
+    try:
+        links = _load_links(source, fixtures)
+        stats["list_ok"] = True
+        stats["found"] = len(links)
+    except Exception as e:  # noqa: BLE001 - 单源失败不拖垮整轮
+        errors.append("%s: %s" % (source_id, e))
+        state["last_check"] = ts_iso()
+        state["last_error"] = str(e)[:300]
+        safe_json_dump(_state_path(source_id), state)
+        return [], errors, stats
+
+    cap = limit or int(app.get("max_new_per_source") or 20)
+    fresh = _fresh_links(links, source_id, state, cap, app.get("topics") or [])
+
     per_source = min(int(app.get("max_detail_per_source") or 5), int(source.get("detail_limit") or 99))
-    detail_timeout = int(source.get("detail_timeout") or 20)
-    local_budget = [per_source if detail_budget is None else min(per_source, detail_budget[0])]
+    ctx = {
+        "source_id": source_id, "fixtures": fixtures, "per_source": per_source,
+        "detail_reader": source.get("detail_reader") or source.get("reader") or "direct",
+        "detail_timeout": int(source.get("detail_timeout") or 20),
+        "body_max": int(app.get("body_max_chars") or 20000),
+    }
+    budgets = ([per_source if detail_budget is None else min(per_source, detail_budget[0])], detail_budget)
     out = []
     new_backlog = []
     for item in fresh:
-        body = ""
-        detail_title = ""
-        raw_detail = {}
-        try:
-            if local_budget[0] > 0:
-                if source_id.startswith("csrc"):
-                    time.sleep(1.2)  # 证监会反爬：连续请求会超时
-                raw = _load_detail_html(item["url"], fixtures, source_id, item["id"],
-                                        reader=detail_reader, timeout=detail_timeout)
-                local_budget[0] -= 1
-                if detail_budget is not None:
-                    detail_budget[0] -= 1
-                if raw:
-                    raw_detail = parse_detail_markdown(raw) if detail_reader == "jina" else parse_detail(raw)
-                    detail_title = raw_detail["title"]
-                    body = raw_detail["body"][:body_max]
-                    stats["detail_ok"] += 1
-                else:
-                    stats["detail_fail"] += 1
-            elif per_source > 0:
-                new_backlog.append(item["id"])
-        except Exception as e:  # noqa: BLE001 - 详情失败只降级，不算源失败
-            stats["detail_fail"] += 1
-            stats.setdefault("detail_errors", []).append("%s: %s" % (item["url"], e))
-
-        if not body:
-            body = item.get("summary") or ""  # RSS 摘要兜底
-
-        published_at = item.get("published_at_hint") or ""
-        if raw_detail.get("published_at"):
-            published_at = raw_detail["published_at"]
-
-        rec = {
-            "id": item["id"],
-            "source_id": source_id,
-            "source_name": source.get("name", source_id),
-            "tier": source.get("tier", "T2"),
-            "jurisdiction": source.get("jurisdiction") or "CN",
-            "title": clean_text(detail_title) or item["title"],
-            "url": item["url"],
-            "body": body,
-            "body_hash": sha256(body) if body else "",
-            "published_at": published_at,
-            "doc_type_hint": item.get("doc_type_hint") or "",
-            "doc_no_hint": item.get("doc_no_hint") or "",
-            "issuer_hint": item.get("issuer_hint") or "",
-            "effective_hint": item.get("effective_hint") or "",
-            "baseline": baseline,
-            "first_seen": ts_iso(),
-        }
+        body, detail_title, raw_detail = _fetch_detail(item, ctx, stats, budgets, new_backlog)
+        rec = _build_record(item, source, body, detail_title, raw_detail, baseline)
         if not dry_run:
             safe_json_dump(os.path.join(DOC_DIR, item["id"] + ".json"), rec)
             append_jsonl(os.path.join(RAW_DIR, today_str(), "items.jsonl"), rec)
@@ -500,33 +546,7 @@ def collect_source(source, app, fixtures=None, detail_budget=None, limit=None, d
     prev_backlog = [i for i in (state.get("backlog") or []) if i not in set(new_backlog)]
     backlog = prev_backlog + new_backlog
     backfill_n = int(app.get("backfill_per_source") or 3)
-    done_bf = []
-    for bid in prev_backlog[:backfill_n]:
-        doc = safe_json_load(os.path.join(DOC_DIR, bid + ".json"), {})
-        if not doc:
-            done_bf.append(bid)
-            continue
-        if len(doc.get("body") or "") > 200:
-            done_bf.append(bid)
-            continue
-        try:
-            if source_id.startswith("csrc"):
-                time.sleep(1.2)
-            raw = _load_detail_html(doc["url"], fixtures, source_id, bid,
-                                    reader=detail_reader, timeout=detail_timeout)
-            if raw:
-                detail = parse_detail_markdown(raw) if detail_reader == "jina" else parse_detail(raw)
-                doc["body"] = detail["body"][:body_max]
-                doc["body_hash"] = sha256(doc["body"])
-                doc["published_at"] = doc.get("published_at") or detail["published_at"] or ""
-                doc["baseline"] = True  # 补抓的旧条目只入库，不推送
-                if not dry_run:
-                    safe_json_dump(os.path.join(DOC_DIR, bid + ".json"), doc)
-                out.append(doc)
-                stats["backfill"] = stats.get("backfill", 0) + 1
-            done_bf.append(bid)
-        except Exception:  # noqa: BLE001 - 失败留在 backlog 下轮再试
-            pass
+    done_bf = [bid for bid in prev_backlog[:backfill_n] if _backfill_one(bid, ctx, dry_run, out, stats)]
     state["backlog"] = [i for i in backlog if i not in done_bf]
 
     state["initialized"] = True

@@ -140,6 +140,57 @@ def _queue_pending(records, max_age_days):
             safe_json_dump(os.path.join(PENDING_DIR, r["id"] + ".json"), r)
 
 
+def _persist(relevant, date, max_age_days):
+    """写法规库 / exports / 日报 / 待解读队列；返回日报路径。"""
+    idx = policy_index.load()
+    for r in relevant:
+        policy_index.upsert(idx, r)
+    policy_index.save(idx)
+    _export(relevant, idx, date)
+    report_path = _write_report(relevant, date)
+    _queue_pending(relevant, max_age_days)
+    return report_path
+
+
+def _select_push(relevant, notified, max_age_days):
+    """新 P0/P1、非基线、不过期、未推送；同一文号（如最高法 + 公报）跨源只推一次。"""
+    dedup, seen_keys = [], set()
+    for r in relevant:
+        if not (r.get("level") in ("P0", "P1") and not r.get("baseline")
+                and not _is_stale(r, max_age_days) and r.get("id") not in notified["ids"]):
+            continue
+        key = r.get("doc_no") or r.get("title")
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        dedup.append(r)
+    return dedup
+
+
+def _deliver(push, notified):
+    """P0 逐条卡片、P1 合并一条摘要；成功的记入 notified。"""
+    p0 = [r for r in push if r.get("level") == "P0"]
+    p1 = [r for r in push if r.get("level") != "P0"]
+    sent = 0
+    for r in p0:
+        ok, err = notify.send(brief.render_card(r), signal={"severity": "P0", "key": r.get("id")})
+        if ok:
+            sent += 1
+            notified["ids"][r["id"]] = ts_iso()
+        else:
+            print("❌ 推送失败：%s" % err)
+    if p1:
+        ok, err = notify.send(brief.render_digest(p1), signal={"severity": "P1", "key": "p1-digest"})
+        if ok:
+            sent += len(p1)
+            for r in p1:
+                notified["ids"][r["id"]] = ts_iso()
+        else:
+            print("❌ 汇总推送失败：%s" % err)
+    _save_notified(notified)
+    print("✅ 已推送 %d 条（P0=%d, P1=%d）" % (sent, len(p0), len(p1)))
+
+
 def run(args):
     ensure_dirs()
     app = load_config("app.yaml")
@@ -162,37 +213,11 @@ def run(args):
 
     date = args.date or ts_iso()[:10]
     max_age_days = int(app.get("push_max_age_days") or 540)
-    report_path = ""
-    if not args.dry_run:
-        idx = policy_index.load()
-        for r in relevant:
-            policy_index.upsert(idx, r)
-        policy_index.save(idx)
-        _export(relevant, idx, date)
-        report_path = _write_report(relevant, date)
-        _queue_pending(relevant, max_age_days)
+    report_path = "" if args.dry_run else _persist(relevant, date, max_age_days)
 
     notified = _load_notified()
-    push = [
-        r
-        for r in relevant
-        if r.get("level") in ("P0", "P1")
-        and not r.get("baseline")
-        and not _is_stale(r, max_age_days)
-        and r.get("id") not in notified["ids"]
-    ]
-    # 跨源去重：同一文号（如最高法 + 公报）只推一次
-    dedup, seen_keys = [], set()
-    for r in push:
-        key = r.get("doc_no") or r.get("title")
-        if key in seen_keys:
-            continue
-        seen_keys.add(key)
-        dedup.append(r)
-    push = dedup
-
-    quiet = _defer_for_quiet(app)
-    if quiet and not args.force:
+    push = _select_push(relevant, notified, max_age_days)
+    if _defer_for_quiet(app) and not args.force:
         print("🌙 静默时段（%s），本轮只落盘，推送顺延" % brief.quiet_span())
         push = []
 
@@ -201,26 +226,7 @@ def run(args):
         for r in push:
             print("\n" + brief.render_card(r))
     elif args.notify and push:
-        p0 = [r for r in push if r.get("level") == "P0"]
-        p1 = [r for r in push if r.get("level") != "P0"]
-        sent = 0
-        for r in p0:
-            ok, err = notify.send(brief.render_card(r), signal={"severity": "P0", "key": r.get("id")})
-            if ok:
-                sent += 1
-                notified["ids"][r["id"]] = ts_iso()
-            else:
-                print("❌ 推送失败：%s" % err)
-        if p1:
-            ok, err = notify.send(brief.render_digest(p1), signal={"severity": "P1", "key": "p1-digest"})
-            if ok:
-                sent += len(p1)
-                for r in p1:
-                    notified["ids"][r["id"]] = ts_iso()
-            else:
-                print("❌ 汇总推送失败：%s" % err)
-        _save_notified(notified)
-        print("✅ 已推送 %d 条（P0=%d, P1=%d）" % (sent, len(p0), len(p1)))
+        _deliver(push, notified)
     else:
         flag = "已加 --notify" if args.notify else "未加 --notify"
         print("新条目 %d，相关 %d，待推送 %d（%s，只落盘）" % (len(records), len(relevant), len(push), flag))
