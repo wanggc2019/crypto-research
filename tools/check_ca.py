@@ -40,10 +40,12 @@ def main():
         print("CA: %s ok" % cafile)
         return 0
     if not cafile:
-        print("CA: MISSING —— 该构建未配置默认 cafile，HTTPS 会全部失败；请设置 SSL_CERT_FILE=/etc/ssl/cert.pem")
+        print("CA: MISSING —— 该构建未配置默认 cafile，HTTPS 会全部失败；请安装 certifi 并设置 SSL_CERT_FILE 指向其 cacert.pem")
         return 1
-    print("CA: %s MISSING —— HTTPS 会全部失败。可链接系统 CA：" % cafile)
-    print("  ln -s /etc/ssl/cert.pem %s   （ADR 0010）" % cafile)
+    base = getattr(sys, "_base_executable", None) or sys.executable  # 装进解释器本体，不装进 venv
+    print("CA: %s MISSING —— HTTPS 会全部失败。python.org 构建请安装 certifi 并链接（ADR 0010）：" % cafile)
+    print("  %s -m pip install --upgrade certifi" % base)
+    print('  ln -sf "$(%s -c \'import certifi;print(certifi.where())\')" %s' % (base, cafile))
     return 1
 
 

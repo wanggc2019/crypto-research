@@ -46,7 +46,7 @@
 - **抓取限速**：`crypto_core.http` 对 `r.jina.ai` 做跨进程共享限速（默认 18/min，`JINA_RPM` 可调）。
 - **跨模块契约**：`crypto_core.contracts` 登记 6 个 exports 契约，消费方统一 `contracts.read()`（ADR 0008）。
 - **推送台账 + 全局预算**：每条 Telegram 消息记入 `data/state/notify-ledger/<date>.jsonl`；即时信号走 `notify.send_signal`；预算当前 **observe（只记录不拦截）**，`config/notify-budget.yaml`；`make notify-report days=7` 看统计（ADR 0009）。
-- **环境**：根 `.venv` = python.org **Python 3.12.10**（带 `time.tzset`）+ ruff/PyYAML，2026-11-16 从 3.9 切换；旧 venv 留在 `.venv-py39` 供回退；换解释器后必须 `tools/watchdog.py --install`，python.org 构建需链接系统 CA（ADR 0010）。代码下限仍按 3.9 写，CI 跑 3.9 + 3.12。无 venv 时回退 `python3`。
+- **环境**：根 `.venv` = python.org **Python 3.12.10**（带 `time.tzset`）+ ruff/PyYAML，2026-11-16 从 3.9 切换；旧 venv 留在 `.venv-py39` 供回退；换解释器后必须 `tools/watchdog.py --install`，CA 证书来自 framework 里的 certifi，遇到新的证书错误先升级它（ADR 0010）。代码下限仍按 3.9 写，CI 跑 3.9 + 3.12。无 venv 时回退 `python3`。
 
 ## 4. 常用命令
 
