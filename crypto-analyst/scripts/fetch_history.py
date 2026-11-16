@@ -51,7 +51,7 @@ def fetch(symbol, start_ms):
     for k in sorted(seen):
         r = seen[k]
         out.append({
-            "date": datetime.datetime.utcfromtimestamp(r[0] / 1000).strftime("%Y-%m-%d"),
+            "date": datetime.datetime.fromtimestamp(r[0] / 1000, datetime.timezone.utc).strftime("%Y-%m-%d"),
             "open": float(r[1]), "high": float(r[2]), "low": float(r[3]),
             "close": float(r[4]), "volume": float(r[5]),
         })
