@@ -74,7 +74,7 @@ tail -f <module>/data/logs/collect.log
 
 ## 6. 待办
 
-1. **约 2026-11-23**：看 `make notify-report days=7`，定 `daily_signal_cap` 与是否切 `enforce`（需用户确认）。首日数据：即时信号 23 条/天，cap=10 时 07:00 前即耗尽，主要是 price 与 news 对 BTC 的近重复 P1。
+1. **约 2026-11-23**：看 `make notify-report days=7`，定 `daily_signal_cap` 与是否切 `enforce`（需用户确认）。首日数据（2026-11-16 00:00–10:00，`make notify-report days=1`）：即时信号 23 条，cap=10 时 07:00 前即耗尽，主要是 price 与 news 对 BTC 的近重复 P1。
 2. 架构评审遗留：长函数拆分 + ruff 复杂度门禁；Python 3.9 → 3.12 升级（单独窗口）。
 3. 模块业务待办（可选，按需排期）：
    - crypto-news：Phase 4 早警指标、LLM 三行摘要、周报校准（[方案 §5–§8](crypto-intel-plan.md)）；
