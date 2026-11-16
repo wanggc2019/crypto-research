@@ -315,6 +315,60 @@ def _record_delivery(alert, decision, reason):
     return alert
 
 
+def _take_due_retries(state, now_ts):
+    """取出到期且未超次数的重试事件；其余留在 pending。"""
+    retry_events, keep_pending = [], []
+    for p in state["pending"]:
+        ev = p.get("event") or {}
+        due = now_ts >= _to_int(p.get("next_retry_ts"), 0)
+        attempts = _to_int(p.get("attempts"), 0)
+        if due and attempts < MAX_PENDING_ATTEMPTS:
+            retry_events.append(ev)
+        else:
+            keep_pending.append(p)
+    state["pending"] = keep_pending
+    return retry_events
+
+
+def _merge_events(retry_events, events):
+    """同 dedupe_key 只留一条（严重度更高者优先，同级保留先出现的）。"""
+    by_key = {}
+    for ev in list(retry_events) + list(events or []):
+        key = ev.get("dedupe_key") or ev.get("title") or ""
+        if key not in by_key:
+            by_key[key] = ev
+        elif SEV_RANK.get(ev.get("severity") or "P2", 9) < SEV_RANK.get(by_key[key].get("severity") or "P2", 9):
+            by_key[key] = ev
+    return list(by_key.values())
+
+
+def _mark_sent(state, alert, ev, key, now_ts):
+    """计数 + 冷却（dry-run 也在内存里模拟，保证同轮计划一致）。"""
+    state["counts"][alert["severity"]] = state["counts"].get(alert["severity"], 0) + 1
+    if key:
+        state["cooldowns"][key] = {
+            "ts": now_ts,
+            "magnitude": float(ev.get("magnitude") or 0),
+            "severity": alert["severity"],
+            "rule": ev.get("rule") or "",
+        }
+
+
+def _queue_retry(state, ev, key, pending_meta, now_ts):
+    """发送失败：放入重试队列（线性退避，最多 MAX_PENDING_ATTEMPTS 次 / MAX_PENDING 条）。"""
+    prev = pending_meta.get(key) or {}
+    attempts = _to_int(prev.get("attempts"), 0) + 1
+    created_ts = _to_float(prev.get("created_ts"), 0.0) or now_ts
+    state["pending"] = [p for p in state["pending"] if _event_key(p.get("event")) != key]
+    if attempts <= MAX_PENDING_ATTEMPTS and len(state["pending"]) < MAX_PENDING:
+        state["pending"].append({
+            "event": ev,
+            "attempts": attempts,
+            "created_ts": created_ts,
+            "next_retry_ts": now_ts + 60 * attempts,
+        })
+
+
 # ---------------------------------------------------------------- 主入口
 def deliver(events, rules_cfg, state_dir, env=None, now=None, dry_run=False,
             send_fn=None, poll_seconds=None):
@@ -344,25 +398,7 @@ def deliver(events, rules_cfg, state_dir, env=None, now=None, dry_run=False,
 
     # 重试队列：到期且未超次数的失败事件，合并进本轮（同 dedupe_key 以新一轮为准）
     pending_meta = {_event_key(p.get("event")): p for p in state["pending"]}
-    retry_events, keep_pending = [], []
-    for p in state["pending"]:
-        ev = p.get("event") or {}
-        due = now_ts >= _to_int(p.get("next_retry_ts"), 0)
-        attempts = _to_int(p.get("attempts"), 0)
-        if due and attempts < MAX_PENDING_ATTEMPTS:
-            retry_events.append(ev)
-        else:
-            keep_pending.append(p)
-    state["pending"] = keep_pending
-
-    by_key = {}
-    for ev in list(retry_events) + list(events or []):
-        key = ev.get("dedupe_key") or ev.get("title") or ""
-        if key not in by_key:
-            by_key[key] = ev
-        elif SEV_RANK.get(ev.get("severity") or "P2", 9) < SEV_RANK.get(by_key[key].get("severity") or "P2", 9):
-            by_key[key] = ev
-    merged = list(by_key.values())
+    merged = _merge_events(_take_due_retries(state, now_ts), events)
 
     sent, held, suppressed, archived, errors = [], [], [], 0, []
     for item in select(merged, state, delivery_cfg, now_dt):
@@ -375,17 +411,12 @@ def deliver(events, rules_cfg, state_dir, env=None, now=None, dry_run=False,
 
         if decision == "archive":
             archived += 1
-            if not dry_run:
-                _append_alert_record(state_dir, alert, now_dt)
-            continue
-        if decision == "hold":
+        elif decision == "hold":
             _hold(state, ev, reason, now_ts)
             held.append(alert)
-            if not dry_run:
-                _append_alert_record(state_dir, alert, now_dt)
-            continue
-        if decision == "suppress":
+        elif decision == "suppress":
             suppressed.append(alert)
+        if decision in ("archive", "hold", "suppress"):
             if not dry_run:
                 _append_alert_record(state_dir, alert, now_dt)
             continue
@@ -393,12 +424,7 @@ def deliver(events, rules_cfg, state_dir, env=None, now=None, dry_run=False,
         # decision == send
         if dry_run:
             sent.append(alert)
-            state["counts"][alert["severity"]] = state["counts"].get(alert["severity"], 0) + 1
-            if key:
-                state["cooldowns"][key] = {
-                    "ts": now_ts, "magnitude": float(ev.get("magnitude") or 0),
-                    "severity": alert["severity"], "rule": ev.get("rule") or "",
-                }
+            _mark_sent(state, alert, ev, key, now_ts)
             continue
         text = cards.format_price_alert(alert)
         # 价格告警保留 Telegram 链接预览（设计约束展示行情卡片）。
@@ -406,34 +432,16 @@ def deliver(events, rules_cfg, state_dir, env=None, now=None, dry_run=False,
                               assets=[alert.get("asset") or ev.get("asset")], key=key,
                               sender=send_fn, sender_args=(False,))
         if ok:
-            state["counts"][alert["severity"]] = state["counts"].get(alert["severity"], 0) + 1
+            _mark_sent(state, alert, ev, key, now_ts)
             state["last_sent_ts"] = now_ts
-            if key:
-                state["cooldowns"][key] = {
-                    "ts": now_ts,
-                    "magnitude": float(ev.get("magnitude") or 0),
-                    "severity": alert["severity"],
-                    "rule": ev.get("rule") or "",
-                }
             sent.append(alert)
             _append_alert_record(state_dir, alert, now_dt)
             common.log_line("告警已推送 %s %s %s" % (alert["severity"], " ".join(alert["assets"]) or "-",
                                                   alert["title"]))
         else:
-            failed = _record_delivery(alert, "failed", err or "发送失败")
             errors.append({"dedupe_key": key, "error": err or "发送失败"})
-            prev = pending_meta.get(key) or {}
-            attempts = _to_int(prev.get("attempts"), 0) + 1
-            created_ts = _to_float(prev.get("created_ts"), 0.0) or now_ts
-            state["pending"] = [p for p in state["pending"] if _event_key(p.get("event")) != key]
-            if attempts <= MAX_PENDING_ATTEMPTS and len(state["pending"]) < MAX_PENDING:
-                state["pending"].append({
-                    "event": ev,
-                    "attempts": attempts,
-                    "created_ts": created_ts,
-                    "next_retry_ts": now_ts + 60 * attempts,
-                })
-            _append_alert_record(state_dir, failed, now_dt)
+            _queue_retry(state, ev, key, pending_meta, now_ts)
+            _append_alert_record(state_dir, _record_delivery(alert, "failed", err or "发送失败"), now_dt)
 
     if not dry_run:
         save_state(state_dir, state)

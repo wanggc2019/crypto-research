@@ -278,6 +278,73 @@ def _write_outputs(snapshot, events, delivery_result, paths, now, app_cfg):
     return raw_path
 
 
+def _rule_now(snapshot, source_mode, now):
+    """回放模式（fixtures/snapshot）用快照内时间，保证窗口计算可复现；实盘用当前时间。"""
+    import datetime
+    if source_mode in ("snapshot", "fixtures") and snapshot.get("ts_epoch"):
+        try:
+            return datetime.datetime.fromtimestamp(int(snapshot["ts_epoch"]))
+        except (TypeError, ValueError, OSError):
+            return now
+    return now
+
+
+def _source_rc(snapshot, primary_ok):
+    if int(snapshot.get("sources_ok") or 0) <= 0:
+        return 3
+    if not primary_ok:
+        return 1  # 主源报价不足（< min_primary_sources），数据质量不保
+    return 0  # 主源数量够；单个主源降级/次级源失败不告警
+
+
+def _sort_events(events):
+    return sorted(
+        events or [],
+        key=lambda e: ({"P0": 0, "P1": 1, "P2": 2}.get(e.get("severity") or "P2", 9),
+                       -float(e.get("magnitude") or 0)),
+    )
+
+
+def _apply_delivery_errors(out, delivery_result):
+    if delivery_result.get("errors"):
+        out["errors"].extend(delivery_result["errors"])
+        cred_error = any("凭据" in str(item.get("error", ""))
+                         for item in delivery_result["errors"] if isinstance(item, dict))
+        out["rc"] = max(out["rc"], 2 if cred_error else 1)
+
+
+def _maybe_report(out, args, paths, cfg, snapshot, now):
+    """日报（仅推送模式下真正执行；dry-run 只预览）。"""
+    if not (cfg["app"].get("report") or {}).get("enabled"):
+        return
+    import report
+    out["report"] = report.maybe_run(
+        paths["state"], snapshot, cfg["watchlist"], cfg["app"],
+        env=common.load_env(), now=now, dry_run=args.dry_run or not args.notify,
+    )
+    if (out["report"] or {}).get("errors"):
+        out["errors"].extend(out["report"]["errors"])
+        out["rc"] = max(out["rc"], 1)
+
+
+def _finalize(out, args, paths, snapshot, delivery_result):
+    if out["rc"] < 0:
+        out["rc"] = 0
+    out["finished_at"] = common.ts_iso(common.now())
+    out["prices"] = {a: (q.get("price")) for a, q in (snapshot.get("quotes") or {}).items()}
+    out["source_health"] = {
+        "ok": snapshot.get("sources_ok"), "total": snapshot.get("sources_total"),
+        "errors": (snapshot.get("errors") or [])[:20],
+    }
+    if not args.dry_run:
+        _write_last_run(paths, out)
+        common.log_line("轮次完成 rc=%s 事件=%d 推送=%d 压制=%d 源=%s/%s" % (
+            out["rc"], len(out["events"]), len(delivery_result.get("sent") or []),
+            len(delivery_result.get("held") or []),
+            snapshot.get("sources_ok"), snapshot.get("sources_total"),
+        ), paths)
+
+
 def run_cycle(args, paths, cfg, now=None):
     """跑一轮，返回 {rc, result..., human_lines}。不打印（由 main 决定格式）。"""
     now = now or common.now()
@@ -305,70 +372,25 @@ def run_cycle(args, paths, cfg, now=None):
         out["primary_ok"] = primary_ok
         out["primary_complete"] = primary_complete
         out["primary_missing"] = primary_missing
-        import datetime
-
         import rules
-        # 回放模式（fixtures/snapshot）用快照内时间，保证窗口计算可复现；实盘用当前时间。
-        rule_now = now
-        if source_mode in ("snapshot", "fixtures") and snapshot.get("ts_epoch"):
-            try:
-                rule_now = datetime.datetime.fromtimestamp(int(snapshot["ts_epoch"]))
-            except (TypeError, ValueError, OSError):
-                rule_now = now
+        rule_now = _rule_now(snapshot, source_mode, now)
         state = common.safe_json_load(os.path.join(paths["state"], "market_state.json"), {})
         # 全源不可用时 evaluate 自己会产出 P0 data_quality(force_send) 事件；这里只决定退出码。
         events = rules.evaluate(snapshot, state, cfg["rules"], cfg["watchlist"], now=rule_now)
         new_state = rules.advance_state(state, snapshot, now=rule_now)
         if not args.dry_run:
             common.safe_json_dump(os.path.join(paths["state"], "market_state.json"), new_state)
-        if int(snapshot.get("sources_ok") or 0) <= 0:
-            out["rc"] = 3
-        elif not primary_ok:
-            out["rc"] = 1  # 主源报价不足（< min_primary_sources），数据质量不保
-        else:
-            out["rc"] = 0  # 主源数量够；单个主源降级/次级源失败不告警
-        events = sorted(
-            events or [],
-            key=lambda e: ({"P0": 0, "P1": 1, "P2": 2}.get(e.get("severity") or "P2", 9),
-                           -float(e.get("magnitude") or 0)),
-        )
+        out["rc"] = _source_rc(snapshot, primary_ok)
+        events = _sort_events(events)
         out["events"] = events
         delivery_result = _deliver(events, cfg["rules"], paths, cfg["app"], now,
                                    notify=args.notify, dry_run=args.dry_run)
         out["delivery"] = delivery_result
         if not args.dry_run:
             _write_outputs(snapshot, events, delivery_result, paths, now, cfg["app"])
-        if delivery_result.get("errors"):
-            out["errors"].extend(delivery_result["errors"])
-            cred_error = any("凭据" in str(item.get("error", ""))
-                             for item in delivery_result["errors"] if isinstance(item, dict))
-            out["rc"] = max(out["rc"], 2 if cred_error else 1)
-
-        # 日报（仅推送模式下真正执行；dry-run 只预览）
-        if (cfg["app"].get("report") or {}).get("enabled"):
-            import report
-            out["report"] = report.maybe_run(
-                paths["state"], snapshot, cfg["watchlist"], cfg["app"],
-                env=common.load_env(), now=now, dry_run=args.dry_run or not args.notify,
-            )
-            if (out["report"] or {}).get("errors"):
-                out["errors"].extend(out["report"]["errors"])
-                out["rc"] = max(out["rc"], 1)
-        if out["rc"] < 0:
-            out["rc"] = 0
-        out["finished_at"] = common.ts_iso(common.now())
-        out["prices"] = {a: (q.get("price")) for a, q in (snapshot.get("quotes") or {}).items()}
-        out["source_health"] = {
-            "ok": snapshot.get("sources_ok"), "total": snapshot.get("sources_total"),
-            "errors": (snapshot.get("errors") or [])[:20],
-        }
-        if not args.dry_run:
-            _write_last_run(paths, out)
-            common.log_line("轮次完成 rc=%s 事件=%d 推送=%d 压制=%d 源=%s/%s" % (
-                out["rc"], len(out["events"]), len(delivery_result.get("sent") or []),
-                len(delivery_result.get("held") or []),
-                snapshot.get("sources_ok"), snapshot.get("sources_total"),
-            ), paths)
+        _apply_delivery_errors(out, delivery_result)
+        _maybe_report(out, args, paths, cfg, snapshot, now)
+        _finalize(out, args, paths, snapshot, delivery_result)
         return out
     finally:
         if lock is not None:
@@ -696,6 +718,54 @@ def build_parser():
     return p
 
 
+def _json_summary(out):
+    delivery = out.get("delivery") or {}
+    return {
+        "rc": out.get("rc"),
+        "finished_at": out.get("finished_at"),
+        "source_mode": out.get("source_mode"),
+        "source_health": out.get("source_health"),
+        "primary_ok": out.get("primary_ok"),
+        "primary_complete": out.get("primary_complete"),
+        "primary_missing": out.get("primary_missing"),
+        "prices": out.get("prices"),
+        "events": out.get("events"),
+        "delivery": {
+            "sent": [a.get("title") for a in delivery.get("sent") or []],
+            "held": [a.get("title") for a in delivery.get("held") or []],
+            "suppressed": [a.get("title") for a in delivery.get("suppressed") or []],
+            "archived": delivery.get("archived", 0),
+            "quiet": delivery.get("quiet"),
+            "dry_run": delivery.get("dry_run"),
+        },
+        "report": out.get("report"),
+        "errors": out.get("errors"),
+    }
+
+
+def _print_human(out, quiet):
+    if not quiet or out.get("rc") != 0:
+        for line in _human_lines(out):
+            print(line)
+        print(_healthcheck_line(out))
+
+
+def _loop(args, paths, cfg):
+    """常驻模式：每 N 秒跑一轮（Ctrl-C 退出）；返回最后一轮结果。"""
+    interval = max(15, int(args.loop))
+    out = None
+    try:
+        while True:
+            time.sleep(interval)
+            out = run_cycle(args, paths, cfg, now=common.now())
+            _print_human(out, args.quiet)
+            if not args.quiet or out.get("rc") != 0:
+                sys.stdout.flush()
+    except KeyboardInterrupt:
+        print("已退出 --loop")
+    return out
+
+
 def main(argv=None):
     args = build_parser().parse_args(argv)
     paths = common.data_paths(args.data_dir)
@@ -723,48 +793,13 @@ def main(argv=None):
     now = common.now()
     out = run_cycle(args, paths, cfg, now=now)
     if args.json:
-        summary = {
-            "rc": out.get("rc"),
-            "finished_at": out.get("finished_at"),
-            "source_mode": out.get("source_mode"),
-            "source_health": out.get("source_health"),
-            "primary_ok": out.get("primary_ok"),
-            "primary_complete": out.get("primary_complete"),
-            "primary_missing": out.get("primary_missing"),
-            "prices": out.get("prices"),
-            "events": out.get("events"),
-            "delivery": {
-                "sent": [a.get("title") for a in (out.get("delivery") or {}).get("sent") or []],
-                "held": [a.get("title") for a in (out.get("delivery") or {}).get("held") or []],
-                "suppressed": [a.get("title") for a in (out.get("delivery") or {}).get("suppressed") or []],
-                "archived": (out.get("delivery") or {}).get("archived", 0),
-                "quiet": (out.get("delivery") or {}).get("quiet"),
-                "dry_run": (out.get("delivery") or {}).get("dry_run"),
-            },
-            "report": out.get("report"),
-            "errors": out.get("errors"),
-        }
-        print(json.dumps(summary, ensure_ascii=False, indent=1))
+        print(json.dumps(_json_summary(out), ensure_ascii=False, indent=1))
     else:
-        if not args.quiet or out.get("rc") != 0:
-            for line in _human_lines(out):
-                print(line)
-            print(_healthcheck_line(out))
+        _print_human(out, args.quiet)
         if out.get("rc") == 4:
             print("⚠️ 上一轮仍在运行，本轮跳过")
     if args.loop:
-        interval = max(15, int(args.loop))
-        try:
-            while True:
-                time.sleep(interval)
-                out = run_cycle(args, paths, cfg, now=common.now())
-                if not args.quiet or out.get("rc") != 0:
-                    for line in _human_lines(out):
-                        print(line)
-                    print(_healthcheck_line(out))
-                    sys.stdout.flush()
-        except KeyboardInterrupt:
-            print("已退出 --loop")
+        out = _loop(args, paths, cfg) or out
     return int(out.get("rc") or 0)
 
 
