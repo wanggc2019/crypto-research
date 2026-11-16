@@ -16,7 +16,7 @@ TASK_RE = re.compile(r"""(?:\bresolve|\bchat_for)\(\s*["']([a-z0-9][a-z0-9.-]*)[
                      re.M)
 # 脚本里的 tools/agent_run.py <agent 功能名> ...
 AGENT_RE = re.compile(r"agent_run\.py\"?\s+([a-z0-9][a-z0-9.-]*)")
-SKIP_DIRS = {".venv", ".git", "data", "__pycache__", "tests", "node_modules"}
+SKIP_DIRS = {".venv", ".git", ".claude", "data", "__pycache__", "tests", "node_modules"}
 
 
 def tasks_in_code():

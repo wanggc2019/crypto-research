@@ -77,7 +77,7 @@ TELEGRAM_CHAT_ID=<your_chat_id>
 
 模板见 [`env.example`](env.example)。模块可以直接读根 `.env`（`crypto-news` 已支持：模块内无 `.env` 时回退到仓库根）。
 
-`env.example` 是**入库的凭据清单/模板**（只有变量名和注释，真实值永远为空）；根 `.env` 是**本机实际值**、被 `.gitignore` 排除。新增可选凭据（不填则对应功能自动关闭）：`JINA_API_KEY`、`ANTHROPIC_API_KEY` / `DEEPSEEK_API_KEY`（AI：推文/标题翻译、政策解读、PR 审查；各功能用哪个见 `config/ai.yaml`）、`CMC_API_KEY`、`ETHERSCAN_API_KEY`（crypto-onchain 链上地址级监控，免费档够用）。
+`env.example` 是**入库的凭据清单/模板**（只有变量名和注释，真实值永远为空）；根 `.env` 是**本机实际值**、被 `.gitignore` 排除。新增可选凭据（不填则对应功能自动关闭）：`JINA_API_KEY`、`ANTHROPIC_API_KEY` / `DEEPSEEK_API_KEY`（仅当 `config/ai.yaml` 把某个 AI 功能改成 anthropic / deepseek 时需要；默认用本机 Claude Code 订阅，不需要 key）、`CMC_API_KEY`、`ETHERSCAN_API_KEY`（crypto-onchain 链上地址级监控，免费档够用）。
 
 ## 快速开始
 

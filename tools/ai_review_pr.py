@@ -94,9 +94,9 @@ def require_review_content(content):
 
 def review(diff):
     spec = llm.resolve(TASK)
-    key = os.environ.get(spec["key_env"], "").strip()
+    key = llm.key_for(spec, use_env_file=False)
     if not key:
-        print("::warning::%s 未配置，跳过 AI 审查" % spec["key_env"])
+        print("::warning::%s 不可用（%s），跳过 AI 审查" % (spec["label"], spec["key_env"] or "本机没有 Claude Code"))
         return ""
     prompt = """你是资深代码审查员。只审查下面 git diff 中的改动，不要臆测未出现的代码。
 重点找：真实 bug、安全问题、边界条件、回归风险、测试缺失。

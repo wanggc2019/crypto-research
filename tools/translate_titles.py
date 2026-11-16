@@ -7,7 +7,7 @@
 输出：
     {"translations": ["译文 a", "译文 b"]}
 
-凭据：对应提供商的 key（环境变量优先，否则仓库根 .env）。
+凭据：默认用本机 Claude Code 订阅（claude -p）；改用 anthropic/deepseek 时读对应 key（环境变量优先，否则仓库根 .env）。
 失败时退出码 1 并输出 {"error": "..."}，调用方应回退到规则翻译。
 """
 import argparse
@@ -56,7 +56,7 @@ def translate(titles, timeout=45):
         return {"error": str(e)}
     key = find_api_key(spec)
     if not key:
-        return {"error": "missing %s" % spec["key_env"]}
+        return {"error": "missing %s" % (spec["key_env"] or "claude 命令（Claude Code 订阅）")}
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": json.dumps(titles, ensure_ascii=False)},

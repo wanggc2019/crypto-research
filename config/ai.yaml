@@ -1,12 +1,17 @@
 # 全仓 AI 选择（ADR 0011）：按「功能」决定用哪个提供商 / 模型 / effort。
-# 改这里即可换 AI，不用改代码；只写环境变量名，key 本身只放仓库根 .env。
+# 改这里即可换 AI，不用改代码；需要 key 的提供商只写环境变量名，key 本身只放仓库根 .env。
 # 校验：make gate 会检查本文件（未知提供商 / 代码里用到但这里没登记的功能 → 失败）。
 schema_version: 1
 
-# 提供商：代码里实现了 anthropic（官方 SDK）与 deepseek（OpenAI 兼容 /chat/completions）两种调用方式。
+# 提供商（代码里实现了这三种调用方式）：
+#   claude-code：本机 Claude Code 订阅（claude -p，不给工具、新会话），不需要 API key，占订阅的 5 小时/7 天额度
+#   anthropic  ：Anthropic API（官方 SDK），按量计费，需要 ANTHROPIC_API_KEY
+#   deepseek   ：DeepSeek（OpenAI 兼容 /chat/completions），需要 DEEPSEEK_API_KEY
 providers:
-  anthropic:
+  claude-code:
     label: Claude
+  anthropic:
+    label: Claude API
     key_env: ANTHROPIC_API_KEY
   deepseek:
     label: DeepSeek
@@ -16,10 +21,10 @@ providers:
 
 # 功能未单独写的字段，从这里继承。
 defaults:
-  provider: anthropic
+  provider: claude-code
   model: claude-opus-5-5
-  # effort：anthropic 专用（low / medium / high / xhigh / max）；不写 = 模型默认；deepseek 忽略
-  # max_tokens：含思考 token，默认 16000
+  # effort：claude-code / anthropic 有效（low / medium / high / xhigh / max）；不写 = 模型默认；deepseek 忽略
+  # max_tokens：仅 anthropic / deepseek 生效，默认 16000
 
 # 直接调用（单次请求）的功能。功能名 = <模块>.<功能>，代码里用这个名字取配置。
 tasks:
@@ -31,7 +36,7 @@ tasks:
     effort: low
   policy.interpret:         # crypto-policy P0/P1 解读草稿（低频）
     model: claude-opus-5-5
-  ci.pr-review:             # GitHub Actions 的 PR 审查（CI 里 key 来自 secret，变量名同 key_env）
+  ci.pr-review:             # GitHub Actions 的 PR 审查（CI 机器上没有 Claude Code 登录时自动跳过）
     model: claude-opus-5-5
     effort: high
 

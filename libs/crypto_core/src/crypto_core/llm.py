@@ -7,13 +7,17 @@
     text = llm.complete(spec, messages, key)        # 失败抛 LLMError
 或一步到位：llm.chat_for("policy.interpret", messages)（没有 key 也抛 LLMError）。
 
-提供商：anthropic（官方 SDK，见 chat()）、deepseek（OpenAI 兼容 /chat/completions，标准库 http）。
+提供商：claude-code（本机 Claude Code 订阅，claude -p，不需要 API key）、anthropic（官方 SDK + ANTHROPIC_API_KEY）、
+deepseek（OpenAI 兼容 /chat/completions，标准库 http）。
 只负责「找 key → 发请求 → 取文本 → 抽 JSON」；提示词、批量、缓存、降级留在调用方。
 注意：调用即把内容发给对应提供商（推文/标题/政策原文/代码 diff），调用方需自行确认可外发。
 """
 import json
 import os
 import re
+import shutil
+import subprocess
+import tempfile
 import urllib.error
 
 from . import config as _config
@@ -22,7 +26,10 @@ from . import http as _http
 from . import paths as _paths
 
 AI_CONFIG = "config/ai.yaml"
-PROVIDER_KINDS = ("anthropic", "deepseek")
+PROVIDER_KINDS = ("claude-code", "anthropic", "deepseek")
+NO_KEY_PROVIDERS = ("claude-code",)  # 用本机登录，不需要 key_env
+SUBSCRIPTION = "subscription"         # claude-code 的 key_for 返回值（非空 = 可用）
+CLAUDE_PATHS = [os.path.expanduser("~/.local/bin"), "/usr/local/bin", "/opt/homebrew/bin"]
 EFFORTS = ("low", "medium", "high", "xhigh", "max")
 
 DEFAULT_MODEL = "claude-opus-5-5"
@@ -67,7 +74,7 @@ def validate_config(cfg, tasks_in_code=(), agents_in_code=()):
     for name in providers:
         if name not in PROVIDER_KINDS:
             problems.append("providers.%s：不支持的提供商（只实现了 %s）" % (name, " / ".join(PROVIDER_KINDS)))
-        elif not (providers[name] or {}).get("key_env"):
+        elif name not in NO_KEY_PROVIDERS and not (providers[name] or {}).get("key_env"):
             problems.append("providers.%s：缺少 key_env" % name)
     tasks = cfg.get("tasks") or {}
     for task in ["defaults"] + sorted(tasks):
@@ -112,7 +119,7 @@ def resolve(task, cfg=None):
         raise LLMError("%s：effort=%r 不合法（%s）" % (where, effort, "/".join(EFFORTS)))
     return {
         "task": task, "provider": provider, "label": pinfo.get("label") or provider, "model": str(model),
-        "effort": effort if provider == "anthropic" else None,
+        "effort": effort if provider in ("anthropic", "claude-code") else None,
         "key_env": pinfo.get("key_env") or "", "base_url": pinfo.get("base_url"),
         "max_tokens": int(spec.get("max_tokens") or DEFAULT_MAX_TOKENS),
     }
@@ -152,14 +159,24 @@ def resolve_agent(task, cfg=None):
             "allowed_tools": list(tools), "timeout_seconds": int(spec.get("timeout_seconds") or 1800)}
 
 
+def claude_binary():
+    """本机 claude 命令（launchd 的 PATH 很干净，额外找 ~/.local/bin 等）；找不到返回 ""。"""
+    path = os.pathsep.join([os.environ.get("PATH", "")] + CLAUDE_PATHS)
+    return shutil.which("claude", path=path) or ""
+
+
 def key_for(spec, env=None, use_os_environ=True, use_env_file=True):
-    """按 spec 的 key_env 找 key（见 find_api_key）；没有返回 ""。"""
+    """按 spec 的 key_env 找 key（见 find_api_key）；没有返回 ""。claude-code：装了 claude 就返回 SUBSCRIPTION。"""
+    if spec["provider"] in NO_KEY_PROVIDERS:
+        return SUBSCRIPTION if claude_binary() else ""
     return find_api_key(env=env, names=(spec["key_env"],), use_os_environ=use_os_environ,
                         use_env_file=use_env_file)
 
 
 def complete(spec, messages, api_key, timeout=60, retries=2, base_url=None):
     """按 spec 的提供商发一次请求，返回文本；失败抛 LLMError。base_url 只给离线测试用。"""
+    if spec["provider"] == "claude-code":
+        return _claude_code_chat(messages, spec["model"], spec.get("effort"), timeout=timeout)
     if spec["provider"] == "deepseek":
         return _openai_compat_chat(messages, api_key, spec["model"], base_url or spec.get("base_url"),
                                    max_tokens=spec["max_tokens"], timeout=timeout, retries=retries)
@@ -172,8 +189,47 @@ def chat_for(task, messages, env=None, timeout=60, retries=2):
     spec = resolve(task)
     key = key_for(spec, env=env)
     if not key:
-        raise LLMError("missing %s（%s 用 %s）" % (spec["key_env"], task, spec["label"]))
+        raise LLMError("missing %s（%s 用 %s）" % (spec["key_env"] or "claude 命令", task, spec["label"]))
     return complete(spec, messages, key, timeout=timeout, retries=retries)
+
+
+def _claude_code_chat(messages, model, effort=None, timeout=60, binary=None):
+    """claude -p 当纯文本补全用：不给任何工具、自定义 system prompt、新会话、不读用户设置；用本机订阅登录。"""
+    binary = binary or claude_binary()
+    if not binary:
+        raise LLMError("找不到 claude 命令（Claude Code 未安装）")
+    system, rest = _split_system(messages)
+    prompt = "\n\n".join(str(m["content"]) for m in rest)
+    cmd = [binary, "-p", "--no-session-persistence", "--setting-sources", "project,local", "--tools", "",
+           "--output-format", "json", "--model", model]
+    if effort:
+        cmd += ["--effort", effort]
+    if system:
+        cmd += ["--system-prompt", system]
+    env = dict(os.environ)
+    for name in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"):  # 留着会被改成按量计费
+        env.pop(name, None)
+    env["PATH"] = os.pathsep.join([env.get("PATH", "")] + CLAUDE_PATHS)
+    try:
+        proc = subprocess.run(cmd, input=prompt, capture_output=True, text=True, timeout=timeout, env=env,
+                              cwd=tempfile.gettempdir())  # 中性目录：不带入任何项目上下文
+    except subprocess.TimeoutExpired:
+        raise LLMError("claude -p 超过 %s 秒" % timeout) from None
+    try:
+        data = json.loads(proc.stdout)
+    except ValueError:
+        raise LLMError("claude -p 退出码 %s：%s" % (proc.returncode, (proc.stderr or proc.stdout)[-300:].strip())) from None
+    if data.get("is_error") or data.get("subtype") != "success":
+        raise LLMError("claude -p 失败（%s，%s）：%s" % (data.get("subtype"), data.get("api_error_status"),
+                                                   str(data.get("result") or "")[:300]))
+    if data.get("stop_reason") == "refusal":
+        raise LLMError("模型拒绝回答")
+    if data.get("stop_reason") == "max_tokens":
+        raise LLMError("输出被 max_tokens 截断")
+    text = str(data.get("result") or "").strip()
+    if not text:
+        raise LLMError("claude -p 没有返回文本")
+    return text
 
 
 def _openai_compat_chat(messages, api_key, model, base_url, max_tokens=None, timeout=60, retries=2):
