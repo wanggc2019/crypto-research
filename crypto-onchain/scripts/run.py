@@ -92,41 +92,108 @@ def _price_context_offline(fixtures_dir, now_ts):
             "assets": assets, "error": None if assets else "fixture price_export 无 assets"}
 
 
+def _empty_trades():
+    return {"trades": [], "pages": 0, "weight": 0, "truncated": False,
+            "coverage_seconds": 0, "first_ts": None, "last_ts": None, "error": None}
+
+
+def _collect_trades(assets_cfg, bn, binance_on, fixtures_dir, now_ts):
+    """1) 逐笔成交（Binance）。"""
+    trade_meta = {}
+    for asset, row in assets_cfg.items():
+        if not binance_on:
+            trade_meta[asset] = _empty_trades()
+        elif fixtures_dir:
+            trade_meta[asset] = sources.load_fixture_trades(fixtures_dir, row.get("binance"))
+        else:
+            trade_meta[asset] = sources.fetch_binance_trades(
+                bn.get("base"),
+                row.get("binance"),
+                now_ts,
+                window_seconds=bn.get("window_seconds") or 900,
+                limit=bn.get("request_limit") or 1000,
+                max_pages=bn.get("max_pages") or 12,
+                timeout=bn.get("timeout_seconds") or 8,
+            )
+    return trade_meta
+
+
+def _collect_oi_hist(assets_cfg, bn, binance_on, fixtures_dir):
+    """2.5) 官方 OI 历史（优先；失败时归因自动降级用本地历史）。"""
+    oi_hist = {}
+    oi_cfg = bn.get("oi_hist") or {}
+    for asset, row in assets_cfg.items():
+        if not binance_on:
+            oi_hist[asset] = []
+        elif fixtures_dir:
+            rows, _err = sources.load_fixture_oi_history(fixtures_dir, row.get("binance"))
+            oi_hist[asset] = rows
+        else:
+            rows, _err = sources.fetch_oi_history(
+                bn.get("futures_base"),
+                row.get("binance"),
+                period=oi_cfg.get("period") or "15m",
+                limit=oi_cfg.get("limit") or 3,
+                timeout=bn.get("timeout_seconds") or 8,
+            )
+            oi_hist[asset] = rows
+    return oi_hist
+
+
+def _collect_llama(llama, llama_on, rules, fixtures_dir):
+    """3) CEX 储备净流 + 稳定币（DefiLlama，免费、免 key）→ (cex_rows, cex_err, st_rows, st_err)。"""
+    symbols = (rules.get("stablecoin") or {}).get("symbols")
+    if not llama_on:
+        return [], None, [], None
+    if fixtures_dir:
+        cex_rows, cex_err = sources.load_fixture_cex_flows(fixtures_dir)
+        st_rows, st_err = sources.load_fixture_stablecoins(fixtures_dir, symbols)
+        return cex_rows, cex_err, st_rows, st_err
+    cex_rows, cex_err = sources.fetch_cex_flows(
+        llama.get("cexs_url"), timeout=llama.get("timeout_seconds") or 12,
+    )
+    st_rows, st_err = sources.fetch_stablecoins(
+        llama.get("stablecoins_url"), symbols, timeout=llama.get("timeout_seconds") or 12,
+    )
+    return cex_rows, cex_err, st_rows, st_err
+
+
+def _collect_liquidations(assets_cfg, okx, okx_on, fixtures_dir):
+    """4) 清算（仅 OKX 口径）。"""
+    liq_events = {}
+    for asset, row in assets_cfg.items():
+        if not okx_on:
+            liq_events[asset] = {"events": [], "error": None}
+            continue
+        if fixtures_dir:
+            events, err = sources.load_fixture_liquidations(fixtures_dir, row.get("okx_uly"))
+        else:
+            events, err = sources.fetch_okx_liquidations(
+                okx.get("base"), row.get("okx_uly"),
+                limit=okx.get("liquidation_limit") or 100,
+                timeout=okx.get("timeout_seconds") or 8,
+            )
+        liq_events[asset] = {"events": events, "error": None if events else err}
+    return liq_events
+
+
 def _collect(cfg, paths, fixtures_dir, now_ts=None):
-    """采集 + 指标。返回 (assets, cex_flows, stablecoins, price_ctx, now_ts, errors)。"""
+    """采集 + 指标。返回 (assets, cex_flows, stablecoins, price_ctx, now_ts, errors, oi_hist)。"""
     app = cfg["app"]
     rules = cfg["rules"]
     watchlist = cfg["watchlist"]
     src = app.get("sources") or {}
-    binance_on = bool((src.get("binance") or {}).get("enabled", True))
+    bn = src.get("binance") or {}
+    binance_on = bool(bn.get("enabled", True))
     okx_on = bool((src.get("okx") or {}).get("enabled", True))
     llama_on = bool((src.get("defillama") or {}).get("enabled", True))
+    assets_cfg = watchlist.get("assets") or {}
     errors = []
 
     # 0) 时钟：联网模式先定 now；fixtures 模式等成交数据回来后用最新成交时间当"现在"
     if not fixtures_dir:
         now_ts = int(now_ts or time.time())
-
-    # 1) 逐笔成交（fixtures 时先取到数据再定时钟）
-    trade_meta = {}
-    assets_cfg = watchlist.get("assets") or {}
-    for asset, row in assets_cfg.items():
-        if not binance_on:
-            trade_meta[asset] = {"trades": [], "pages": 0, "weight": 0, "truncated": False,
-                                 "coverage_seconds": 0, "first_ts": None, "last_ts": None, "error": None}
-        elif fixtures_dir:
-            trade_meta[asset] = sources.load_fixture_trades(fixtures_dir, row.get("binance"))
-        else:
-            trade_meta[asset] = sources.fetch_binance_trades(
-                (src.get("binance") or {}).get("base"),
-                row.get("binance"),
-                now_ts,
-                window_seconds=(src.get("binance") or {}).get("window_seconds") or 900,
-                limit=(src.get("binance") or {}).get("request_limit") or 1000,
-                max_pages=(src.get("binance") or {}).get("max_pages") or 12,
-                timeout=(src.get("binance") or {}).get("timeout_seconds") or 8,
-            )
-
+    trade_meta = _collect_trades(assets_cfg, bn, binance_on, fixtures_dir, now_ts)
     # 离线回放：用数据里最新的成交时间当"现在"，否则窗口过滤会把样本全丢掉
     if fixtures_dir:
         latest = [m.get("last_ts") for m in trade_meta.values() if m.get("last_ts")]
@@ -142,62 +209,13 @@ def _collect(cfg, paths, fixtures_dir, now_ts=None):
     if not price_ctx.get("ok"):
         errors.append("price_context: %s" % (price_ctx.get("error") or "不可用"))
 
-    # 2.5) 官方 OI 历史（优先；失败时归因自动降级用本地历史）
-    oi_hist = {}
-    oi_cfg = (src.get("binance") or {}).get("oi_hist") or {}
-    for asset, row in assets_cfg.items():
-        if not binance_on:
-            oi_hist[asset] = []
-        elif fixtures_dir:
-            rows, _err = sources.load_fixture_oi_history(fixtures_dir, row.get("binance"))
-            oi_hist[asset] = rows
-        else:
-            rows, _err = sources.fetch_oi_history(
-                (src.get("binance") or {}).get("futures_base"),
-                row.get("binance"),
-                period=oi_cfg.get("period") or "15m",
-                limit=oi_cfg.get("limit") or 3,
-                timeout=(src.get("binance") or {}).get("timeout_seconds") or 8,
-            )
-            oi_hist[asset] = rows
-
-    # 3) CEX 储备净流 + 稳定币（免费、免 key）
-    llama = src.get("defillama") or {}
-    if not llama_on:
-        cex_rows, cex_err, st_rows, st_err = [], None, [], None
-    elif fixtures_dir:
-        cex_rows, cex_err = sources.load_fixture_cex_flows(fixtures_dir)
-        st_rows, st_err = sources.load_fixture_stablecoins(
-            fixtures_dir, (rules.get("stablecoin") or {}).get("symbols"),
-        )
-    else:
-        cex_rows, cex_err = sources.fetch_cex_flows(
-            llama.get("cexs_url"), timeout=llama.get("timeout_seconds") or 12,
-        )
-        st_rows, st_err = sources.fetch_stablecoins(
-            llama.get("stablecoins_url"),
-            (rules.get("stablecoin") or {}).get("symbols"),
-            timeout=llama.get("timeout_seconds") or 12,
-        )
+    oi_hist = _collect_oi_hist(assets_cfg, bn, binance_on, fixtures_dir)
+    cex_rows, cex_err, st_rows, st_err = _collect_llama(src.get("defillama") or {}, llama_on, rules, fixtures_dir)
     if cex_err:
         errors.append("cex_flows: %s" % cex_err)
     if st_err:
         errors.append("stablecoins: %s" % st_err)
-
-    # 4) 清算（仅 OKX 口径）
-    liq_events = {}
-    for asset, row in assets_cfg.items():
-        if not okx_on:
-            liq_events[asset] = {"events": [], "error": None}
-        elif fixtures_dir:
-            events, err = sources.load_fixture_liquidations(fixtures_dir, row.get("okx_uly"))
-        else:
-            events, err = sources.fetch_okx_liquidations(
-                (src.get("okx") or {}).get("base"), row.get("okx_uly"),
-                limit=(src.get("okx") or {}).get("liquidation_limit") or 100,
-                timeout=(src.get("okx") or {}).get("timeout_seconds") or 8,
-            )
-        liq_events[asset] = {"events": events, "error": None if events else err}
+    liq_events = _collect_liquidations(assets_cfg, src.get("okx") or {}, okx_on, fixtures_dir)
 
     # 5) 指标
     cex_flows = indicators.cex_flow_metrics(
@@ -528,92 +546,94 @@ def _status(cfg, paths):
 
 
 # ---------------------------------------------------------------- 主流程
-def run_once(cfg, paths, fixtures_dir=None, dry_run=False):
-    t0 = time.time()
-    assets, cex_flows, stablecoins, price_ctx, now_ts, errors, oi_hist = _collect(cfg, paths, fixtures_dir)
+def _fixture_walletflow(fixtures_dir, wf_cfg):
+    """离线回放：从 fixtures 构造与 fetch_transfers 同形的 (records, meta, error)。"""
+    wf_records = walletflow.fixture_records(fixtures_dir, wf_cfg)
+    fixture_chains = []
+    for _chain in wf_cfg.get("chains") or []:
+        _name = _chain.get("name")
+        _rows = [r for r in wf_records if r.get("chain") == _name]
+        fixture_chains.append({
+            "name": _name, "latest_block": None, "from_block": None, "to_block": None,
+            "scanned_blocks": 0, "skipped_blocks": 0, "rpc_calls": 0,
+            "n_large": len(_rows), "usd_total": sum(float(r.get("usd") or 0) for r in _rows),
+            "error": None,
+        })
+    wf_meta = {
+        "chains": fixture_chains,
+        "n_large": len(wf_records),
+        "usd_total": sum(float(r.get("usd") or 0) for r in wf_records),
+    }
+    return wf_records, wf_meta, None
+
+
+def _walletflow_alerts(wf_records, wf_cfg, alerts_cfg, paths, dry_run, market):
+    """事件驱动告警；失败只记录，不拖垮采集。返回写入 walletflow_meta 的字段。"""
+    assets, cex_flows, stablecoins, price_ctx = market
     repo_root = os.path.dirname(common.ROOT)
-    directions = {a: (assets.get(a) or {}).get("direction", "unknown") for a in assets}
-    candidates = signals.build_candidates(
-        {a: {"taker_5m": (assets[a] or {}).get("taker_5m"),
-             "liq_15m": (assets[a] or {}).get("liq_15m")} for a in assets},
-        cex_flows, stablecoins, cfg["rules"], directions,
-    )
-    # M2 归因引擎：需要跨轮 OI 历史（15m 变化）+ 资金费率（来自 crypto-price exports）
-    # 链上大额转账（免费公共 RPC；辅助信号，失败不阻塞主流程）
-    walletflow_meta = {"enabled": False}
-    wf_records = []
+    try:
+        wf_alert = walletflow_alerts.process(
+            wf_records, alerts_cfg, paths, wf_cfg.get("labels") or {},
+            dry_run=dry_run, now=common.now(),
+            context={
+                "btc_change_24h": (assets.get("BTC") or {}).get("change_24h_pct"),
+                "cex_net_24h_bps": cex_flows.get("net_24h_bps"),
+                "stablecoin_net_issue_24h_usd": stablecoins.get("net_issue_24h_usd"),
+                # 智能判断：价格（含信号）+ 新闻 + 资金面
+                "assets": price_ctx.get("assets") or {},
+                "signals": (market_context.load_price_export(repo_root).get("signals") or []),
+                "news": market_context.load_news(repo_root, common.today_str()),
+            },
+        )
+    except Exception as e:  # noqa: BLE001 - 告警失败不拖垮采集
+        wf_alert = {"sent": False, "n": 0, "error": "%s: %s" % (type(e).__name__, str(e)[:120]),
+                    "suppressed": 0, "text": ""}
+    out = {"alerts": {
+        "sent_round": wf_alert.get("n") if wf_alert.get("sent") else 0,
+        "suppressed": wf_alert.get("suppressed") or 0,
+        "error": wf_alert.get("error"),
+    }}
+    if dry_run and wf_alert.get("text"):
+        out["alerts_preview"] = wf_alert["text"]
+    return out
+
+
+def _walletflow_step(cfg, paths, fixtures_dir, dry_run, market):
+    """链上大额转账（免费公共 RPC；辅助信号，失败不阻塞主流程）→ walletflow_meta。"""
     wf_cfg = (cfg["app"] or {}).get("walletflow") or {}
-    if wf_cfg.get("enabled"):
-        cursor = _load_walletflow_cursor(paths)
-        if fixtures_dir:
-            wf_records = walletflow.fixture_records(fixtures_dir, wf_cfg)
-            fixture_chains = []
-            for _chain in wf_cfg.get("chains") or []:
-                _name = _chain.get("name")
-                _rows = [r for r in wf_records if r.get("chain") == _name]
-                fixture_chains.append({
-                    "name": _name, "latest_block": None, "from_block": None, "to_block": None,
-                    "scanned_blocks": 0, "skipped_blocks": 0, "rpc_calls": 0,
-                    "n_large": len(_rows), "usd_total": sum(float(r.get("usd") or 0) for r in _rows),
-                    "error": None,
-                })
-            wf_meta = {
-                "chains": fixture_chains,
-                "n_large": len(wf_records),
-                "usd_total": sum(float(r.get("usd") or 0) for r in wf_records),
-            }
-            wf_error = None
-        else:
-            wf_records, wf_meta, wf_error = walletflow.fetch_transfers(wf_cfg, cursor)
-        walletflow_meta = walletflow.summarize(wf_records, wf_meta, wf_error)
-        if not dry_run and not wf_error:
-            _advance_walletflow_cursor(paths, wf_meta, cursor)
-            _log_walletflow(paths, wf_records)
-        # 事件驱动告警（fixtures 离线回放不发送；dry-run 只生成预览）
-        alerts_cfg = wf_cfg.get("alerts") or {}
-        if alerts_cfg.get("enabled", True) and not fixtures_dir:
-            try:
-                wf_alert = walletflow_alerts.process(
-                    wf_records, alerts_cfg, paths, wf_cfg.get("labels") or {},
-                    dry_run=dry_run, now=common.now(),
-                    context={
-                        "btc_change_24h": (assets.get("BTC") or {}).get("change_24h_pct"),
-                        "cex_net_24h_bps": cex_flows.get("net_24h_bps"),
-                        "stablecoin_net_issue_24h_usd": stablecoins.get("net_issue_24h_usd"),
-                        # 智能判断：价格（含信号）+ 新闻 + 资金面
-                        "assets": price_ctx.get("assets") or {},
-                        "signals": (market_context.load_price_export(repo_root).get("signals") or []),
-                        "news": market_context.load_news(repo_root, common.today_str()),
-                    },
-                )
-            except Exception as e:  # noqa: BLE001 - 告警失败不拖垮采集
-                wf_alert = {"sent": False, "n": 0, "error": "%s: %s" % (type(e).__name__, str(e)[:120]),
-                            "suppressed": 0, "text": ""}
-            walletflow_meta["alerts"] = {
-                "sent_round": wf_alert.get("n") if wf_alert.get("sent") else 0,
-                "suppressed": wf_alert.get("suppressed") or 0,
-                "error": wf_alert.get("error"),
-            }
-            if dry_run and wf_alert.get("text"):
-                walletflow_meta["alerts_preview"] = wf_alert["text"]
-    # 已知地址持仓（免费公共接口；TTL 内只读缓存；单地址失败不影响整轮 rc）
-    holdings_meta = {"enabled": False}
-    if ((cfg["app"] or {}).get("holdings") or {}).get("enabled", True):
-        try:
-            holdings_meta = holdings_collect.collect(
-                cfg, paths, price_ctx, now=common.now(),
-                fixtures_dir=fixtures_dir, dry_run=dry_run,
-            )
-        except Exception as e:  # noqa: BLE001 - 持仓监控失败不拖垮主流程
-            holdings_meta = {"enabled": True, "entries": [], "changes": [], "errors": [],
-                             "error": "%s: %s" % (type(e).__name__, str(e)[:120])}
-    oi_changes, oi_sources = _oi_changes(assets, paths, now_ts, dry_run, cfg["rules"], oi_hist=oi_hist)
-    for asset, row in assets.items():
-        row["oi_change_15m_pct"] = oi_changes.get(asset)
-        row["oi_source"] = oi_sources.get(asset)
-    attributions = attribution.build_attributions(
-        assets, cex_flows, stablecoins, cfg["rules"], directions, oi_changes=oi_changes,
-    )
+    if not wf_cfg.get("enabled"):
+        return {"enabled": False}
+    cursor = _load_walletflow_cursor(paths)
+    if fixtures_dir:
+        wf_records, wf_meta, wf_error = _fixture_walletflow(fixtures_dir, wf_cfg)
+    else:
+        wf_records, wf_meta, wf_error = walletflow.fetch_transfers(wf_cfg, cursor)
+    walletflow_meta = walletflow.summarize(wf_records, wf_meta, wf_error)
+    if not dry_run and not wf_error:
+        _advance_walletflow_cursor(paths, wf_meta, cursor)
+        _log_walletflow(paths, wf_records)
+    # 事件驱动告警（fixtures 离线回放不发送；dry-run 只生成预览）
+    alerts_cfg = wf_cfg.get("alerts") or {}
+    if alerts_cfg.get("enabled", True) and not fixtures_dir:
+        walletflow_meta.update(_walletflow_alerts(wf_records, wf_cfg, alerts_cfg, paths, dry_run, market))
+    return walletflow_meta
+
+
+def _holdings_step(cfg, paths, price_ctx, fixtures_dir, dry_run):
+    """已知地址持仓（免费公共接口；TTL 内只读缓存；单地址失败不影响整轮 rc）。"""
+    if not ((cfg["app"] or {}).get("holdings") or {}).get("enabled", True):
+        return {"enabled": False}
+    try:
+        return holdings_collect.collect(
+            cfg, paths, price_ctx, now=common.now(),
+            fixtures_dir=fixtures_dir, dry_run=dry_run,
+        )
+    except Exception as e:  # noqa: BLE001 - 持仓监控失败不拖垮主流程
+        return {"enabled": True, "entries": [], "changes": [], "errors": [],
+                "error": "%s: %s" % (type(e).__name__, str(e)[:120])}
+
+
+def _attach_attributions(candidates, attributions):
     for c in candidates:
         if c.get("scope") == "asset":
             att = (attributions.get("assets") or {}).get(c.get("asset"))
@@ -625,6 +645,55 @@ def run_once(cfg, paths, fixtures_dir=None, dry_run=False):
                 "category_code": att.get("category_code"),
                 "confidence": att.get("confidence"),
             }
+
+
+def _persist_round(cfg, paths, snapshot, candidate_records):
+    written = _write_shadow(cfg, paths, snapshot, candidate_records)
+    written["exports"] = _write_exports(cfg, paths, snapshot)
+    attributions, assets = snapshot["attribution"], snapshot["assets"]
+    cex_flows, stablecoins = snapshot["cex_flows"], snapshot["stablecoins"]
+    _log_attributions(paths, attributions, assets)
+    att_n = sum(1 for a in (attributions.get("assets") or {}).values() if a)
+    att_n += 1 if attributions.get("market") else 0
+    common.log_line(
+        "shadow: assets=%d cex_n=%d stable_n=%d candidates=%d attributions=%d walletflow=%d holdings=%d errors=%d"
+        % (len(assets), cex_flows.get("n_eligible") or 0, stablecoins.get("n") or 0,
+           len(snapshot["candidates"]), att_n, snapshot["walletflow"].get("n_large") or 0,
+           snapshot["holdings"].get("n") or 0, len(snapshot["errors"])),
+        paths, filename=(cfg["app"].get("logging") or {}).get("file") or "onchain.log",
+    )
+    return written
+
+
+def _round_rc(assets, cex_flows, stablecoins, errors):
+    """退出码判定：主要源全挂 → 3；部分失败 → 1。"""
+    main_ok = sum(1 for a in assets if (assets[a] or {}).get("taker_5m", {}).get("n_trades"))
+    if not main_ok and not cex_flows.get("n_eligible") and not stablecoins.get("n"):
+        return 3
+    return 1 if errors else 0
+
+
+def run_once(cfg, paths, fixtures_dir=None, dry_run=False):
+    t0 = time.time()
+    assets, cex_flows, stablecoins, price_ctx, now_ts, errors, oi_hist = _collect(cfg, paths, fixtures_dir)
+    directions = {a: (assets.get(a) or {}).get("direction", "unknown") for a in assets}
+    candidates = signals.build_candidates(
+        {a: {"taker_5m": (assets[a] or {}).get("taker_5m"),
+             "liq_15m": (assets[a] or {}).get("liq_15m")} for a in assets},
+        cex_flows, stablecoins, cfg["rules"], directions,
+    )
+    # M2 归因引擎：需要跨轮 OI 历史（15m 变化）+ 资金费率（来自 crypto-price exports）
+    walletflow_meta = _walletflow_step(cfg, paths, fixtures_dir, dry_run,
+                                       (assets, cex_flows, stablecoins, price_ctx))
+    holdings_meta = _holdings_step(cfg, paths, price_ctx, fixtures_dir, dry_run)
+    oi_changes, oi_sources = _oi_changes(assets, paths, now_ts, dry_run, cfg["rules"], oi_hist=oi_hist)
+    for asset, row in assets.items():
+        row["oi_change_15m_pct"] = oi_changes.get(asset)
+        row["oi_source"] = oi_sources.get(asset)
+    attributions = attribution.build_attributions(
+        assets, cex_flows, stablecoins, cfg["rules"], directions, oi_changes=oi_changes,
+    )
+    _attach_attributions(candidates, attributions)
     snapshot = {
         "schema": "onchain/shadow/v1",
         "generated_at": common.ts_iso(),
@@ -649,29 +718,113 @@ def run_once(cfg, paths, fixtures_dir=None, dry_run=False):
         "errors": errors,
     }
     candidate_records = _candidate_records(candidates, now_ts, assets, cex_flows)
-    written = {}
-    if not dry_run:
-        written = _write_shadow(cfg, paths, snapshot, candidate_records)
-        written["exports"] = _write_exports(cfg, paths, snapshot)
-        _log_attributions(paths, attributions, assets)
-        att_n = sum(1 for a in (attributions.get("assets") or {}).values() if a)
-        att_n += 1 if attributions.get("market") else 0
-        common.log_line(
-            "shadow: assets=%d cex_n=%d stable_n=%d candidates=%d attributions=%d walletflow=%d holdings=%d errors=%d"
-            % (len(assets), cex_flows.get("n_eligible") or 0, stablecoins.get("n") or 0,
-               len(candidates), att_n, walletflow_meta.get("n_large") or 0,
-               holdings_meta.get("n") or 0, len(errors)),
-            paths, filename=(cfg["app"].get("logging") or {}).get("file") or "onchain.log",
-        )
-    # 退出码判定：主要源全挂 → 3；部分失败 → 1
-    main_ok = sum(1 for a in assets if (assets[a] or {}).get("taker_5m", {}).get("n_trades"))
-    if not main_ok and not cex_flows.get("n_eligible") and not stablecoins.get("n"):
-        rc = 3
-    elif errors:
-        rc = 1
-    else:
-        rc = 0
+    written = {} if dry_run else _persist_round(cfg, paths, snapshot, candidate_records)
+    rc = _round_rc(assets, cex_flows, stablecoins, errors)
     return snapshot, candidate_records, written, rc, round(time.time() - t0, 2)
+
+
+def _print_walletflow(snapshot):
+    wf = snapshot.get("walletflow") or {}
+    if wf.get("enabled"):
+        chain_bits = []
+        for c in wf.get("chains") or []:
+            chain_bits.append("%s 块 %s-%s%s" % (
+                c.get("name"), c.get("from_block"), c.get("to_block"),
+                "" if not c.get("error") else "(⚠ %s)" % c["error"]))
+        _alerts = wf.get("alerts") or {}
+        if _alerts.get("sent_round") or _alerts.get("error"):
+            print("  链上告警: 本轮发送 %s 条%s" % (
+                _alerts.get("sent_round") or 0,
+                "" if not _alerts.get("error") else "（失败：%s）" % _alerts["error"]))
+        if (wf.get("alerts_preview") or "").strip():
+            print("  [dry-run] 告警预览:")
+            for line in wf["alerts_preview"].splitlines():
+                print("    " + line)
+        print("  链上大额转账: %d 笔（≥阈值，USDT/USDC）｜%s"
+              % (wf.get("n_large") or 0, "；".join(chain_bits) or "未扫描"))
+        for r in (wf.get("recent") or [])[:3]:
+            print("    %s %s $%.2fM %s → %s" % (
+                r.get("symbol"), r.get("tx", "")[:10],
+                (r.get("usd") or 0) / 1e6, str(r.get("from"))[:8], str(r.get("to"))[:8]))
+
+
+def _print_holdings(snapshot):
+    hold = snapshot.get("holdings") or {}
+    if hold.get("enabled"):
+        bits = ["%d 个地址%s" % (hold.get("n") or 0, "（缓存）" if hold.get("cached") else "")]
+        if hold.get("usd_total") is not None:
+            _usd = float(hold["usd_total"])
+            bits.append("合计 %s" % (("≈$%.2fM" % (_usd / 1e6)) if abs(_usd) >= 1e6 else ("≈$%.2f" % _usd)))
+        bits.append("变化事件 %d 条" % len(hold.get("changes") or []))
+        if hold.get("n_errors"):
+            bits.append("取数失败 %d 个" % hold["n_errors"])
+        print("  已知地址持仓: %s" % "｜".join(bits))
+        for event in hold.get("changes") or []:
+            print("    [%s] %s %s %+.2f%%（阈值 ≥%.0f%%）" % (
+                event.get("severity"), event.get("label"), event.get("symbol"),
+                event.get("change_pct") or 0, event.get("threshold_pct") or 0))
+        if (hold.get("alerts_preview") or "").strip():
+            print("  [dry-run] 持仓告警预览:")
+            for line in hold["alerts_preview"].splitlines():
+                print("    " + line)
+
+
+def _print_round(snapshot, candidate_records, written, rc, elapsed):
+    print("crypto-onchain 影子轮次 | %s | rc=%d | %.2fs" % (snapshot["generated_at"], rc, elapsed))
+    for asset, row in snapshot["assets"].items():
+        t5 = row.get("taker_5m") or {}
+        liq = row.get("liq_15m") or {}
+        print("  %-4s price=%s 24h=%s 主动卖占比=%s 5m成交额=%.0f 大单卖=%d 15m清算=%.0f万"
+              % (asset, row.get("price"), row.get("change_24h_pct"),
+                 ("%.1f%%" % (t5["sell_ratio"] * 100)) if t5.get("sell_ratio") is not None else "—",
+                 t5.get("quote_volume_usd") or 0, t5.get("large_sell_count") or 0,
+                 (liq.get("total_usd") or 0) / 1e4))
+    cex = snapshot.get("cex_flows") or {}
+    st = snapshot.get("stablecoins") or {}
+    print("  CEX 24h 净流: %.1fbps TVL（%.2f 亿美元，%d 家）"
+          % (cex.get("net_24h_bps") or 0, (cex.get("net_24h_usd") or 0) / 1e8, cex.get("n_eligible") or 0))
+    print("  稳定币 24h 净增发: %.2f 亿美元（%d 个币种）"
+          % ((st.get("net_issue_24h_usd") or 0) / 1e8, st.get("n") or 0))
+    _print_walletflow(snapshot)
+    _print_holdings(snapshot)
+    print("  候选信号: %d 条%s" % (len(candidate_records),
+          "" if not written else " → 已写 %s" % (written.get("snapshot") or "")))
+    for c in candidate_records:
+        print("    [%s] %-22s %s | %s" % (c.get("severity"), c.get("signal"),
+                                          c.get("asset") or c.get("scope"), c.get("note")))
+    att = snapshot.get("attribution") or {}
+    for asset, a in (att.get("assets") or {}).items():
+        if a:
+            print("    归因[%s] %s（%s）" % (asset, a.get("category"), a.get("confidence")))
+    if att.get("market"):
+        print("    归因[市场] %s（%s）" % (att["market"].get("category"), att["market"].get("confidence")))
+    if written.get("exports"):
+        print("  导出契约: %s" % written["exports"])
+    if snapshot.get("errors"):
+        print("  ⚠ 降级: %s" % "; ".join(snapshot["errors"]))
+
+
+def _config_problem(cfg):
+    """返回配置错误提示（None=正常）。"""
+    mode = str((cfg["app"] or {}).get("mode") or "shadow")
+    if mode != "shadow":
+        return "❌ 当前只实现 shadow 模式（当前 mode=%r）；live 推送属 M3" % mode
+    for name in common.CONFIG_FILES:
+        problem = common.schema_problem(cfg[name[:-5]], 1)
+        if problem:
+            return "❌ 配置错误：%s %s" % (name, problem)
+    return None
+
+
+def _print_status(cfg, paths, as_json):
+    status = _status(cfg, paths)
+    print(json.dumps(status, ensure_ascii=False, indent=1) if as_json else
+          "影子快照: %s\n候选累计: %d（今日 %d：P0 %d / P1 %d）\n归因: %s"
+          % (status.get("generated_at") or "暂无", status["candidates_total"],
+             status["candidates_today"], status["candidates_today_severity"]["P0"],
+             status["candidates_today_severity"]["P1"],
+             _attribution_brief(status.get("attribution"))))
+    return 0 if status["snapshot_ok"] else 1
 
 
 def main(argv=None):
@@ -685,26 +838,14 @@ def main(argv=None):
 
     cfg = common.load_all_configs()
     common.apply_timezone((cfg["app"] or {}).get("timezone"))
-    mode = str((cfg["app"] or {}).get("mode") or "shadow")
-    if mode != "shadow":
-        print("❌ 当前只实现 shadow 模式（当前 mode=%r）；live 推送属 M3" % mode, file=sys.stderr)
+    problem = _config_problem(cfg)
+    if problem:
+        print(problem, file=sys.stderr)
         return 2
-    for name in common.CONFIG_FILES:
-        problem = common.schema_problem(cfg[name[:-5]], 1)
-        if problem:
-            print("❌ 配置错误：%s %s" % (name, problem), file=sys.stderr)
-            return 2
     # 只读模式（--dry-run/--status）不创建目录；写模式也由 store 层按需建父目录
     paths = common.data_paths(args.data_dir)
     if args.status:
-        status = _status(cfg, paths)
-        print(json.dumps(status, ensure_ascii=False, indent=1) if args.json else
-              "影子快照: %s\n候选累计: %d（今日 %d：P0 %d / P1 %d）\n归因: %s"
-              % (status.get("generated_at") or "暂无", status["candidates_total"],
-                 status["candidates_today"], status["candidates_today_severity"]["P0"],
-                 status["candidates_today_severity"]["P1"],
-                 _attribution_brief(status.get("attribution"))))
-        return 0 if status["snapshot_ok"] else 1
+        return _print_status(cfg, paths, args.json)
 
     snapshot, candidate_records, written, rc, elapsed = run_once(
         cfg, paths, fixtures_dir=args.fixtures, dry_run=args.dry_run,
@@ -713,76 +854,7 @@ def main(argv=None):
     if args.json:
         print(json.dumps(snapshot, ensure_ascii=False, indent=1))
     else:
-        print("crypto-onchain 影子轮次 | %s | rc=%d | %.2fs" % (snapshot["generated_at"], rc, elapsed))
-        for asset, row in snapshot["assets"].items():
-            t5 = row.get("taker_5m") or {}
-            liq = row.get("liq_15m") or {}
-            print("  %-4s price=%s 24h=%s 主动卖占比=%s 5m成交额=%.0f 大单卖=%d 15m清算=%.0f万"
-                  % (asset, row.get("price"), row.get("change_24h_pct"),
-                     ("%.1f%%" % (t5["sell_ratio"] * 100)) if t5.get("sell_ratio") is not None else "—",
-                     t5.get("quote_volume_usd") or 0, t5.get("large_sell_count") or 0,
-                     (liq.get("total_usd") or 0) / 1e4))
-        cex = snapshot.get("cex_flows") or {}
-        st = snapshot.get("stablecoins") or {}
-        print("  CEX 24h 净流: %.1fbps TVL（%.2f 亿美元，%d 家）"
-              % (cex.get("net_24h_bps") or 0, (cex.get("net_24h_usd") or 0) / 1e8, cex.get("n_eligible") or 0))
-        print("  稳定币 24h 净增发: %.2f 亿美元（%d 个币种）"
-              % ((st.get("net_issue_24h_usd") or 0) / 1e8, st.get("n") or 0))
-        wf = snapshot.get("walletflow") or {}
-        if wf.get("enabled"):
-            chain_bits = []
-            for c in wf.get("chains") or []:
-                chain_bits.append("%s 块 %s-%s%s" % (
-                    c.get("name"), c.get("from_block"), c.get("to_block"),
-                    "" if not c.get("error") else "(⚠ %s)" % c["error"]))
-            _alerts = wf.get("alerts") or {}
-            if _alerts.get("sent_round") or _alerts.get("error"):
-                print("  链上告警: 本轮发送 %s 条%s" % (
-                    _alerts.get("sent_round") or 0,
-                    "" if not _alerts.get("error") else "（失败：%s）" % _alerts["error"]))
-            if (wf.get("alerts_preview") or "").strip():
-                print("  [dry-run] 告警预览:")
-                for line in wf["alerts_preview"].splitlines():
-                    print("    " + line)
-            print("  链上大额转账: %d 笔（≥阈值，USDT/USDC）｜%s"
-                  % (wf.get("n_large") or 0, "；".join(chain_bits) or "未扫描"))
-            for r in (wf.get("recent") or [])[:3]:
-                print("    %s %s $%.2fM %s → %s" % (
-                    r.get("symbol"), r.get("tx", "")[:10],
-                    (r.get("usd") or 0) / 1e6, str(r.get("from"))[:8], str(r.get("to"))[:8]))
-        hold = snapshot.get("holdings") or {}
-        if hold.get("enabled"):
-            bits = ["%d 个地址%s" % (hold.get("n") or 0, "（缓存）" if hold.get("cached") else "")]
-            if hold.get("usd_total") is not None:
-                _usd = float(hold["usd_total"])
-                bits.append("合计 %s" % (("≈$%.2fM" % (_usd / 1e6)) if abs(_usd) >= 1e6 else ("≈$%.2f" % _usd)))
-            bits.append("变化事件 %d 条" % len(hold.get("changes") or []))
-            if hold.get("n_errors"):
-                bits.append("取数失败 %d 个" % hold["n_errors"])
-            print("  已知地址持仓: %s" % "｜".join(bits))
-            for event in hold.get("changes") or []:
-                print("    [%s] %s %s %+.2f%%（阈值 ≥%.0f%%）" % (
-                    event.get("severity"), event.get("label"), event.get("symbol"),
-                    event.get("change_pct") or 0, event.get("threshold_pct") or 0))
-            if (hold.get("alerts_preview") or "").strip():
-                print("  [dry-run] 持仓告警预览:")
-                for line in hold["alerts_preview"].splitlines():
-                    print("    " + line)
-        print("  候选信号: %d 条%s" % (len(candidate_records),
-              "" if not written else " → 已写 %s" % (written.get("snapshot") or "")))
-        for c in candidate_records:
-            print("    [%s] %-22s %s | %s" % (c.get("severity"), c.get("signal"),
-                                              c.get("asset") or c.get("scope"), c.get("note")))
-        att = snapshot.get("attribution") or {}
-        for asset, a in (att.get("assets") or {}).items():
-            if a:
-                print("    归因[%s] %s（%s）" % (asset, a.get("category"), a.get("confidence")))
-        if att.get("market"):
-            print("    归因[市场] %s（%s）" % (att["market"].get("category"), att["market"].get("confidence")))
-        if written.get("exports"):
-            print("  导出契约: %s" % written["exports"])
-        if snapshot.get("errors"):
-            print("  ⚠ 降级: %s" % "; ".join(snapshot["errors"]))
+        _print_round(snapshot, candidate_records, written, rc, elapsed)
     return rc
 
 
