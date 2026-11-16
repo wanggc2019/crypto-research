@@ -8,8 +8,6 @@
   "crypto-onchain/scripts/run.py::run_once": 17,
   "crypto-onchain/scripts/walletflow_alerts.py::render_message": 19,
   "crypto-onchain/scripts/walletflow_alerts.py::select_alerts": 16,
-  "crypto-policy/scripts/fetch.py::collect_source": 27,
-  "crypto-policy/scripts/main.py::run": 20,
   "crypto-price/scripts/cards.py::format_price_alert": 24,
   "crypto-price/scripts/delivery.py::deliver": 20,
   "crypto-price/scripts/run.py::main": 17,
