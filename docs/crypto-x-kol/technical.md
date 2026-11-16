@@ -16,7 +16,7 @@ crypto-x-kol/
 │   ├── common.py       # 薄适配层：sys.path + 路径/配置/JSON/日志
 │   ├── fetch.py        # 抓取 r.jina.ai → 解析 → 基线/去重 → raw/state
 │   ├── score.py        # 价值评分：主题/层级/资产/同题/新颖度 → P0/P1/P2/MUTE
-│   ├── analyze.py      # DeepSeek 中文翻译 + 一句话总结（批量/缓存/降级）
+│   ├── analyze.py      # Claude 中文翻译 + 一句话总结（批量/缓存/降级）
 │   ├── xlink.py        # 告警前按需抓 HTML 还原原帖 /status/<id> 链接（失败回退主页）
 │   ├── digest.py       # 读 raw → 评分 → 日报 → 只推 P0/P1（去重/上限/静默）
 │   ├── e2e.py          # 离线端到端（fixtures 回放，gate 自动跑）
@@ -39,7 +39,7 @@ crypto-x-kol/
 | 抓取 | `fetch.py` | `kol.yaml`、`app.yaml`、`r.jina.ai`/fixtures | `raw/<date>/posts.jsonl`、`state/kol-<handle>.json`、`logs/fetch-<date>.json` |
 | 解析 | `fetch.parse_page` | 主页 Markdown 字符串 | `[{handle,text,quote,has_media,fingerprint}]` |
 | 去重 | `fetch.diff_posts` / `_mark_seen` | 解析结果 + state | 新帖列表 / 基线标记 / 更新后的 seen |
-| 翻译/总结 | `analyze.analyze` / `localize` | 待处理 posts + DeepSeek API | `state/analysis-<date>.json`（id → 中文/总结/是否翻译） |
+| 翻译/总结 | `analyze.analyze` / `localize` | 待处理 posts + Claude API | `state/analysis-<date>.json`（id → 中文/总结/是否翻译） |
 | 评分 | `score.evaluate` | 当日 posts + 最近 N 天 raw + rules | 带 score/level/topic/reasons 的 posts |
 | 报告 | `digest.build_report` | 评分后的 posts | `reports/<date>.md`（全部新帖可审计） |
 | 原帖链接 | `xlink.attach` | 选中的 P0/P1 + X 主页 HTML | `post["tweet_url"]`（失败回退主页） |
@@ -112,7 +112,7 @@ launchd(StartInterval=300) → scripts/collect.sh（mkdir 锁，防重叠）
 | 全部账号失败/全部登录墙 | rc=3 | healthcheck FAIL → 告警（--notify） |
 | 匿名 20 RPM 限流 | 间歇性空页/登录墙 | `min_interval_seconds=4`；必要时临时开 JINA_API_KEY |
 | 推送失败 | rc=1，pushed 未标记 | 下轮重试 |
-| DeepSeek 失败/无 key | 该批无中文 | 降级原文、下轮重试；不影响告警 |
+| Claude 失败/无 key | 该批无中文 | 降级原文、下轮重试；不影响告警 |
 | 原帖链接解析失败 | 告警链回退主页 | 静默处理，不阻塞推送 |
 | 误把重要推文判成 P2/MUTE | 日报仍保留分数/理由 | 调 `rules.yaml` 的 thresholds/topics；不需要改代码 |
 | 告警过多 | 每轮最多 5 条、每日 8 条 | 调高 thresholds 或收紧 caps |

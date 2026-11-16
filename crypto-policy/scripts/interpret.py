@@ -4,7 +4,7 @@
 
 两种引擎：
 - 规则抽取（无模型 key 时的默认/兜底）：原文要点 + 按主题给影响清单；
-- DeepSeek（设置 DEEPSEEK_API_KEY 时）：调用 chat/completions 生成结构化解读。
+- Claude（仓库根 .env 有 ANTHROPIC_API_KEY 时）：Opus 生成结构化解读（crypto_core.llm）。
 
 产物：data/reports/interpret-<id>.md；状态：data/state/interpreted.json。
 用法：
@@ -178,10 +178,9 @@ def _packet(rec, idx):
 
 
 def _llm_draft(rec, idx):
-    key = llm.find_api_key(names=("DEEPSEEK_API_KEY", "LLM_API_KEY"), dsh_fallback=False)
+    key = llm.find_api_key()
     if not key:
         return None
-    base = os.environ.get("LLM_BASE_URL") or llm.DEFAULT_BASE_URL
     model = os.environ.get("LLM_MODEL") or llm.DEFAULT_MODEL
     system = (
         "你是中国金融监管法律研究助手。只依据给定原文作答，不编造条款、案号、日期。"
@@ -193,12 +192,11 @@ def _llm_draft(rec, idx):
         {"role": "user", "content": _packet(rec, idx)},
     ]
     try:
-        text = llm.chat(messages, key, model=model, base_url=base, timeout=90,
-                        temperature=0.2, max_tokens=1200) or ""
+        text = llm.chat(messages, key, model=model, timeout=180) or ""
         m = re.search(r"\{.*\}", text, re.S)
         out = json.loads(m.group(0) if m else text)
-        out["engine"] = "deepseek"
-        out["engine_label"] = "DeepSeek（%s）" % model
+        out["engine"] = "claude"
+        out["engine_label"] = "Claude（%s）" % model
         out.setdefault("confidence", 0.6)
         return out
     except Exception as e:  # noqa: BLE001 - 模型失败一律回退规则

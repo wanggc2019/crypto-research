@@ -87,7 +87,7 @@ P1 用汇总卡片，避免多条刷屏。
   「效力/要点/影响/与旧规对比/风险」，写 `data/reports/interpret-<id>.md`，
   经 `push_text.py` 推送并归档 pending；
 - 草稿标注「AI 草稿 · 非法律意见」，要求引用原文；人工复核后才算定稿；
-- 无 `DEEPSEEK_API_KEY` 时 `interpret.py --no-llm` 仍可产出规则抽取草稿，产品不空转。
+- 无 `ANTHROPIC_API_KEY` 时 `interpret.py --no-llm` 仍可产出规则抽取草稿，产品不空转。
 
 ## 7. 测试方案
 

@@ -37,13 +37,13 @@ class TestReviewResponse(unittest.TestCase):
             ai_review_pr.require_review_content(None)
 
     def test_llm_error_mapped_to_runtime_error(self):
-        with mock.patch.dict(os.environ, {"DEEPSEEK_API_KEY": "k"}), \
+        with mock.patch.dict(os.environ, {"ANTHROPIC_API_KEY": "k"}), \
                 mock.patch.object(ai_review_pr.llm, "chat", side_effect=ai_review_pr.llm.LLMError("HTTP 401: bad key")):
-            with self.assertRaisesRegex(RuntimeError, "DeepSeek HTTP 401"):
+            with self.assertRaisesRegex(RuntimeError, "Claude HTTP 401"):
                 ai_review_pr.review("diff")
 
     def test_review_returns_stripped_content(self):
-        with mock.patch.dict(os.environ, {"DEEPSEEK_API_KEY": "k"}), \
+        with mock.patch.dict(os.environ, {"ANTHROPIC_API_KEY": "k"}), \
                 mock.patch.object(ai_review_pr.llm, "chat", return_value=" ok "):
             self.assertEqual(ai_review_pr.review("diff"), "ok")
 

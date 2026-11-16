@@ -44,12 +44,18 @@ class _Handler(BaseHTTPRequestHandler):
             return self._send(200, {"jsonrpc": "2.0", "id": 1, "result": "0x10"})
         if self.path == "/batch":
             return self._send(200, [{"id": i, "result": i} for i, _ in enumerate(body)])
-        if self.path.endswith("/chat/completions"):
-            if self.headers.get("Authorization") == "Bearer bad":
-                return self._send(401, {"error": "invalid key"})
-            if self.headers.get("Authorization") == "Bearer shape":
-                return self._send(200, {"choices": []})
-            return self._send(200, {"choices": [{"message": {"content": "hi " + body["model"]}}]})
+        if self.path.split("?")[0] == "/v1/messages":
+            auth = self.headers.get("Authorization") or self.headers.get("X-Api-Key") or ""
+            if auth.endswith("bad"):
+                return self._send(401, {"type": "error", "error": {"type": "authentication_error",
+                                                                   "message": "invalid key"}})
+            stop = {"refuse": "refusal", "cut": "max_tokens"}.get(auth.rsplit(" ", 1)[-1], "end_turn")
+            return self._send(200, {
+                "id": "msg_1", "type": "message", "role": "assistant", "model": body["model"],
+                "content": [{"type": "text", "text": "hi " + body["model"]}],
+                "stop_reason": stop, "stop_sequence": None,
+                "usage": {"input_tokens": 3, "output_tokens": 2},
+            })
         self._send(404, {})
 
 
@@ -97,30 +103,57 @@ class HttpLlmTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "rpc error"):
             http.json_rpc(self.base + "/rpc", "bad", [])
 
-    # ---------------- llm
-    def test_chat_ok_with_params(self):
-        out = llm.chat([{"role": "user", "content": "x"}], "k", model="m1", base_url=self.base + "/",
-                       temperature=0.2, max_tokens=None, response_format={"type": "json_object"})
-        self.assertEqual(out, "hi m1")
-        method, path, headers, body = _Handler.calls[-1]
-        self.assertEqual(path, "/chat/completions")
-        self.assertEqual(headers.get("Authorization"), "Bearer k")
-        self.assertEqual(body["temperature"], 0.2)
-        self.assertNotIn("max_tokens", body, "None 参数不应发出去")
-        self.assertEqual(body["response_format"], {"type": "json_object"})
+    # ---------------- llm（Anthropic SDK 指向本地假服务）
+    def _last_llm_call(self):
+        return [c for c in _Handler.calls if c[1].startswith("/v1/messages")][-1]
+
+    def test_chat_haiku_plain_request(self):
+        out = llm.chat([{"role": "system", "content": "S1"}, {"role": "user", "content": "x"}], "k",
+                       model=llm.FAST_MODEL, effort="low", base_url=self.base, retries=0)
+        self.assertEqual(out, "hi " + llm.FAST_MODEL)
+        _, path, headers, body = self._last_llm_call()
+        self.assertEqual(path, "/v1/messages", "Haiku 不走 beta 回退")
+        self.assertEqual(body["system"], "S1")
+        self.assertEqual(body["messages"], [{"role": "user", "content": "x"}])
+        self.assertEqual(body["output_config"], {"effort": "low"})
+        self.assertEqual(body["max_tokens"], llm.DEFAULT_MAX_TOKENS)
+        for banned in ("temperature", "top_p", "top_k", "fallbacks"):
+            self.assertNotIn(banned, body)
+        self.assertNotIn("k", headers.get("User-Agent", ""))
+
+    def test_chat_opus_uses_server_side_fallback(self):
+        out = llm.chat([{"role": "user", "content": "x"}], "k", base_url=self.base, retries=0)
+        self.assertEqual(out, "hi " + llm.DEFAULT_MODEL)
+        _, path, headers, body = self._last_llm_call()
+        self.assertEqual(path.split("?")[0], "/v1/messages")
+        self.assertEqual(body["fallbacks"], "default")
+        self.assertIn(llm.FALLBACK_BETA, headers.get("anthropic-beta", ""))
+        self.assertNotIn("output_config", body)
 
     def test_chat_http_error_has_code_and_retries(self):
+        before = len(_Handler.calls)
         with self.assertRaisesRegex(llm.LLMError, r"HTTP 401: .*invalid key"):
-            llm.chat([], "bad", base_url=self.base, retries=2)
-        self.assertEqual(len(_Handler.calls), 3)
+            llm.chat([{"role": "user", "content": "x"}], "bad", model=llm.FAST_MODEL,
+                     base_url=self.base, retries=2)
+        self.assertEqual(len(_Handler.calls) - before, 1, "401 不重试")
 
-    def test_chat_bad_shape(self):
-        with self.assertRaisesRegex(llm.LLMError, "响应格式不对"):
-            llm.chat([], "shape", base_url=self.base)
+    def test_chat_refusal_and_truncation_raise(self):
+        with self.assertRaisesRegex(llm.LLMError, "拒绝"):
+            llm.chat([{"role": "user", "content": "x"}], "refuse", model=llm.FAST_MODEL,
+                     base_url=self.base, retries=0)
+        with self.assertRaisesRegex(llm.LLMError, "截断"):
+            llm.chat([{"role": "user", "content": "x"}], "cut", model=llm.FAST_MODEL,
+                     base_url=self.base, retries=0)
 
     def test_chat_missing_key(self):
         with self.assertRaises(llm.LLMError):
             llm.chat([], "")
+
+    def test_split_system(self):
+        system, rest = llm._split_system([{"role": "system", "content": "a"}, {"role": "system", "content": "b"},
+                                          {"role": "user", "content": "u"}])
+        self.assertEqual(system, "a\n\nb")
+        self.assertEqual(rest, [{"role": "user", "content": "u"}])
 
     def test_extract_json(self):
         self.assertEqual(llm.extract_json('```json\n{"a": 1}\n```'), {"a": 1})
@@ -130,20 +163,19 @@ class HttpLlmTest(unittest.TestCase):
 
     def test_find_api_key_order(self):
         with tempfile.TemporaryDirectory() as tmp:
-            cred = os.path.join(tmp, "cred.yaml")
-            with open(cred, "w") as f:
-                f.write("refs:\n  DEEPSEEK_API_KEY: from-dsh\n")
-            with mock.patch.object(llm, "DSH_CREDENTIALS", cred), \
-                    mock.patch.dict(os.environ, {"DEEPSEEK_API_KEY": ""}, clear=False):
-                self.assertEqual(llm.find_api_key(), "from-dsh")
-                self.assertEqual(llm.find_api_key(dsh_fallback=False), "")
-                self.assertEqual(llm.find_api_key(env={"DEEPSEEK_API_KEY": "from-env"}), "from-env")
-                with mock.patch.dict(os.environ, {"DEEPSEEK_API_KEY": "from-os"}):
+            envfile = os.path.join(tmp, ".env")
+            with open(envfile, "w") as f:
+                f.write("ANTHROPIC_API_KEY=from-file\n")
+            with mock.patch.object(llm._env, "load_env", lambda: {"ANTHROPIC_API_KEY": "from-file"}), \
+                    mock.patch.dict(os.environ, {"ANTHROPIC_API_KEY": ""}, clear=False):
+                self.assertEqual(llm.find_api_key(), "from-file")
+                self.assertEqual(llm.find_api_key(use_env_file=False), "")
+                self.assertEqual(llm.find_api_key(env={"ANTHROPIC_API_KEY": "from-env"}), "from-env")
+                with mock.patch.dict(os.environ, {"ANTHROPIC_API_KEY": "from-os"}):
                     self.assertEqual(llm.find_api_key(), "from-os")
-                    self.assertEqual(llm.find_api_key(env={}, use_os_environ=False), "from-dsh")
-                self.assertEqual(llm.find_api_key(names=("LLM_API_KEY", "DEEPSEEK_API_KEY"),
-                                                  env={"LLM_API_KEY": "llm"}), "llm")
-
+                    self.assertEqual(llm.find_api_key(env={}, use_os_environ=False), "from-file")
+                self.assertEqual(llm.find_api_key(names=("OTHER", "ANTHROPIC_API_KEY"),
+                                                  env={"OTHER": "o"}), "o")
 
 if __name__ == "__main__":
     unittest.main()

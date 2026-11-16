@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""analyze.py —— 用 DeepSeek 把外文 KOL 推文翻成中文，并给每条一句话总结。
+"""analyze.py —— 用 Claude（Haiku，effort=low）把外文 KOL 推文翻成中文，并给每条一句话总结。
 
 设计：
 - 只在 digest 运行时批量调用（默认每批 8 条），结果缓存到 data/state/analysis-<date>.json，
   同一推文不重复付费；报告/告警只展示中文译文 + 一句话总结（原文留在 raw 里备查，不再展示）。
 - 中文推文不翻译（原文本就是中文），但仍生成一句话总结。
-- 没有 DEEPSEEK_API_KEY 时**优雅降级**：不报错，报告/告警回退显示原文。
-  凭据优先级：.env 的 DEEPSEEK_API_KEY → ~/.dsh/.credentials.yaml 的 refs（与 crypto-news inspect 一致）。
-- 网络调用集中在 call_deepseek()，测试可注入 caller 做离线回放。
+- 没有 ANTHROPIC_API_KEY（仓库根 .env）时**优雅降级**：不报错，报告/告警回退显示原文。
+- 网络调用集中在 call_llm()（crypto_core.llm → Anthropic SDK），测试可注入 caller 做离线回放。
 
 用法（一般不单独跑，digest 内部调用）：
     python3 scripts/analyze.py --fixtures ...   # 预留；当前仅暴露纯函数供测试
@@ -25,9 +24,9 @@ from crypto_core import llm  # noqa: E402
 CJK_RE = re.compile(r"[\u4e00-\u9fff]")
 DEFAULT_ANALYSIS = {
     "enabled": True,
-    "base_url": "https://api.deepseek.com",
-    "model": "deepseek-chat",
-    "api_key_env": "DEEPSEEK_API_KEY",
+    "model": llm.FAST_MODEL,
+    "effort": "low",
+    "api_key_env": llm.API_KEY_ENV,
     "batch_size": 8,
     "timeout_seconds": 60,
     "retries": 1,
@@ -50,10 +49,10 @@ def analysis_config(cfg):
 
 
 def load_api_key(cfg, env=None):
-    """读 DeepSeek key：先 .env/环境变量，再 ~/.dsh/.credentials.yaml 的 refs。"""
+    """读 Anthropic key：只看 env（默认即 .env 内容），不读进程环境、不再读文件（测试可完全控制）。"""
     env = env if env is not None else load_env()
-    name = cfg.get("api_key_env") or "DEEPSEEK_API_KEY"
-    return llm.find_api_key(env=env, names=(name,), use_os_environ=False)
+    name = cfg.get("api_key_env") or llm.API_KEY_ENV
+    return llm.find_api_key(env=env, names=(name,), use_os_environ=False, use_env_file=False)
 
 
 def is_chinese(text, ratio=0.3):
@@ -80,17 +79,15 @@ def _tweet_payload(posts, cfg):
 
 
 def build_request(posts, cfg):
-    """构造 OpenAI 兼容的 /chat/completions 请求体（纯函数，便于测试）。"""
+    """构造 crypto_core.llm.chat 的参数（纯函数，便于测试）。"""
     user = json.dumps({"tweets": _tweet_payload(posts, cfg)}, ensure_ascii=False)
     return {
-        "model": cfg.get("model") or "deepseek-chat",
+        "model": cfg.get("model") or llm.FAST_MODEL,
+        "effort": cfg.get("effort") or None,
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": user},
         ],
-        "temperature": 0.2,
-        "max_tokens": 4096,
-        "response_format": {"type": "json_object"},
     }
 
 
@@ -119,16 +116,15 @@ def parse_response(content):
     return out
 
 
-def call_deepseek(posts, cfg, api_key):
-    """真实网络调用；失败抛异常（由 analyze 捕获并降级）。"""
+def call_llm(posts, cfg, api_key):
+    """真实网络调用；失败抛异常（由 analyze 捕获并降级）。网络/429/5xx 由 SDK 重试，这里只重试解析失败。"""
     body = build_request(posts, cfg)
-    params = {k: v for k, v in body.items() if k not in ("model", "messages")}
     last_err = None
     for attempt in range(int(cfg.get("retries") or 0) + 1):
         try:
-            content = llm.chat(body["messages"], api_key, model=body["model"],
-                               base_url=cfg.get("base_url") or DEFAULT_ANALYSIS["base_url"],
-                               timeout=float(cfg.get("timeout_seconds") or 60), **params)
+            content = llm.chat(body["messages"], api_key, model=body["model"], effort=body["effort"],
+                               timeout=float(cfg.get("timeout_seconds") or 60),
+                               retries=int(cfg.get("retries") or 0))
             return parse_response(content)
         except Exception as exc:  # noqa: BLE001 - 网络/解析失败统一记录后重试
             last_err = exc
@@ -150,9 +146,9 @@ def analyze(posts, cfg_in=None, env=None, cache=None, caller=None, log=print):
         return cache
     key = load_api_key(cfg, env)
     if not key and caller is None:
-        log("  [analyze] 没有 DEEPSEEK_API_KEY，跳过翻译/总结（报告回退原文）")
+        log("  [analyze] 没有 ANTHROPIC_API_KEY，跳过翻译/总结（报告回退原文）")
         return cache
-    caller = caller or call_deepseek
+    caller = caller or call_llm
     batch_size = max(1, int(cfg.get("batch_size") or 8))
     stamp = ts_iso()
     for start in range(0, len(todo), batch_size):

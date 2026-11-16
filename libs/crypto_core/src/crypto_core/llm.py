@@ -1,98 +1,102 @@
 # -*- coding: utf-8 -*-
-"""OpenAI 兼容 /chat/completions 客户端（默认 DeepSeek），零第三方依赖。
+"""Claude（Anthropic Messages API）客户端：全仓唯一的 LLM 入口（ADR 0011）。
 
 只负责「找 key → 发请求 → 取文本 → 抽 JSON」；提示词、批量、缓存、失败降级策略留在调用方。
-注意：调用即把内容发给第三方 API（推文/标题/政策原文/代码 diff），调用方需自行确认可外发。
+注意：调用即把内容发给 Anthropic（推文/标题/政策原文/代码 diff），调用方需自行确认可外发。
+
+模型按任务选（调用方传 model；不传用 DEFAULT_MODEL）：
+- FAST_MODEL（Haiku）：高频、简单任务（推文翻译/总结、标题翻译），配 effort="low"；
+- DEFAULT_MODEL（Opus）：需要判断力的任务（政策解读、PR 审查）。
 """
 import json
 import os
 import re
-import urllib.error
 
-from . import http
+from . import env as _env
 
-DEFAULT_BASE_URL = "https://api.deepseek.com"
-DEFAULT_MODEL = "deepseek-chat"
-DSH_CREDENTIALS = "~/.dsh/.credentials.yaml"
+DEFAULT_MODEL = "claude-opus-5-5"
+FAST_MODEL = "claude-haiku-5-5"
+API_KEY_ENV = "ANTHROPIC_API_KEY"
+DEFAULT_MAX_TOKENS = 16000  # 含思考 token；非流式请求的推荐上限，太小会截断
+# 服务端拒答回退（stop_reason=refusal 时由 API 在同一次调用里换模型重跑）；Haiku 不支持
+FALLBACK_BETA = "server-side-fallback-2026-07-01"
+FALLBACK_MODELS = ("claude-opus-5-5", "claude-sonnet-5-5", "claude-fable-5-2", "claude-fable-5-1", "claude-opus-5")
 
 
 class LLMError(RuntimeError):
-    """请求/HTTP/响应结构错误（消息含 HTTP 状态码与响应片段，不含 key）。"""
+    """请求/HTTP/响应错误（消息含 HTTP 状态码与片段，不含 key）。"""
 
 
-def _dsh_ref(key_name, path=None):
-    """从 ~/.dsh/.credentials.yaml 的 refs 读 key（有 PyYAML 用 YAML，否则按行匹配）；读不到返回 ""。"""
-    path = os.path.expanduser(path or DSH_CREDENTIALS)
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            text = f.read()
-    except OSError:
-        return ""
-    try:
-        import yaml
-
-        data = yaml.safe_load(text) or {}
-        refs = data.get("refs") if isinstance(data, dict) else None
-        if isinstance(refs, dict) and refs.get(key_name):
-            return str(refs[key_name]).strip()
-    except Exception:  # noqa: BLE001 - YAML 缺失/损坏时退回按行匹配
-        pass
-    m = re.search(r"%s:\s*[\"']?([^\s\"']+)" % re.escape(key_name), text)
-    return m.group(1).strip() if m else ""
-
-
-def find_api_key(env=None, names=("DEEPSEEK_API_KEY",), use_os_environ=True, dsh_fallback=True):
-    """按顺序找 API key：env dict（如 .env）→ 进程环境变量 → ~/.dsh 凭据 refs；都没有返回 ""。"""
+def find_api_key(env=None, names=(API_KEY_ENV,), use_os_environ=True, use_env_file=True):
+    """按顺序找 API key：env dict → 进程环境变量 → 仓库根 .env；都没有返回 ""。"""
     sources = []
     if env is not None:
         sources.append(env)
     if use_os_environ:
         sources.append(os.environ)
+    if use_env_file:
+        sources.append(_env.load_env())
     for src in sources:
         for name in names:
             value = str(src.get(name) or "").strip()
             if value:
                 return value
-    if dsh_fallback:
-        for name in names:
-            value = _dsh_ref(name)
-            if value:
-                return value
     return ""
 
 
-def chat(messages, api_key, model=None, base_url=None, timeout=60, retries=0, **params):
-    """调一次 chat/completions，返回 choices[0].message.content（str）。
+def _split_system(messages):
+    """OpenAI 风格的 [{"role": "system"}, ...] → (system 文本, 其余 messages)。"""
+    system, rest = [], []
+    for m in messages or []:
+        if m.get("role") == "system":
+            system.append(str(m.get("content") or ""))
+        else:
+            rest.append({"role": m["role"], "content": m["content"]})
+    return "\n\n".join(s for s in system if s), rest
 
-    params 原样并入请求体（temperature / max_tokens / response_format ...）；
-    retries>0 时失败立即重试（不退避，与原各模块实现一致）。失败抛 LLMError。
+
+def _text_of(resp):
+    if resp.stop_reason == "refusal":
+        details = getattr(resp, "stop_details", None)
+        raise LLMError("模型拒绝回答（%s）" % (getattr(details, "category", None) or "未说明类别"))
+    if resp.stop_reason == "max_tokens":
+        raise LLMError("输出被 max_tokens 截断")
+    text = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text").strip()
+    if not text:
+        raise LLMError("响应里没有文本（stop_reason=%s）" % resp.stop_reason)
+    return text
+
+
+def chat(messages, api_key, model=None, max_tokens=DEFAULT_MAX_TOKENS, effort=None,
+         timeout=60, retries=2, base_url=None):
+    """调一次 Messages API，返回回答文本（str）。失败抛 LLMError。
+
+    messages 可含 role=system（自动并入 system 参数）；effort: low|medium|high|xhigh|max（None=模型默认）；
+    retries 交给 SDK（429/5xx/网络错误指数退避重试）；base_url 只给离线测试用。
     """
     if not api_key:
         raise LLMError("missing API key")
-    payload = {"model": model or DEFAULT_MODEL, "messages": messages}
-    payload.update({k: v for k, v in params.items() if v is not None})
-    url = (base_url or DEFAULT_BASE_URL).rstrip("/") + "/chat/completions"
-    last = None
-    for _ in range(int(retries or 0) + 1):
-        try:
-            data = http.post_json(url, payload, timeout=timeout,
-                                  headers={"Authorization": "Bearer " + api_key})
-            return data["choices"][0]["message"]["content"]
-        except urllib.error.HTTPError as e:
-            try:
-                detail = e.read().decode("utf-8", "ignore")[:300]
-            except Exception:  # noqa: BLE001
-                detail = ""
-            finally:
-                e.close()
-            last = LLMError("HTTP %s: %s" % (e.code, detail))
-        except urllib.error.URLError as e:
-            last = LLMError("网络错误：%s" % e)
-        except (ValueError, KeyError, IndexError, TypeError) as e:
-            last = LLMError("响应格式不对：%s: %s" % (type(e).__name__, e))
-        except OSError as e:  # socket.timeout 等
-            last = LLMError("%s: %s" % (type(e).__name__, e))
-    raise last
+    import anthropic  # 延迟导入：不调 LLM 的模块不需要 SDK
+
+    model = model or DEFAULT_MODEL
+    system, msgs = _split_system(messages)
+    kwargs = {"model": model, "max_tokens": int(max_tokens), "messages": msgs}
+    if system:
+        kwargs["system"] = system
+    if effort:
+        kwargs["output_config"] = {"effort": effort}
+    client = anthropic.Anthropic(api_key=api_key, base_url=base_url, timeout=timeout,
+                                 max_retries=int(retries or 0))
+    try:
+        if model in FALLBACK_MODELS:
+            resp = client.beta.messages.create(betas=[FALLBACK_BETA], fallbacks="default", **kwargs)
+        else:
+            resp = client.messages.create(**kwargs)
+    except anthropic.APIStatusError as e:
+        raise LLMError("HTTP %s: %s" % (e.status_code, str(e.message)[:300])) from None
+    except anthropic.APIConnectionError as e:
+        raise LLMError("网络错误：%s" % e) from None
+    return _text_of(resp)
 
 
 def extract_json(text, kind="object"):

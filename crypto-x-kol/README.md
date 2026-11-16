@@ -34,7 +34,7 @@ make healthcheck module=crypto-x-kol
 | 文件 | 作用 |
 |---|---|
 | `config/kol.yaml` | **KOL 白名单**（`handle` 不带 @；`name`/`role` 作者信息；`enabled` 开关；T1/T2 排序权重） |
-| `config/app.yaml` | 轮询间隔、请求超时/节流、`JINA_API_KEY` 开关、DeepSeek 翻译配置、推送（全天即时） |
+| `config/app.yaml` | 轮询间隔、请求超时/节流、`JINA_API_KEY` 开关、Claude 翻译配置、推送（全天即时） |
 | `config/rules.yaml` | 主题分组、评分权重、P0/P1 阈值、每日/单条上限、送达策略（见下方「怎么挑告警」） |
 
 改名单只需编辑 `kol.yaml`，下一轮（≤5 分钟）自动生效；`handle` 写错会记录在
@@ -80,9 +80,9 @@ make healthcheck module=crypto-x-kol
 - 误报/漏报都靠 `thresholds` / `caps` / `topics` 关键词调，不用改代码；
 - 日报里每条都带「级别 · 分数 · 理由」，方便回看为什么推/没推。
 
-## 中文翻译 + 一句话总结（DeepSeek）
+## 中文翻译 + 一句话总结（Claude）
 
-- 外文推文由 DeepSeek 翻成**中文**，每条再给一句**「他说了什么」总结**；
+- 外文推文由 Claude 翻成**中文**，每条再给一句**「他说了什么」总结**；
   报告和 Telegram 告警只展示中文译文 + 一句话，**不再展示英文原文**（原文保留在 `data/raw/<date>/posts.jsonl` 备查）。
 - 翻译过的推文前面会标 **[翻译]**（中文原帖无此标记）；作者统一显示 `@handle（name · 职业）`，
   职业来自 `kol.yaml` 的 `role` 字段。
@@ -90,9 +90,9 @@ make healthcheck module=crypto-x-kol
 - 告警里的 @handle 链接指向**具体推文**（`https://x.com/<handle>/status/<id>`）：推送前按需抓一次
   X 主页 HTML 还原 status id；找不到时回退主页链接，不阻塞推送。
 - 批量调用（默认每批 8 条）+ 按推文缓存（`data/state/analysis-<date>.json`），同一推文不重复付费；
-  每天几十条约几千 token，成本可以忽略（DeepSeek 单价量级：几分钱/天）。
+  每天几十条约几千 token；Haiku 5.5 单价 $0.10 / $0.50 每百万 token（输入/输出），成本可以忽略。
 - **没有 key 时自动降级**：不报错，报告回退显示原文。key 优先级：
-  `.env` 的 `DEEPSEEK_API_KEY` → `~/.dsh/.credentials.yaml` 的 `refs.DEEPSEEK_API_KEY`（与 crypto-news 巡检脚本一致）。
+  仓库根 `.env` 的 `ANTHROPIC_API_KEY`。
 - 关闭：`app.yaml` 的 `analysis.enabled: false`，或单次 `digest.py --no-analyze`；`--dry-run` 不会调用 API。
 - 注意：翻译/总结由 LLM 生成，可能误译或漏掉语气；以 raw 原文为准。
 

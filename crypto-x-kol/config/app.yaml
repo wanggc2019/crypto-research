@@ -36,13 +36,12 @@ fetch:
   # 注意：这两个头会改变返回的 Markdown 结构，开启前先跑 --only 一个账号观察解析结果。
   request_headers: {}
 
-# 中文翻译 + 一句话总结（DeepSeek；无 key 时优雅降级为原文）
+# 中文翻译 + 一句话总结（Claude Haiku，effort=low；仓库根 .env 无 ANTHROPIC_API_KEY 时优雅降级为原文）
 analysis:
   enabled: true
-  provider: deepseek
-  base_url: "https://api.deepseek.com"
-  model: "deepseek-chat"
-  api_key_env: "DEEPSEEK_API_KEY"   # .env 没有时自动回退 ~/.dsh/.credentials.yaml 的 refs
+  model: "claude-haiku-5-5"
+  effort: "low"
+  api_key_env: "ANTHROPIC_API_KEY"
   batch_size: 8
   timeout_seconds: 60
   retries: 1
