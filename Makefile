@@ -37,6 +37,7 @@ setup:
 	@test -x $(REPO)/.venv/bin/python || (\
 		$(SETUP_PYTHON) -m venv $(REPO)/.venv && \
 		$(REPO)/.venv/bin/python -m pip install -q pyyaml ruff)
+	@$(REPO)/.venv/bin/python $(REPO)/tools/check_ca.py
 	@echo "venv: $$($(REPO)/.venv/bin/python -V) at $(REPO)/.venv"
 
 lint:
