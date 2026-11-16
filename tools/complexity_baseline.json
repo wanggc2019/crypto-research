@@ -1,6 +1,1 @@
-{
-  "crypto-price/scripts/cards.py::format_price_alert": 24,
-  "crypto-price/scripts/delivery.py::deliver": 20,
-  "crypto-price/scripts/run.py::main": 17,
-  "crypto-price/scripts/run.py::run_cycle": 16
-}
+{}
