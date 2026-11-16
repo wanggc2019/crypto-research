@@ -83,16 +83,58 @@ def quiz_items(item):
     return []
 
 
-def _validate_item(item, seen_ids):
-    """返回该条目的问题列表（空列表 = 通过）。"""
-    problems = []
-    where = "id=%s" % (item.get("id") or "?")
+def _check_sections(sections, where, problems):
+    """校验 sections；返回正文字数（结构不对时为 0）。"""
+    body_len = 0
+    if not isinstance(sections, list) or not (SECTIONS_MIN <= len(sections) <= SECTIONS_MAX):
+        problems.append("%s sections 必须是 %d-%d 节" % (where, SECTIONS_MIN, SECTIONS_MAX))
+        return 0
+    for idx, sec in enumerate(sections):
+        if not isinstance(sec, dict):
+            problems.append("%s sections[%d] 不是 {h,p}" % (where, idx))
+            continue
+        head, body = str(sec.get("h") or "").strip(), str(sec.get("p") or "").strip()
+        if not head or _text_len(head) > SECTION_HEAD_MAX:
+            problems.append("%s sections[%d].h 为空或超过 %d 字" % (where, idx, SECTION_HEAD_MAX))
+        if not (SECTION_BODY_MIN <= _text_len(body) <= SECTION_BODY_MAX):
+            problems.append("%s sections[%d].p 应在 %d-%d 字"
+                            % (where, idx, SECTION_BODY_MIN, SECTION_BODY_MAX))
+        body_len += _text_len(body)
+    return body_len
 
-    missing = [k for k in ("id", "type", "stage", "order", "title", "minutes", "sections", "quiz")
-               if item.get(k) in (None, "")]
-    if missing:
-        return ["%s 缺少字段 %s" % (where, ",".join(missing))]
 
+def _check_quizzes(item, item_type, where, problems):
+    """校验自测题；返回题干+答案字数。"""
+    quizzes = quiz_items(item)
+    if not (QUIZ_MIN <= len(quizzes) <= QUIZ_MAX):
+        problems.append("%s quiz 必须是 %d-%d 道题的列表" % (where, QUIZ_MIN, QUIZ_MAX))
+    required = QUIZ_REQUIRED.get(item_type, 1)
+    if len(quizzes) < required:
+        problems.append("%s 的 %s 至少需要 %d 道自测题" % (where, item_type, required))
+    total = 0
+    for idx, quiz in enumerate(quizzes):
+        q, a = str(quiz.get("q") or "").strip(), str(quiz.get("a") or "").strip()
+        if not (QUIZ_Q_MIN <= _text_len(q) <= QUIZ_Q_MAX):
+            problems.append("%s quiz[%d].q 应在 %d-%d 字" % (where, idx, QUIZ_Q_MIN, QUIZ_Q_MAX))
+        if not (QUIZ_A_MIN <= _text_len(a) <= QUIZ_A_MAX):
+            problems.append("%s quiz[%d].a 应在 %d-%d 字" % (where, idx, QUIZ_A_MIN, QUIZ_A_MAX))
+        total += _text_len(q) + _text_len(a)
+    return total
+
+
+def _check_sources(sources, where, problems):
+    if sources is None:
+        return
+    if not isinstance(sources, list) or len(sources) > SOURCES_MAX:
+        problems.append("%s sources 必须是最多 %d 条的列表" % (where, SOURCES_MAX))
+        return
+    for url in sources:
+        if not URL_RE.match(str(url or "")):
+            problems.append("%s sources 不是合法 http(s) URL：%r" % (where, url))
+
+
+def _check_meta(item, where, seen_ids, problems):
+    """id / type / stage / order / title / minutes；返回 item_type。"""
     item_id = str(item.get("id") or "")
     if not ID_RE.match(item_id):
         problems.append("%s id 不符合 c101/t201/p308 形式" % where)
@@ -119,50 +161,26 @@ def _validate_item(item, seen_ids):
     if not (MINUTES_RANGE[0] <= minutes <= MINUTES_RANGE[1]):
         problems.append("%s minutes 应在 %d-%d 分钟（v2 每条 10–15 分钟）"
                         % (where, MINUTES_RANGE[0], MINUTES_RANGE[1]))
+    return item_type
 
-    sections = item.get("sections")
-    body_len = 0
-    if not isinstance(sections, list) or not (SECTIONS_MIN <= len(sections) <= SECTIONS_MAX):
-        problems.append("%s sections 必须是 %d-%d 节" % (where, SECTIONS_MIN, SECTIONS_MAX))
-    else:
-        for idx, sec in enumerate(sections):
-            if not isinstance(sec, dict):
-                problems.append("%s sections[%d] 不是 {h,p}" % (where, idx))
-                continue
-            head, body = str(sec.get("h") or "").strip(), str(sec.get("p") or "").strip()
-            if not head or _text_len(head) > SECTION_HEAD_MAX:
-                problems.append("%s sections[%d].h 为空或超过 %d 字" % (where, idx, SECTION_HEAD_MAX))
-            if not (SECTION_BODY_MIN <= _text_len(body) <= SECTION_BODY_MAX):
-                problems.append("%s sections[%d].p 应在 %d-%d 字"
-                                % (where, idx, SECTION_BODY_MIN, SECTION_BODY_MAX))
-            body_len += _text_len(body)
 
-    quizzes = quiz_items(item)
-    if not (QUIZ_MIN <= len(quizzes) <= QUIZ_MAX):
-        problems.append("%s quiz 必须是 %d-%d 道题的列表" % (where, QUIZ_MIN, QUIZ_MAX))
-    required = QUIZ_REQUIRED.get(item_type, 1)
-    if len(quizzes) < required:
-        problems.append("%s 的 %s 至少需要 %d 道自测题" % (where, item_type, required))
-    for idx, quiz in enumerate(quizzes):
-        q, a = str(quiz.get("q") or "").strip(), str(quiz.get("a") or "").strip()
-        if not (QUIZ_Q_MIN <= _text_len(q) <= QUIZ_Q_MAX):
-            problems.append("%s quiz[%d].q 应在 %d-%d 字" % (where, idx, QUIZ_Q_MIN, QUIZ_Q_MAX))
-        if not (QUIZ_A_MIN <= _text_len(a) <= QUIZ_A_MAX):
-            problems.append("%s quiz[%d].a 应在 %d-%d 字" % (where, idx, QUIZ_A_MIN, QUIZ_A_MAX))
-        body_len += _text_len(q) + _text_len(a)
+def _validate_item(item, seen_ids):
+    """返回该条目的问题列表（空列表 = 通过）。"""
+    problems = []
+    where = "id=%s" % (item.get("id") or "?")
 
+    missing = [k for k in ("id", "type", "stage", "order", "title", "minutes", "sections", "quiz")
+               if item.get(k) in (None, "")]
+    if missing:
+        return ["%s 缺少字段 %s" % (where, ",".join(missing))]
+
+    item_type = _check_meta(item, where, seen_ids, problems)
+    body_len = _check_sections(item.get("sections"), where, problems)
+    body_len += _check_quizzes(item, item_type, where, problems)
     if not (BODY_TOTAL_MIN <= body_len <= BODY_TOTAL_MAX):
         problems.append("%s 正文合计 %d 字，应在 %d-%d 字（10–15 分钟）"
                         % (where, body_len, BODY_TOTAL_MIN, BODY_TOTAL_MAX))
-
-    sources = item.get("sources")
-    if sources is not None:
-        if not isinstance(sources, list) or len(sources) > SOURCES_MAX:
-            problems.append("%s sources 必须是最多 %d 条的列表" % (where, SOURCES_MAX))
-        else:
-            for url in sources:
-                if not URL_RE.match(str(url or "")):
-                    problems.append("%s sources 不是合法 http(s) URL：%r" % (where, url))
+    _check_sources(item.get("sources"), where, problems)
     return problems
 
 
