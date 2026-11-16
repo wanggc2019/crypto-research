@@ -36,7 +36,7 @@ tasks:
     effort: low
   policy.interpret:         # crypto-policy P0/P1 解读草稿（低频）
     model: claude-opus-5-5
-  ci.pr-review:             # GitHub Actions 的 PR 审查（CI 机器上没有 Claude Code 登录时自动跳过）
+  ci.pr-review:             # GitHub Actions 的 PR 审查（CI 用 secret CLAUDE_CODE_OAUTH_TOKEN 登录订阅；没配则跳过）
     model: claude-opus-5-5
     effort: high
 
