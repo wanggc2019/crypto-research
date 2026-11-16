@@ -328,6 +328,93 @@ def _tx_url(rec):
     return base + tx
 
 
+_DIRECTION_DESC = {
+    "cex_in": "cex_in · 转入交易所",
+    "cex_out": "cex_out · 转出交易所",
+    "cex_internal": "cex_internal · 交易所内部划转",
+}
+
+
+def _label_line(rec, labels, tags):
+    """地址标签（内置 + 浏览器 name tag）。"""
+    def _tag(addr):
+        addr_l = str(addr or "").lower()
+        lbl = labels.get(addr_l) or {}
+        if lbl.get("name"):
+            return str(lbl["name"])
+        return tags.get(addr_l) or ""
+
+    from_tag, to_tag = _tag(rec.get("from")), _tag(rec.get("to"))
+    if not (from_tag or to_tag):
+        return "地址标签：双方均无公开标签"
+    parts = []
+    if from_tag:
+        parts.append("from: %s" % from_tag)
+    if to_tag:
+        parts.append("to: %s" % to_tag)
+    return "地址标签：%s" % esc(" / ".join(parts))
+
+
+def _flow_line(rec, direction, cfg, labels, history, tags):
+    """流向与方向合并成一行：未知 → 未知（unknown · 无法判断买卖方向）。"""
+    desc = _DIRECTION_DESC.get(direction, "unknown · 无法判断买卖方向")
+    flow_line = "流向：%s → %s（%s）" % (
+        esc(_entity(rec.get("from"), labels, tags)),
+        esc(_entity(rec.get("to"), labels, tags)),
+        esc(desc),
+    )
+    if direction in ("unknown", "") and cfg.get("guess", True):
+        gs = guess_counterparty(rec, labels, history)
+        if gs:
+            flow_line += "（推测：%s）" % esc(gs)
+    return flow_line
+
+
+def _background_line(rec, history, today, tx_legs):
+    """背景：今日累计 + 该地址 7 天出现次数 + 同 tx 多腿；无内容返回空串。"""
+    bg = []
+    if today.get("n"):
+        pct = (float(rec.get("usd") or 0) / float(today.get("usd") or 0) * 100.0) if today.get("usd") else 0
+        bg.append("今日第 %d 笔大额（累计 %d 笔 / $%s，占 %.1f%%）" % (
+            today.get("n"), today.get("n"), _fmt_usd(today.get("usd")), pct))
+    freq = (history.get(str(rec.get("from") or "").lower()) or {}).get("count", 0)
+    freq2 = (history.get(str(rec.get("to") or "").lower()) or {}).get("count", 0)
+    if freq or freq2:
+        bg.append("近 7 天 from 出现 %d 次 / to 出现 %d 次" % (freq, freq2))
+    legs = tx_legs.get(str(rec.get("tx") or ""), 1)
+    if legs > 1:
+        bg.append("同一 tx 共 %d 腿，仅报最大一腿" % legs)
+    return "背景：%s" % esc("；".join(bg)) if bg else ""
+
+
+def _render_group(g, cfg, labels, history, tags, today, tx_legs):
+    rec = g["rec"]
+    sev = severity_of(rec, cfg)
+    icon = "🔴" if sev == "P0" else "🟡"
+    amount = "<b>$%s</b>" % _fmt_usd(g["usd"])
+    if g["count"] > 1:
+        amount += "（%d 笔）" % g["count"]
+    whale_tag = " · 🐋 巨鲸" if rec.get("_whale") else ""
+    lines = ["", "%s <b>%s</b> %s %s · %s%s" % (
+        icon, sev, esc(str(rec.get("symbol") or "")), amount,
+        esc(str(rec.get("chain") or "").upper() or "ETH"), whale_tag)]
+    lines.append("代币数量：%s ｜ 区块：%s" % (
+        esc(_fmt_amount(rec)), esc(str(rec.get("block") or "?"))))
+    lines.append("%s → %s" % (esc(_short(rec.get("from"))), esc(_short(rec.get("to")))))
+    lines.append(_label_line(rec, labels, tags))
+    lines.append(_flow_line(rec, str(g.get("direction") or "unknown"), cfg, labels, history, tags))
+    bg = _background_line(rec, history, today, tx_legs)
+    if bg:
+        lines.append(bg)
+    why = rec.get("_why") or []
+    if why:
+        lines.append("推送理由：%s" % esc("；".join(why[:3])))
+    url = _tx_url(rec)
+    if url:
+        lines.append("交易：%s" % esc(url))
+    return lines
+
+
 def render_message(records, cfg, labels, history, now, special=False, tags=None, today=None, tx_legs=None):
     tags = tags or {}
     tx_legs = tx_legs or {}
@@ -336,97 +423,14 @@ def render_message(records, cfg, labels, history, now, special=False, tags=None,
              "%s · 本轮 %d 笔%s" % (timeutil.fmt_local(now, "%m-%d %H:%M"), len(records),
                                    " · ⚠ 特殊期：日限额已解除" if special else "")]
     for g in _group_records(records):
-        rec = g["rec"]
-        sev = severity_of(rec, cfg)
-        icon = "🔴" if sev == "P0" else "🟡"
-        lines.append("")
-        amount = "<b>$%s</b>" % _fmt_usd(g["usd"])
-        if g["count"] > 1:
-            amount += "（%d 笔）" % g["count"]
-        whale_tag = " · 🐋 巨鲸" if rec.get("_whale") else ""
-        lines.append("%s <b>%s</b> %s %s · %s%s" % (
-            icon, sev, esc(str(rec.get("symbol") or "")), amount,
-            esc(str(rec.get("chain") or "").upper() or "ETH"), whale_tag))
-        lines.append("代币数量：%s ｜ 区块：%s" % (
-            esc(_fmt_amount(rec)), esc(str(rec.get("block") or "?"))))
-        lines.append("%s → %s" % (esc(_short(rec.get("from"))), esc(_short(rec.get("to")))))
-        # 地址标签（内置 + 浏览器 name tag）
-        def _tag(addr):
-            addr_l = str(addr or "").lower()
-            lbl = labels.get(addr_l) or {}
-            if lbl.get("name"):
-                return str(lbl["name"])
-            return tags.get(addr_l) or ""
-
-        from_tag, to_tag = _tag(rec.get("from")), _tag(rec.get("to"))
-        if from_tag or to_tag:
-            parts = []
-            if from_tag:
-                parts.append("from: %s" % from_tag)
-            if to_tag:
-                parts.append("to: %s" % to_tag)
-            lines.append("地址标签：%s" % esc(" / ".join(parts)))
-        else:
-            lines.append("地址标签：双方均无公开标签")
-        direction = str(g.get("direction") or "unknown")
-        if direction == "cex_in":
-            desc = "cex_in · 转入交易所"
-        elif direction == "cex_out":
-            desc = "cex_out · 转出交易所"
-        elif direction == "cex_internal":
-            desc = "cex_internal · 交易所内部划转"
-        else:
-            desc = "unknown · 无法判断买卖方向"
-        # 流向与方向合并成一行：未知 → 未知（unknown · 无法判断买卖方向）
-        flow_line = "流向：%s → %s（%s）" % (
-            esc(_entity(rec.get("from"), labels, tags)),
-            esc(_entity(rec.get("to"), labels, tags)),
-            esc(desc),
-        )
-        if direction in ("unknown", "") and cfg.get("guess", True):
-            gs = guess_counterparty(rec, labels, history)
-            if gs:
-                flow_line += "（推测：%s）" % esc(gs)
-        lines.append(flow_line)
-        # 背景：今日累计 + 该地址 7 天出现次数 + 同 tx 多腿
-        bg = []
-        if today.get("n"):
-            pct = (float(rec.get("usd") or 0) / float(today.get("usd") or 0) * 100.0) if today.get("usd") else 0
-            bg.append("今日第 %d 笔大额（累计 %d 笔 / $%s，占 %.1f%%）" % (
-                today.get("n"), today.get("n"), _fmt_usd(today.get("usd")), pct))
-        freq = (history.get(str(rec.get("from") or "").lower()) or {}).get("count", 0)
-        freq2 = (history.get(str(rec.get("to") or "").lower()) or {}).get("count", 0)
-        if freq or freq2:
-            bg.append("近 7 天 from 出现 %d 次 / to 出现 %d 次" % (freq, freq2))
-        legs = tx_legs.get(str(rec.get("tx") or ""), 1)
-        if legs > 1:
-            bg.append("同一 tx 共 %d 腿，仅报最大一腿" % legs)
-        if bg:
-            lines.append("背景：%s" % esc("；".join(bg)))
-        why = rec.get("_why") or []
-        if why:
-            lines.append("推送理由：%s" % esc("；".join(why[:3])))
-        url = _tx_url(rec)
-        if url:
-            lines.append("交易：%s" % esc(url))
+        lines += _render_group(g, cfg, labels, history, tags, today, tx_legs)
     lines.append("")
     lines.append("🏷 任务：%s" % job_label("crypto-onchain"))
     return "\n".join(lines)
 
 
-def select_alerts(records, cfg, state, now, labels, history, today_large_count, context=None,
-                  today_p0=0):
-    """从本轮记录中挑选要发的告警；返回 (to_send, suppressed, state)。
-
-    - 只处理 ≥ alerts.min_usd 且未出现过的记录；
-    - pending（上轮发送失败）优先重试，最多 PENDING_MAX 条；
-    - P0 受 burst_cap 限制；P1 受动态 daily_cap 限制；夜间 P1 抑制；
-    - 单条消息最多 max_per_round 笔，其余记 suppressed（reason=round_limit）。
-    """
-    today = now.strftime("%Y-%m-%d")
-    state = _reset_daily(dict(state or {}), today)
-    sent_keys = {str(x.get("key")) for x in state["sent"]}
-    sup_keys = {str(x.get("key")) for x in state["suppressed"]}
+def _fresh_candidates(state, records, cfg, sent_keys, sup_keys):
+    """pending 优先 + 本轮记录：去掉已发/已抑制/低于 min_usd；同一 tx 只留最大一腿；按金额降序。"""
     candidates = []
     for rec in list(state.get("pending") or []) + list(records or []):
         key = _key(rec)
@@ -447,56 +451,81 @@ def select_alerts(records, cfg, state, now, labels, history, today_large_count, 
             by_tx[key_tx] = rec
     candidates.extend(by_tx.values())
     candidates.sort(key=lambda r: float(r.get("usd") or 0), reverse=True)
+    return candidates
+
+
+def _caps(cfg, special, only_p0, today_large_count):
+    """返回 (cap, hard)：P1 日上限 / P0 突发上限。"""
+    if special:
+        # 特殊期解除常规 10 条，但仍有硬上限（默认 30），避免极端日刷屏
+        cap = int((cfg.get("special") or {}).get("max_messages") or 30)
+        return cap, cap
+    if only_p0:
+        # 只推 P0 时仍遵守「常规 ≤10 条消息/天」；特殊期才解除（设计约束）
+        cap = int(cfg.get("daily_cap") or 10)
+        return cap, cap
+    return daily_cap(cfg, today_large_count), int(cfg.get("burst_cap") or 30)
+
+
+def _limit_for(rec, sev, cfg, special, only_p0, caps):
+    cap, hard = caps
+    if special:
+        return cap
+    if only_p0:
+        # 普通 P0 用 daily_cap；巨鲸额外保留 whale_daily_cap 条，避免发满后漏掉大额
+        return int(cfg.get("daily_cap") or 10) + (int(cfg.get("whale_daily_cap") or 5) if rec.get("_whale") else 0)
+    return hard if sev == "P0" else cap
+
+
+def select_alerts(records, cfg, state, now, labels, history, today_large_count, context=None,
+                  today_p0=0):
+    """从本轮记录中挑选要发的告警；返回 (to_send, suppressed, state)。
+
+    - 只处理 ≥ alerts.min_usd 且未出现过的记录；
+    - pending（上轮发送失败）优先重试，最多 PENDING_MAX 条；
+    - P0 受 burst_cap 限制；P1 受动态 daily_cap 限制；夜间 P1 抑制；
+    - 单条消息最多 max_per_round 笔，其余记 suppressed（reason=round_limit）。
+    """
+    today = now.strftime("%Y-%m-%d")
+    state = _reset_daily(dict(state or {}), today)
+    sent_keys = {str(x.get("key")) for x in state["sent"]}
+    sup_keys = {str(x.get("key")) for x in state["suppressed"]}
+    candidates = _fresh_candidates(state, records, cfg, sent_keys, sup_keys)
 
     special = special_mode(cfg, today_p0, context)
     only_p0 = bool(cfg.get("only_p0"))
-    if special:
-        # 特殊期解除常规 10 条，但仍有硬上限（默认 30），避免极端日刷屏
-        cap = hard = int((cfg.get("special") or {}).get("max_messages") or 30)
-    elif only_p0:
-        # 只推 P0 时仍遵守「常规 ≤10 条消息/天」；特殊期才解除（设计约束）
-        cap = hard = int(cfg.get("daily_cap") or 10)
-    else:
-        cap = daily_cap(cfg, today_large_count)
-        hard = int(cfg.get("burst_cap") or 30)
+    caps = _caps(cfg, special, only_p0, today_large_count)
     max_round = int(cfg.get("max_per_round") or 5)
     quiet = in_quiet_hours(now, cfg.get("quiet_hours") or "")
     to_send, suppressed = [], []
+
+    def _suppress(rec, sev, reason, **extra):
+        row = {"key": _key(rec), "severity": sev, "usd": rec.get("usd"), "reason": reason}
+        row.update(extra)
+        suppressed.append(row)
+        sup_keys.add(_key(rec))
+
     for rec in candidates:
         sev = severity_of(rec, cfg)
         whale = is_whale(rec, cfg)
         # 智能判断：没有价格/新闻/资金面上下文的大额转账不打扰（巨鲸始终发）
         verdict = market_context.assess(rec, cfg, context or {}, now)
         if not verdict.get("send"):
-            suppressed.append({"key": _key(rec), "severity": sev, "usd": rec.get("usd"),
-                               "reason": "low_context", "score": verdict.get("score") or 0})
-            sup_keys.add(_key(rec))
+            _suppress(rec, sev, "low_context", score=verdict.get("score") or 0)
             continue
         rec = dict(rec)
         rec["_why"] = verdict.get("reasons") or []
         rec["_whale"] = bool(verdict.get("whale") or whale)
         if only_p0 and sev != "P0":
-            suppressed.append({"key": _key(rec), "severity": sev,
-                               "usd": rec.get("usd"), "reason": "only_p0"})
-            sup_keys.add(_key(rec))
+            _suppress(rec, sev, "only_p0")
             continue
         if quiet and sev != "P0":
-            suppressed.append({"key": _key(rec), "severity": sev,
-                               "usd": rec.get("usd"), "reason": "quiet_hours"})
-            sup_keys.add(_key(rec))
+            _suppress(rec, sev, "quiet_hours")
             continue
-        if special:
-            limit = cap
-        elif only_p0:
-            # 普通 P0 用 daily_cap；巨鲸额外保留 whale_daily_cap 条，避免发满后漏掉大额
-            limit = int(cfg.get("daily_cap") or 10) + (int(cfg.get("whale_daily_cap") or 5) if rec.get("_whale") else 0)
-        else:
-            limit = hard if sev == "P0" else cap
+        limit = _limit_for(rec, sev, cfg, special, only_p0, caps)
         capped = limit is not None and state["messages"] >= limit
         if capped or len(to_send) >= max_round:
-            suppressed.append({"key": _key(rec), "severity": sev, "usd": rec.get("usd"),
-                               "reason": "daily_cap" if capped else "round_limit"})
-            sup_keys.add(_key(rec))
+            _suppress(rec, sev, "daily_cap" if capped else "round_limit")
             continue
         to_send.append(rec)
     state["suppressed"].extend(suppressed)

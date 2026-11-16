@@ -197,6 +197,77 @@ def _fmt_amount(value):
     return integer + ("." + fraction if fraction else "")
 
 
+def _walletflow_lines(snap, wf, wf_alerts):
+    """链上大额转账 / 告警计数 / 净流 / 噪声过滤 / 单向大额。"""
+    lines = []
+    wf_chains = [str(c.get("name")) for c in ((snap.get("walletflow") or {}).get("chains") or []) if c.get("name")]
+    wf_label = "ETH 主网 / BSC" if len(wf_chains) > 1 else "ETH 主网"
+    wf_line = "· 链上大额转账（%s，USDT/USDC）：<b>%d</b> 笔 ≥ 阈值，合计 %s" % (
+        wf_label, wf["n"], _fmt_usd(wf["usd_total"]) if wf["n"] else "—",
+    )
+    if wf.get("cex_in") or wf.get("cex_out") or wf.get("cex_internal"):
+        wf_line += "；入所 <b>%d</b> / 出所 <b>%d</b> / 内部 %d / 未知 %d" % (
+            wf.get("cex_in") or 0, wf.get("cex_out") or 0,
+            wf.get("cex_internal") or 0, wf.get("unknown") or 0,
+        )
+    lines.append("· 今日链上告警（仅 P0）：<b>%d</b> 条（上限 %d，特殊期可解除）；P1/抑制 %d 条"
+                 % (wf_alerts["messages"], wf_alerts["cap"], wf_alerts["suppressed"]))
+    if wf["top"]:
+        item = wf["top"][0]
+        wf_line += "；最大 %s %s（%s → %s）" % (
+            esc(str(item.get("symbol") or "")), _fmt_usd(item.get("usd")),
+            esc(str(item.get("from") or "")[:10]), esc(str(item.get("to") or "")[:10]),
+        )
+    lines.append(wf_line)
+    if wf.get("usd_total"):
+        net_line = "· 链上净流：入所 %s / 出所 %s / 净 %s" % (
+            _fmt_usd(wf.get("usd_in") or 0), _fmt_usd(wf.get("usd_out") or 0),
+            ("+" if (wf.get("net") or 0) >= 0 else "") + _fmt_usd(abs(wf.get("net") or 0)),
+        )
+        if wf.get("net_by_label"):
+            net_line += "（%s）" % "、".join(
+                "%s %+.0fM" % (k, v / 1e6) for k, v in wf["net_by_label"]
+            )
+        lines.append(net_line)
+        if wf.get("roundtrip"):
+            lines.append("· 噪声过滤：同对地址双向对倒 ~%s（占 %.0f%%），单笔大额多为做市/结算，不代表方向" % (
+                _fmt_usd(wf["roundtrip"]), (wf.get("roundtrip_ratio") or 0) * 100))
+        if wf.get("oneway"):
+            parts = []
+            for r in wf["oneway"]:
+                tx = str(r.get("tx") or "")
+                url = ("https://bscscan.com/tx/" if r.get("chain") == "bsc" else "https://etherscan.io/tx/") + tx
+                parts.append("%s %s→%s（%s）" % (
+                    _fmt_usd(r.get("usd")), str(r.get("from") or "")[:8],
+                    str(r.get("to") or "")[:8], url))
+            lines.append("· 单向大额（方向不明，值得留意）：%s" % "；".join(parts))
+    return lines
+
+
+def _holdings_lines(hold, hold_events):
+    lines = []
+    if hold.get("enabled"):
+        hold_entries = hold.get("entries") or []
+        if hold.get("usd_total") is not None:
+            hold_usd = _fmt_usd(hold.get("usd_total"))
+        else:
+            hold_usd = "价格不可得（只报数量）"
+        lines.append("· 已知地址持仓（人工配置 %d 个）：合计 %s；今日变化事件 <b>%d</b> 条%s" % (
+            len(hold_entries), hold_usd, len(hold_events),
+            "（缓存）" if hold.get("cached") else "",
+        ))
+        for row in hold_entries[:3]:
+            change = row.get("change_pct")
+            lines.append("  - %s %s %s（%s）" % (
+                esc(str(row.get("label") or "")[:24]), esc(str(row.get("symbol") or "")),
+                _fmt_amount(row.get("balance")),
+                ("较上次 %+.2f%%" % change) if change is not None else "无上次基线",
+            ))
+        if hold.get("n_errors"):
+            lines.append("  - ⚠ 取数失败 %d 个地址（保留上次余额，详见快照）" % hold["n_errors"])
+    return lines
+
+
 def build_summary(cfg, paths, date=None, now=None):
     """返回 (text_html, data_dict)。只读，不发送。"""
     now = now or common.now()
@@ -251,68 +322,10 @@ def build_summary(cfg, paths, date=None, now=None):
             esc(str(row.get("asset") or "市场")), esc(str(row.get("category") or "")),
             esc(str(row.get("confidence") or "")),
         ))
-    wf_chains = [str(c.get("name")) for c in ((snap.get("walletflow") or {}).get("chains") or []) if c.get("name")]
-    wf_label = "ETH 主网 / BSC" if len(wf_chains) > 1 else "ETH 主网"
-    wf_line = "· 链上大额转账（%s，USDT/USDC）：<b>%d</b> 笔 ≥ 阈值，合计 %s" % (
-        wf_label, wf["n"], _fmt_usd(wf["usd_total"]) if wf["n"] else "—",
-    )
-    if wf.get("cex_in") or wf.get("cex_out") or wf.get("cex_internal"):
-        wf_line += "；入所 <b>%d</b> / 出所 <b>%d</b> / 内部 %d / 未知 %d" % (
-            wf.get("cex_in") or 0, wf.get("cex_out") or 0,
-            wf.get("cex_internal") or 0, wf.get("unknown") or 0,
-        )
-    lines.append("· 今日链上告警（仅 P0）：<b>%d</b> 条（上限 %d，特殊期可解除）；P1/抑制 %d 条"
-                 % (wf_alerts["messages"], wf_alerts["cap"], wf_alerts["suppressed"]))
-    if wf["top"]:
-        item = wf["top"][0]
-        wf_line += "；最大 %s %s（%s → %s）" % (
-            esc(str(item.get("symbol") or "")), _fmt_usd(item.get("usd")),
-            esc(str(item.get("from") or "")[:10]), esc(str(item.get("to") or "")[:10]),
-        )
-    lines.append(wf_line)
-    if wf.get("usd_total"):
-        net_line = "· 链上净流：入所 %s / 出所 %s / 净 %s" % (
-            _fmt_usd(wf.get("usd_in") or 0), _fmt_usd(wf.get("usd_out") or 0),
-            ("+" if (wf.get("net") or 0) >= 0 else "") + _fmt_usd(abs(wf.get("net") or 0)),
-        )
-        if wf.get("net_by_label"):
-            net_line += "（%s）" % "、".join(
-                "%s %+.0fM" % (k, v / 1e6) for k, v in wf["net_by_label"]
-            )
-        lines.append(net_line)
-        if wf.get("roundtrip"):
-            lines.append("· 噪声过滤：同对地址双向对倒 ~%s（占 %.0f%%），单笔大额多为做市/结算，不代表方向" % (
-                _fmt_usd(wf["roundtrip"]), (wf.get("roundtrip_ratio") or 0) * 100))
-        if wf.get("oneway"):
-            parts = []
-            for r in wf["oneway"]:
-                tx = str(r.get("tx") or "")
-                url = ("https://bscscan.com/tx/" if r.get("chain") == "bsc" else "https://etherscan.io/tx/") + tx
-                parts.append("%s %s→%s（%s）" % (
-                    _fmt_usd(r.get("usd")), str(r.get("from") or "")[:8],
-                    str(r.get("to") or "")[:8], url))
-            lines.append("· 单向大额（方向不明，值得留意）：%s" % "；".join(parts))
+    lines += _walletflow_lines(snap, wf, wf_alerts)
     hold = snap.get("holdings") or {}
     hold_events = _holdings_today(paths, date)
-    if hold.get("enabled"):
-        hold_entries = hold.get("entries") or []
-        if hold.get("usd_total") is not None:
-            hold_usd = _fmt_usd(hold.get("usd_total"))
-        else:
-            hold_usd = "价格不可得（只报数量）"
-        lines.append("· 已知地址持仓（人工配置 %d 个）：合计 %s；今日变化事件 <b>%d</b> 条%s" % (
-            len(hold_entries), hold_usd, len(hold_events),
-            "（缓存）" if hold.get("cached") else "",
-        ))
-        for row in hold_entries[:3]:
-            change = row.get("change_pct")
-            lines.append("  - %s %s %s（%s）" % (
-                esc(str(row.get("label") or "")[:24]), esc(str(row.get("symbol") or "")),
-                _fmt_amount(row.get("balance")),
-                ("较上次 %+.2f%%" % change) if change is not None else "无上次基线",
-            ))
-        if hold.get("n_errors"):
-            lines.append("  - ⚠ 取数失败 %d 个地址（保留上次余额，详见快照）" % hold["n_errors"])
+    lines += _holdings_lines(hold, hold_events)
     lines += [
         "· 资金面：CEX 24h 净流 %s bps TVL（%s）；稳定币 24h 净增发 %s（负=净赎回）"
         % (_fmt_pct(cex.get("net_24h_bps"), 1).replace("%", ""), _fmt_usd(cex.get("net_24h_usd")),

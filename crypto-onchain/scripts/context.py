@@ -69,21 +69,8 @@ def _keyword_hit(item):
     return hits
 
 
-def assess(record, cfg, ctx, now):
-    """返回是否发送、上下文得分、理由（人类可读）。巨鲸直接放行。"""
-    smart = cfg.get("smart") or {}
-    usd = float(record.get("usd") or 0)
-    whale = (usd >= float(cfg.get("whale_usd") or 100_000_000)
-             or (record.get("direction") == "cex_in"
-                 and usd >= float(cfg.get("whale_cex_in_usd") or 50_000_000)))
-    if not smart.get("enabled", True):
-        return {"send": True, "score": 0, "reasons": [], "whale": whale}
-    if whale:
-        return {"send": True, "score": 0, "reasons": ["巨鲸金额（≥$100M 或入所 ≥$50M）"], "whale": True}
-
-    reasons, score = [], 0
-    # 1) 价格波动：任一主流币 24h 涨跌幅 ≥ 阈值
-    assets = ctx.get("assets") or {}
+def _price_move_factor(assets, smart):
+    """1) 价格波动：任一主流币 24h 涨跌幅 ≥ 阈值。"""
     stress_pct = float(smart.get("stress_move_24h_pct") or 3.0)
     worst = None
     for asset, row in assets.items():
@@ -95,32 +82,35 @@ def assess(record, cfg, ctx, now):
         if worst is None or abs(ch) > abs(worst[1]):
             worst = (asset, ch)
     if worst and abs(worst[1]) >= stress_pct:
-        score += 2
-        reasons.append("%s 24h %+.1f%%" % (worst[0], worst[1]))
+        return 2, ["%s 24h %+.1f%%" % (worst[0], worst[1])]
+    return 0, []
 
-    # 2) 价格信号（快涨快跌/破位等）
-    for sig in ctx.get("signals") or []:
+
+def _price_signal_factor(signals):
+    """2) 价格信号（快涨快跌/破位等）：取第一条 P0/P1。"""
+    for sig in signals or []:
         if not isinstance(sig, dict):
             continue
         if str(sig.get("severity")) in ("P0", "P1"):
-            score += 2 if str(sig.get("severity")) == "P0" else 1
-            reasons.append("价格信号：%s" % (sig.get("rule") or sig.get("title") or "异动"))
-            break
+            score = 2 if str(sig.get("severity")) == "P0" else 1
+            return score, ["价格信号：%s" % (sig.get("rule") or sig.get("title") or "异动")]
+    return 0, []
 
-    # 3) 新闻：lookback 内 P0/P1 且命中主题关键词
-    news = _recent_news(ctx.get("news") or [], now, _news_ttl_hours(cfg))
+
+def _news_factor(news_items, cfg, now):
+    """3) 新闻：lookback 内 P0/P1 且命中主题关键词（取最新一条）。"""
+    news = _recent_news(news_items or [], now, _news_ttl_hours(cfg))
     for item in sorted(news, key=lambda x: str(x.get("published_at") or ""), reverse=True):
         sev = str(item.get("severity") or "")
-        if sev not in ("P0", "P1"):
+        if sev not in ("P0", "P1") or not _keyword_hit(item):
             continue
-        hits = _keyword_hit(item)
-        if not hits:
-            continue
-        score += 3 if sev == "P0" else 2
-        reasons.append("新闻 %s：%s" % (sev, (item.get("title") or "")[:40]))
-        break
+        return (3 if sev == "P0" else 2), ["新闻 %s：%s" % (sev, (item.get("title") or "")[:40])]
+    return 0, []
 
-    # 4) 资金面：CEX 净流出 / 稳定币净赎回
+
+def _funding_factor(ctx, smart):
+    """4) 资金面：CEX 净流出 / 稳定币净赎回。"""
+    score, reasons = 0, []
     try:
         cex = ctx.get("cex_net_24h_bps")
         if cex is not None and float(cex) <= -float(smart.get("cex_outflow_bps") or 100):
@@ -135,15 +125,38 @@ def assess(record, cfg, ctx, now):
             reasons.append("稳定币 24h 净赎回 %.1f 亿" % (abs(float(st)) / 1e8))
     except (TypeError, ValueError):
         pass
+    return score, reasons
 
-    # 5) 入所 + 价格下跌：潜在卖压
+
+def _cex_in_on_dip_factor(record, assets):
+    """5) 入所 + 价格下跌：潜在卖压。"""
     try:
         btc_ch = float((assets.get("BTC") or {}).get("change_24h_pct"))
         if record.get("direction") == "cex_in" and btc_ch <= -2.0:
-            score += 1
-            reasons.append("BTC 下跌中转入交易所")
+            return 1, ["BTC 下跌中转入交易所"]
     except (TypeError, ValueError):
         pass
+    return 0, []
 
+
+def assess(record, cfg, ctx, now):
+    """返回是否发送、上下文得分、理由（人类可读）。巨鲸直接放行。"""
+    smart = cfg.get("smart") or {}
+    usd = float(record.get("usd") or 0)
+    whale = (usd >= float(cfg.get("whale_usd") or 100_000_000)
+             or (record.get("direction") == "cex_in"
+                 and usd >= float(cfg.get("whale_cex_in_usd") or 50_000_000)))
+    if not smart.get("enabled", True):
+        return {"send": True, "score": 0, "reasons": [], "whale": whale}
+    if whale:
+        return {"send": True, "score": 0, "reasons": ["巨鲸金额（≥$100M 或入所 ≥$50M）"], "whale": True}
+
+    assets = ctx.get("assets") or {}
+    score, reasons = 0, []
+    for s_, r_ in (_price_move_factor(assets, smart), _price_signal_factor(ctx.get("signals")),
+                   _news_factor(ctx.get("news"), cfg, now), _funding_factor(ctx, smart),
+                   _cex_in_on_dip_factor(record, assets)):
+        score += s_
+        reasons += r_
     min_score = int(smart.get("min_score") or 2)
     return {"send": score >= min_score, "score": score, "reasons": reasons, "whale": False}
