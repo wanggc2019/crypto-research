@@ -74,34 +74,7 @@ def _skill_line(row):
     return "**%s** %d（%s）" % (row["label"], row["count"], _delta(row.get("delta")))
 
 
-def render_weekly(data, cfg=None):
-    cfg = cfg or {}
-    ov = data.get("overview") or {}
-    period = data.get("period") or {}
-    title = "加密行业技术岗位周报（DevOps / SRE / MLOps / 开发）· %s" % data.get("date")
-    lines = [
-        "# %s" % title,
-        "",
-        "> 统计窗口：%s ~ %s（%s 天）｜在招岗位 **%d**｜覆盖 **%d** 家公司｜数据源健康 %d/%d" % (
-            period.get("start"), period.get("end"), period.get("days"),
-            ov.get("jobs", 0), ov.get("companies", 0),
-            ov.get("sources_ok", 0), ov.get("sources_total", 0)),
-        "> 自动生成：`crypto-jobs`（规则抽取，样本见文末方法说明）",
-        "",
-        "## 1. 市场概览",
-        "",
-        "- 在招目标岗位：**%d**（DevOps / SRE / MLOps / 平台 + 开发岗位）" % ov.get("jobs", 0),
-        "- 本周新增：**%d**；关闭：**%d**；JD 有变更：**%d**" % (
-            ov.get("new", 0), ov.get("closed", 0), ov.get("changed", 0)),
-        "- 远程岗位占比：**%s**（%d 个）；资历分布：%s" % (
-            _pct(ov.get("remote_share")), ov.get("remote", 0),
-            "、".join("%s %d" % (s.get("seniority"), s.get("jobs"))
-                     for s in (ov.get("seniority") or [])[:5]) or "—"),
-        "- 观测到技能：**%d** 个（词典规模 %s 个）" % (
-            ov.get("skills_observed", 0), data.get("taxonomy_size", "?")),
-    ]
-    if period.get("first_baseline"):
-        lines.append("- ⚠️ 首次建立基线：本次不计算「新增」，下周开始有环比。")
+def _sec_top_skills(lines, data, ov):
     lines += ["", "## 2. 技能需求 Top %d" % len(data.get("top_skills") or []), ""]
     rows = [[i + 1, _cell(r["label"]), _cell(r.get("category_label"), 20), r["count"],
              _pct(100.0 * r["count"] / (ov.get("jobs") or 1)), r.get("required", 0), _delta(r.get("delta"))]
@@ -118,6 +91,9 @@ def render_weekly(data, cfg=None):
             lines.append("- **%s**（%d）%s" % (
                 _cell(row.get("label"), 24), row.get("count", 0), _children_text(row, 6)))
 
+
+
+def _sec_trends(lines, data, period):
     lines += ["", "## 3. 趋势：升温 / 降温 / 新出现", ""]
     rising = data.get("rising") or []
     falling = data.get("falling") or []
@@ -131,6 +107,9 @@ def render_weekly(data, cfg=None):
     lines.append("- **新出现**：" + ("、".join("**%s** %d" % (r["label"], r["count"])
                                     for r in new_skills[:8]) if new_skills else "无"))
 
+
+
+def _sec_roles(lines, data):
     lines += ["", "## 4. 分角色技能需求", ""]
     for role in data.get("by_role") or []:
         top = role.get("top_skills") or []
@@ -143,6 +122,9 @@ def render_weekly(data, cfg=None):
             lines.append("_样本不足_")
         lines.append("")
 
+
+
+def _sec_companies(lines, data):
     lines += ["## 5. 公司招聘统计", ""]
     companies = data.get("companies") or []
     type_map = _exchange_type_map(data)
@@ -164,6 +146,11 @@ def render_weekly(data, cfg=None):
     else:
         lines.append("_无数据_")
 
+
+
+def _sec_profiles(lines, data, cfg):
+    companies = data.get("companies") or []
+    type_map = _exchange_type_map(data)
     profiles = companies[: int((cfg or {}).get("report", {}).get("company_profiles") or 10)]
     if profiles:
         lines += ["", "## 6. 公司画像（招聘量 Top %d）" % len(profiles), ""]
@@ -187,6 +174,9 @@ def render_weekly(data, cfg=None):
                 lines.append("- **代表岗位**：%s" % "；".join(_cell(t, 64) for t in titles[:3]))
             lines.append("")
 
+
+
+def _sec_exchange(lines, data):
     exchange = data.get("exchange_dynamics") or {}
     cex_rows = exchange.get("cex") or []
     dex_rows = exchange.get("dex") or []
@@ -261,6 +251,9 @@ def render_weekly(data, cfg=None):
                          % dex.get("jobs", 0))
         lines.append("")
 
+
+
+def _sec_notable(lines, data):
     lines += ["", "## 8. 本周值得看的新岗位", ""]
     notable = data.get("notable_new_jobs") or []
     if notable:
@@ -273,6 +266,9 @@ def render_weekly(data, cfg=None):
     else:
         lines.append("_本周无新增岗位。_")
 
+
+
+def _sec_history(lines, data):
     history = data.get("skill_history")
     show_history = bool(history and history.get("series") and len(history.get("dates") or []) >= 2)
     if show_history:
@@ -283,6 +279,10 @@ def render_weekly(data, cfg=None):
             rows.append([_cell(item["label"], 24)] + list(item.get("counts") or []))
         lines.append(_table(["技能"] + [d[5:] for d in dates], rows))
 
+    return show_history
+
+
+def _sec_methods(lines, data, ov, period, show_history):
     lines += [
         "",
         "## %d. 方法与局限" % (10 if show_history else 9),
@@ -313,6 +313,45 @@ def render_weekly(data, cfg=None):
         for err in data["notes"]["source_errors"]:
             lines.append("- `%s`：%s" % (err.get("source_id"), _cell(err.get("error"), 120)))
         lines += ["", "</details>", ""]
+
+
+def render_weekly(data, cfg=None):
+    cfg = cfg or {}
+    ov = data.get("overview") or {}
+    period = data.get("period") or {}
+    title = "加密行业技术岗位周报（DevOps / SRE / MLOps / 开发）· %s" % data.get("date")
+    lines = [
+        "# %s" % title,
+        "",
+        "> 统计窗口：%s ~ %s（%s 天）｜在招岗位 **%d**｜覆盖 **%d** 家公司｜数据源健康 %d/%d" % (
+            period.get("start"), period.get("end"), period.get("days"),
+            ov.get("jobs", 0), ov.get("companies", 0),
+            ov.get("sources_ok", 0), ov.get("sources_total", 0)),
+        "> 自动生成：`crypto-jobs`（规则抽取，样本见文末方法说明）",
+        "",
+        "## 1. 市场概览",
+        "",
+        "- 在招目标岗位：**%d**（DevOps / SRE / MLOps / 平台 + 开发岗位）" % ov.get("jobs", 0),
+        "- 本周新增：**%d**；关闭：**%d**；JD 有变更：**%d**" % (
+            ov.get("new", 0), ov.get("closed", 0), ov.get("changed", 0)),
+        "- 远程岗位占比：**%s**（%d 个）；资历分布：%s" % (
+            _pct(ov.get("remote_share")), ov.get("remote", 0),
+            "、".join("%s %d" % (s.get("seniority"), s.get("jobs"))
+                     for s in (ov.get("seniority") or [])[:5]) or "—"),
+        "- 观测到技能：**%d** 个（词典规模 %s 个）" % (
+            ov.get("skills_observed", 0), data.get("taxonomy_size", "?")),
+    ]
+    if period.get("first_baseline"):
+        lines.append("- ⚠️ 首次建立基线：本次不计算「新增」，下周开始有环比。")
+    _sec_top_skills(lines, data, ov)
+    _sec_trends(lines, data, period)
+    _sec_roles(lines, data)
+    _sec_companies(lines, data)
+    _sec_profiles(lines, data, cfg)
+    _sec_exchange(lines, data)
+    _sec_notable(lines, data)
+    show_history = _sec_history(lines, data)
+    _sec_methods(lines, data, ov, period, show_history)
     return "\n".join(lines)
 
 
