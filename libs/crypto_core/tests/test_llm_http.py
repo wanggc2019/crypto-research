@@ -236,7 +236,8 @@ class HttpLlmTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             fake = self._fake_claude(tmp, json.dumps({"type": "result", "subtype": "success", "is_error": False,
                                                       "stop_reason": "end_turn", "result": " 你好 "}))
-            with mock.patch.dict(os.environ, {"ANTHROPIC_API_KEY": "should-be-removed"}):
+            with mock.patch.dict(os.environ, {"ANTHROPIC_API_KEY": "should-be-removed",
+                                              "CLAUDE_CODE_OAUTH_TOKEN": "ci-oauth-token"}):
                 out = llm._claude_code_chat([{"role": "system", "content": "SYS"}, {"role": "user", "content": "Q"}],
                                             "claude-haiku-5-5", effort="low", binary=fake)
             self.assertEqual(out, "你好")
@@ -248,7 +249,9 @@ class HttpLlmTest(unittest.TestCase):
             for flag in ("-p", "--no-session-persistence", "--output-format"):
                 self.assertIn(flag, args)
             self.assertEqual(open(os.path.join(tmp, "stdin")).read(), "Q")
-            self.assertNotIn("ANTHROPIC_API_KEY", open(os.path.join(tmp, "env")).read(), "订阅模式不能带 API key")
+            child_env = open(os.path.join(tmp, "env")).read()
+            self.assertNotIn("ANTHROPIC_API_KEY", child_env, "订阅模式不能带 API key")
+            self.assertIn("CLAUDE_CODE_OAUTH_TOKEN=ci-oauth-token", child_env, "CI 的订阅 token 必须传给 claude")
 
     def test_claude_code_errors(self):
         cases = [

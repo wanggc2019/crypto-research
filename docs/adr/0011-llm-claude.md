@@ -12,7 +12,7 @@
      | `x-kol.analyze` | `crypto-x-kol/scripts/analyze.py` 推文翻译/总结 | `claude-haiku-5-5` | low |
      | `news.translate` | `tools/translate_titles.py`（crypto-news 标题翻译） | `claude-haiku-5-5` | low |
      | `policy.interpret` | `crypto-policy/scripts/interpret.py` 政策解读草稿 | `claude-opus-5-5` | 默认（medium） |
-     | `ci.pr-review` | `tools/ai_review_pr.py`（CI PR 审查） | `claude-opus-5-5` | high（CI 机器没有 Claude Code 登录时跳过） |
+     | `ci.pr-review` | `tools/ai_review_pr.py`（CI PR 审查） | `claude-opus-5-5` | high（CI 用 `CLAUDE_CODE_OAUTH_TOKEN` 登录订阅，见后果） |
 
   4. **凭据**：`claude-code` 不需要 key（`key_for` 在找到 `claude` 命令时返回 `subscription`）；其它提供商在配置里只写环境变量名（`providers.<p>.key_env`），值只在仓库根 `.env`（CI 里是同名 GitHub secret）。查找顺序：调用方传入的 env → 进程环境变量 → 根 `.env`；不再读 `~/.dsh/.credentials.yaml`。没有 key 或配置有误时各调用方降级（原文/规则抽取/跳过审查）。
   5. **请求约定**（anthropic）：不发 `temperature`/`top_p`/`top_k`（SDK 2.x 的 API 版本 `2026-10-21` 会拒绝）；`max_tokens` 默认 16000（含思考 token）；`stop_reason` 为 `refusal`/`max_tokens` 时抛 `LLMError`；网络/429/5xx 交给 SDK 指数退避重试。deepseek：4xx（除 429）不重试，`max_tokens` 封顶 8192。
@@ -22,7 +22,8 @@
   9. **测试不得真调模型**：单测用本地 http.server 冒充两种 HTTP API（`base_url` 只在测试里传），用假的 `claude` 脚本测 claude-code；gate 时把记录调用的假 `claude` 放到 PATH 最前，启动次数应为 0；各模块回放走 `--no-analyze`/规则路径。验证方法：在环境变量里放假 key 并把 `ANTHROPIC_BASE_URL` 指向本地记录服务跑一遍 gate，请求数应为 0。
 - 后果：
   - 默认不产生 API 费用：所有 Claude 调用（直接调用 + agent）都走本机 Claude Code 订阅，与你日常使用共享 5 小时/7 天额度；高频的 x-kol/标题翻译用 Haiku + low，Opus 只用于低频任务。额度紧张时可把单个功能改成 deepseek 或 anthropic。
-  - 依赖本机：Mac 上要装着 Claude Code 并保持登录；CI（GitHub Actions）上没有登录，PR 审查会跳过（warning，不失败）。
+  - 依赖本机：Mac 上要装着 Claude Code 并保持登录。
+  - CI（GitHub Actions）的 PR 审查也走订阅（2026-11-17 用户决定）：`claude setup-token` 生成的长期 token 存为 secret `CLAUDE_CODE_OAUTH_TOKEN`，workflow 装固定版本 `@anthropic-ai/claude-code@2.1.325` 后由 `claude -p` 审查；未配 secret 时不装、审查跳过（warning，不失败）。token 过期需重新 `claude setup-token` 并更新 secret。workflow 运行的是 PR head 的代码（只对同仓库 PR 运行，fork 跳过），因此有推送权限的人能接触到该 token——本仓库只有本人推送。
   - 没有 `.venv`（回退系统 `python3`）时 `import anthropic` 失败；SDK 是延迟导入，调用方都已 `except Exception` 降级，不会拖垮采集主链路。
   - 外发数据对象取决于各功能所选提供商（推文、标题、政策原文、PR diff；agent 读到的本地报告/数据）。
   - 额度用尽或登录过期时调用失败，各调用方按原逻辑降级（原文/规则抽取/报告照发、AI 部分跳过）。
