@@ -159,8 +159,8 @@ def export_coverage(repo_root, dates):
     return {"price": days("price/daily/v1"), "news": days("news/daily/v1")}
 
 
-def build(cfg, date_str, base_dir=HERE, repo_root=REPO):
-    """返回 (label, markdown, telegram_text)。"""
+def _gather(cfg, date_str, base_dir, repo_root):
+    """读取周报所需的全部输入（K 线、各模块 exports、场景、宏观、待打分）。"""
     watchlist = cfg.get("watchlist") or core.SYMS
     data = core.load_all(base_dir, watchlist)
     if not data:
@@ -182,7 +182,11 @@ def build(cfg, date_str, base_dir=HERE, repo_root=REPO):
     macro = daily_brief.load_macro(base_dir, date_str)
     entries = score_mod.load_log(os.path.join(HERE, "records", "judgments.jsonl"))
 
-    # ---------- Markdown ----------
+    return {"watchlist": watchlist, "data": data, "dates": dates, "label": label, "rows": rows, "states": states, "btc": btc, "events": events, "signals": signals, "ncounts": ncounts, "policies": policies, "kols": kols, "cov": cov, "snap": snap, "horizon": horizon, "sc_rows": sc_rows, "macro": macro, "entries": entries}
+
+
+def _md_market(c):
+    dates, label, rows, states, btc = c["dates"], c["label"], c["rows"], c["states"], c["btc"]
     L = ["# crypto-analyst 周报 %s" % _esc(label), ""]
     L.append("> 窗口：最近 7 天（%s ~ %s）｜只读 Binance 日线 + price/news exports｜研究用途，不构成投资建议"
              % (_esc(dates[0]), _esc(dates[-1])))
@@ -213,6 +217,12 @@ def build(cfg, date_str, base_dir=HERE, repo_root=REPO):
         L.append("- 52 周区间 **%s – %s**，现价位于 **%.1f%%** 分位" % (
             _fmt(btc["lo52"], 0), _fmt(btc["hi52"], 0), btc["pos_52w_pct"] or 0))
         L.append("")
+    return L
+
+
+def _md_events(c):
+    events, signals, ncounts, policies, kols = c["events"], c["signals"], c["ncounts"], c["policies"], c["kols"]
+    L = []
     L.append("## 四、本周事件（P0/P1）")
     L.append("")
     L.append("**价格异动（crypto-price）**")
@@ -247,6 +257,12 @@ def build(cfg, date_str, base_dir=HERE, repo_root=REPO):
         L.append("- %s（%s）：%s" % (it.get("name") or it.get("handle"), it.get("tier") or "—",
                                     (it.get("text") or "")[:60]))
     L.append("")
+    return L
+
+
+def _md_scenarios(c, cfg):
+    horizon, sc_rows = c["horizon"], c["sc_rows"]
+    L = []
     L.append("## 五、BTC 场景（未来约 %d 天；ETH/BNB/SOL 随 BTC 波动）" % horizon)
     L.append("")
     L.append("| 场景 | 概率 | 关键位 | 距现价 | 描述 |")
@@ -258,6 +274,12 @@ def build(cfg, date_str, base_dir=HERE, repo_root=REPO):
         L.append("")
         L.append("**失效条件**：%s" % inv)
     L.append("")
+    return L
+
+
+def _md_data(c):
+    cov, snap, macro, entries = c["cov"], c["snap"], c["macro"], c["entries"]
+    L = []
     L.append("## 六、数据与复盘")
     L.append("")
     L.append("- 导出覆盖：price %d/7 天，news %d/7 天" % (cov["price"], cov["news"]))
@@ -278,7 +300,14 @@ def build(cfg, date_str, base_dir=HERE, repo_root=REPO):
     L.append("> ⚠️ 研究/方法验证，不构成投资建议，不提供交易指引。")
     L.append("")
 
-    # ---------- Telegram（精炼） ----------
+    return L
+
+
+def _telegram(c, cfg, date_str):
+    dates, label, rows, states, btc = c["dates"], c["label"], c["rows"], c["states"], c["btc"]
+    events, signals, policies, kols = c["events"], c["signals"], c["policies"], c["kols"]
+    horizon, sc_rows = c["horizon"], c["sc_rows"]
+    inv = (cfg.get("scenarios") or {}).get("invalidation")
     T = ["📊【crypto-analyst】周报 %s（%s~%s，%s）" % (_esc(label), dates[0][5:], dates[-1][5:], _esc(_weekday(date_str))), ""]
     T.append("行情：" + "｜".join("%s %s（周 %s）" % (_esc(s), _fmt(w["close"]), _pct(w["change_pct"]))
                                   for s, w in rows))
@@ -311,9 +340,14 @@ def build(cfg, date_str, base_dir=HERE, repo_root=REPO):
     T.append("")
     T.append("⚠️ 研究/方法验证，不构成投资建议")
     T.append("🏷 任务：%s" % _esc(_job_label()))
-    telegram = "\n".join(T)
-    return label, "\n".join(L), telegram[:MAX_LEN]
+    return "\n".join(T)
 
+
+def build(cfg, date_str, base_dir=HERE, repo_root=REPO):
+    """返回 (label, markdown, telegram_text)。"""
+    c = _gather(cfg, date_str, base_dir, repo_root)
+    L = _md_market(c) + _md_events(c) + _md_scenarios(c, cfg) + _md_data(c)
+    return c["label"], "\n".join(L), _telegram(c, cfg, date_str)[:MAX_LEN]
 
 def _fmt(x, digits=2):
     return "n/a" if x is None else f"{x:,.{digits}f}"

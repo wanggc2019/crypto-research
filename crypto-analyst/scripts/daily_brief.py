@@ -156,6 +156,30 @@ def macro_section(base_dir, date_str):
     return lines
 
 
+def _btc_structure_lines(btc):
+    return [
+        "## 三、BTC 结构",
+        "",
+        f"- ATH 历史最高价 **{btc['ath']:,.0f}**（{btc['ath_date']}），现价距其 **{core.pct(btc['dd_from_ath_pct'])}**",
+        f"- 52 周区间 **{btc['lo52']:,.0f} – {btc['hi52']:,.0f}**，现价位于 **{core.pct(btc['pos_52w_pct'], 1, False)}** 分位，距低点 **{core.pct(btc['vs_52w_low_pct'])}**",
+        f"- 90 日高点 **{btc['hi90']:,.0f}**，现价距其 **{core.pct(btc['vs_90d_high_pct'])}**",
+        f"- 30 日年化波动 **{btc['rv30_pct']:.1f}%**，90 日 **{btc['rv90_pct']:.1f}%**",
+        "",
+    ]
+
+
+def _event_lines(events):
+    L = ["## 四、事件（P0/P1）", ""]
+    if events:
+        for e in events[:8]:
+            assets = "/".join(e.get("assets") or []) or "—"
+            L.append(f"- **{e.get('severity')}**（{assets}）{e.get('title', '')[:120]}")
+    else:
+        L.append("- 无 P0/P1 事件（或未读到 crypto-news 导出）。")
+    L.append("")
+    return L
+
+
 def build(cfg, base_dir, date_str):
     watchlist = cfg.get("watchlist") or core.SYMS
     data = core.load_all(base_dir, watchlist)
@@ -195,23 +219,8 @@ def build(cfg, base_dir, date_str):
     L.append("")
 
     if btc:
-        L.append("## 三、BTC 结构")
-        L.append("")
-        L.append(f"- ATH 历史最高价 **{btc['ath']:,.0f}**（{btc['ath_date']}），现价距其 **{core.pct(btc['dd_from_ath_pct'])}**")
-        L.append(f"- 52 周区间 **{btc['lo52']:,.0f} – {btc['hi52']:,.0f}**，现价位于 **{core.pct(btc['pos_52w_pct'], 1, False)}** 分位，距低点 **{core.pct(btc['vs_52w_low_pct'])}**")
-        L.append(f"- 90 日高点 **{btc['hi90']:,.0f}**，现价距其 **{core.pct(btc['vs_90d_high_pct'])}**")
-        L.append(f"- 30 日年化波动 **{btc['rv30_pct']:.1f}%**，90 日 **{btc['rv90_pct']:.1f}%**")
-        L.append("")
-
-    L.append("## 四、事件（P0/P1）")
-    L.append("")
-    if events:
-        for e in events[:8]:
-            assets = "/".join(e.get("assets") or []) or "—"
-            L.append(f"- **{e.get('severity')}**（{assets}）{e.get('title', '')[:120]}")
-    else:
-        L.append("- 无 P0/P1 事件（或未读到 crypto-news 导出）。")
-    L.append("")
+        L += _btc_structure_lines(btc)
+    L += _event_lines(events)
 
     L.append(f"## 五、BTC 场景预测（未来约 {horizon} 天，概率和 100%；ETH/BNB/SOL 随 BTC 波动）")
     L.append("")

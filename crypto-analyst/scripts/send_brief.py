@@ -153,19 +153,8 @@ def build_message(cfg, date_str, base_dir=HERE, repo_root=REPO, style="short"):
     return _build_short(cfg, date_str, base_dir, repo_root)
 
 
-def _build_full(cfg, date_str, base_dir=HERE, repo_root=REPO):
-    """返回 (text, meta)；text 为 Telegram HTML。"""
-    watchlist = cfg.get("watchlist") or core.SYMS
-    data = core.load_all(base_dir, watchlist)
-    if not data:
-        raise SystemExit(f"缺少 K 线数据：{core.klines_dir(base_dir)}，先跑 scripts/fetch_history.py")
-
-    rows = [core.state_row(s, b) for s, b in data.items()]
-    btc = next((r for r in rows if r["sym"] == "BTC"), None)
-    snap = daily_brief.load_price_snapshot(repo_root)
-    events = daily_brief.load_events(repo_root, date_str)
-
-    # 一句话状态
+def _state_line(rows):
+    """一句话状态：多少币在长期/短期均线上下方 + 量能区间。"""
     above = [r for r in rows if (r["vs_ma200_pct"] or 0) > 0]
     below = [r for r in rows if (r["vs_ma50_pct"] or 0) < 0]
     vol = [r["vol_ratio_30_90"] for r in rows if r["vol_ratio_30_90"]]
@@ -182,13 +171,11 @@ def _build_full(cfg, date_str, base_dir=HERE, repo_root=REPO):
     if vol:
         state += "；量能（30日/90日均量比）%s" % ("%.2f–%.2f" % (min(vol), max(vol)))
 
-    L = ["📊【crypto-analyst】每日简报 %s" % _esc(date_str), ""]
-    L.append("状态：%s" % _esc(state))
-    if btc:
-        L.append("BTC 结构：距 ATH（历史最高价）%s｜距 52 周低 %s｜距 90 日高 %s" % (
-            _pct(btc["dd_from_ath_pct"]), _pct(btc["vs_52w_low_pct"]), _pct(btc["vs_90d_high_pct"])))
-    L.append("")
+    return state
 
+
+def _market_lines(rows, snap, date_str):
+    L = []
     L.append("行情（Binance 日线，收盘 %s）" % _esc(date_str))
     for r in rows:
         line = "· %s %s｜MA200（200日均线）%s｜MA50（50日均线）%s｜1年 %s" % (
@@ -205,6 +192,31 @@ def _build_full(cfg, date_str, base_dir=HERE, repo_root=REPO):
         L.append("· 现货快照：%s，源健康 %s/%s" % (
             _esc(snap.get("generated_at", "n/a")), sh.get("ok", "?"), sh.get("total", "?")))
     L.append("")
+    return L
+
+
+def _build_full(cfg, date_str, base_dir=HERE, repo_root=REPO):
+    """返回 (text, meta)；text 为 Telegram HTML。"""
+    watchlist = cfg.get("watchlist") or core.SYMS
+    data = core.load_all(base_dir, watchlist)
+    if not data:
+        raise SystemExit(f"缺少 K 线数据：{core.klines_dir(base_dir)}，先跑 scripts/fetch_history.py")
+
+    rows = [core.state_row(s, b) for s, b in data.items()]
+    btc = next((r for r in rows if r["sym"] == "BTC"), None)
+    snap = daily_brief.load_price_snapshot(repo_root)
+    events = daily_brief.load_events(repo_root, date_str)
+
+    state = _state_line(rows)
+
+    L = ["📊【crypto-analyst】每日简报 %s" % _esc(date_str), ""]
+    L.append("状态：%s" % _esc(state))
+    if btc:
+        L.append("BTC 结构：距 ATH（历史最高价）%s｜距 52 周低 %s｜距 90 日高 %s" % (
+            _pct(btc["dd_from_ath_pct"]), _pct(btc["vs_52w_low_pct"]), _pct(btc["vs_90d_high_pct"])))
+    L.append("")
+
+    L += _market_lines(rows, snap, date_str)
 
     horizon, sc_rows = daily_brief.scenario_table(cfg, btc, data.get("BTC"))
     L.append("场景预测（未来约 %d 天，概率和 100%%）" % horizon)
