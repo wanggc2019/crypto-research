@@ -1,0 +1,8 @@
+# gitleaks 误报白名单（格式：提交:文件:规则:行；只放行这一处，同文件其它位置照常扫描）
+# 2026-11-17 首次全量扫描历史发现，已核对均非真实凭据：
+# - test_adversarial.py:43：测试里的假 TELEGRAM_BOT_TOKEN（123456:…）
+# - pbc_tiaofasi_list.html:583：人民银行公开网页的隐藏表单字段 modulekey
+c752f73143d66c1e119000a08d6e79e6b93efc72:crypto-price/tests/test_adversarial.py:telegram-bot-api-token:43
+c752f73143d66c1e119000a08d6e79e6b93efc72:crypto-policy/tests/fixtures/pbc_tiaofasi_list.html:generic-api-key:583
+edf6fec5a9f7f76e930212240601120e894a32e4:crypto-price/tests/test_adversarial.py:telegram-bot-api-token:43
+edf6fec5a9f7f76e930212240601120e894a32e4:crypto-policy/tests/fixtures/pbc_tiaofasi_list.html:generic-api-key:583

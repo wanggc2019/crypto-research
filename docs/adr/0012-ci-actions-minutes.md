@@ -37,3 +37,8 @@
 - 后续 PR 推送不再自动 AI 审查，需要时手动加标签。
 - 私有个人仓库的 gitleaks-action 不需要 `GITLEAKS_LICENSE`（只有组织账号需要）。
 - 额度用完时 Actions 停跑，PR 检查会一直挂起；本地 `make gate` / pre-push 仍是同一套检查，可照常把关，次月额度恢复。
+
+## 执行记录（2026-11-17）
+
+- 切到私有后 Actions 完全不启动（"recent account payments have failed or your spending limit needs to be increased"）：11 月已计 2879 分钟、花费上限 $0，本月私有额度已用完。用户决定**临时改回公开，12 月 1 日额度重置后再切私有**，届时验证私有状态下 gitleaks 的 `pull-requests: read` 权限。
+- 第一次 `workflow_dispatch` 全量运行时，gitleaks 首次扫描全部历史（之前只扫 PR 和推送的增量提交），报了 4 条，均在 2026-11-10「Initial public release」两个提交中，核对后都是误报：`crypto-price/tests/test_adversarial.py:43` 的假 `TELEGRAM_BOT_TOKEN`（`123456:…`，与 `.env` 任何值都不同），以及 `crypto-policy/tests/fixtures/pbc_tiaofasi_list.html:583` 人民银行公开网页的隐藏字段 `modulekey`。已按指纹写入 `.gitleaksignore`（只放行这 4 处）。
