@@ -39,9 +39,10 @@
    | `oi_spike` | 15 分钟 OI 变化 \|chg\| ≥ 5%，且同期合约标记价同向变化 ≥ 0.5% | P1；≥ 10% 为 P0 | 1h（同 crypto-price） |
 
    - 方向：资金费率正 = 多头付费（`long`），负 = 空头付费（`short`）；OI 增 + 价涨 = `up`，OI 减 + 价跌 = `down`；
-   - 加剧、同轮合并一张卡、P0 每资产每本地日 ≤ 2 条，全部沿用 M1 的 `governance`（P0 限额与 M1 规则**共用**）。
-2. **OI 用实时值**（D1）：每轮额外请求 `/fapi/v1/openInterest`（每资产 1 次），连同已在请求的 `premiumIndex` 标记价存入本地 1 天序列，15 分钟变化按时间戳就近取 ≥ 15 分钟前的点；**不**用 `openInterestHist`（最多约 12 分钟延迟，尾部告警会晚到 15 分钟以上）。
-3. **卡片**：沿用 M1 卡片结构（结论 → 指标 → 背景三项 → 解读 → 历史参照 → 口径），标题分别为「资金费率极端」「持仓量急变」；口径行固定写「Binance USD-M 单所」，不出现「多源核验」「价格异动」。资金费率卡片要给出折算年化（rate × 3 × 365）。
+   - 加剧、同轮合并一张卡、P0 每资产每本地日 ≤ 2 条，全部沿用 M1 的 `governance`（P0 限额与 M1 规则**共用**，副作用见 D4）；
+   - 两条规则在 `config/rules.yaml` 各有 `enabled` 开关，可单独关闭（回退用，见 §5）。
+2. **OI 用实时值**（D1）：每轮额外请求 `/fapi/v1/openInterest`（每资产 1 次），连同已在请求的 `premiumIndex` 标记价存入本地 1 天序列，15 分钟变化取「≥ 15 分钟前、且距今 ≤ 20 分钟」的最近一点作参考，OI 与标记价各自取点；**取不到（如 Mac 休眠后的空档）视为缺数据，不评估**，避免把 90 分钟的变化当成 15 分钟触发；**不**用 `openInterestHist`（最多约 12 分钟延迟，尾部告警会晚到 15 分钟以上）。
+3. **卡片**：沿用 M1 卡片结构（结论 → 指标 → 背景三项 → 解读 → 历史参照 → 口径），标题分别为「资金费率极端」「持仓量急变」；口径行固定写「Binance USD-M 单所」，不出现「多源核验」「价格异动」。资金费率卡片要给出折算年化 = rate × (24 / 结算间隔小时) × 365；结算间隔取 `/fapi/v1/fundingInfo` 的 `fundingIntervalHours`（每天请求 1 次、缓存 24h；没有该合约记录即为默认 8h；请求失败按 8h 并在卡片注明「按 8h 折算」）。
 4. **crypto-price 关闭这两条规则**：`config/rules.yaml` 里 `funding.enabled` / `open_interest.enabled` 改为 `false`；**继续采集并导出** `funding_rate` / `funding_ts` / `oi` / `oi_ts`（crypto-onchain 的归因引擎在读），导出契约不变。
 5. 回测：`scripts/backtest.py` 支持两条新规则，用近 30 天数据（资金费率用结算记录）输出触发次数，作为验收依据。
 6. 文档同 PR 更新：crypto-futures 的 README / design / technical，crypto-price 的 requirement / README（规则清单删去这两条，注明已迁到 crypto-futures），HANDOFF。
@@ -55,18 +56,24 @@
 
 ## 4. 验收标准（可测量）
 
-1. 单测：两条规则的触发 / 不触发边界（含正负对称、价格反向不触发、缺数据不触发）、P0/P1 分级、冷却与加剧、与 M1 规则同轮合并为一张卡、P0 日限额共用；
+1. 单测：两条规则的触发 / 不触发边界（含正负对称、价格反向不触发、缺数据不触发、**参考点距今 > 20 分钟不触发**、`enabled: false` 不触发、结算间隔非 8h 时年化正确）、P0/P1 分级、冷却与加剧、与 M1 规则同轮合并为一张卡、P0 日限额共用；
 2. 卡片：两条规则的 fixtures 渲染包含 M1 §5.2 的全部必有区块、长度 ≤ 600 字；断言不出现「多源核验」「价格异动」「开多」「抄底」「减仓」；
-3. `backtest.py` 在 §2 同一份 30 天数据上：`funding_extreme` 0 次、`oi_spike` 与 §2 的 1 次同量级（允许因标记价口径差 ±1）；
+3. `backtest.py` 在 §2 同一份 30 天数据上：`funding_extreme` 0 次（结算值口径）、`oi_spike` ≥ 1 次（含 §2 的 BNB 那次）；回测用 5m `openInterestHist`，覆盖不到线上实时 OI 路径，所以另用**线上路径的 fixture**（实时 OI + 标记价序列）断言能触发 P1 与 P0；
 4. crypto-price：`--fixtures` 回放（含 `snapshot_shock.json`）不再产出 `funding` / `open_interest` 告警，其它规则输出与改动前**逐条一致**；`data/exports/latest.json` 字段与改动前一致；
-5. 请求量：crypto-futures 常规 ≤ 18 次 / 5 分钟（M1 为 15，+3 次实时 OI）；M1 验收 5 同步改为 18；
+5. 请求量：crypto-futures 常规 ≤ 18 次 / 5 分钟（M1 为 15，+3 次实时 OI），另加每天 1 次 `fundingInfo`；M1 验收 5 同步改为 18；
 6. `make gate` 全绿；上线后 24 小时 `collect.log` 每轮 rc=0；台账中合约类告警只出现 `module=crypto-futures`。
 
 ## 5. 上线与回退
 
 - **一次切换**：同一个 PR 内既新增 crypto-futures 规则，又关闭 crypto-price 规则；合并后两个模块下一轮自动生效（launchd 跑工作区代码，无需重装）。
 - 不做影子并跑：§2 显示 90 天内几乎无样本，并跑对比没有意义；回测 + 单测 + 回放代替。
-- **回退**：`git revert` 该 squash commit；或只把 crypto-price 两个 `enabled` 改回 `true`（双发总比漏发好）。
+- **回退**：
+  - 整体：`git revert` 该 squash commit；
+  - 新规则误报 / 刷屏：把 crypto-futures `config/rules.yaml` 里对应规则 `enabled` 改为 `false`；需要时同时把 crypto-price 的对应 `enabled` 改回 `true`，恢复旧告警（双发总比漏发好）。
+
+### 已知风险
+
+- **资金费率口径差**：§2 的「90 天 0 次」用的是结算值，线上规则用 `premiumIndex` 实时值（每 5 分钟一次）；结算前实时费率可能短暂越过阈值又回落，所以线上触发会比回测多。只有实时值能说明真实频率：上线首周看台账，超过 1 条/天再评估阈值或加「连续 N 轮」确认。
 
 ## 6. 后续（M3，另开需求）
 
@@ -81,4 +88,4 @@
 | D1 | OI 数据口径 | 每轮加 3 次实时 `/fapi/v1/openInterest`，告警延迟 ≤ 5 分钟 | 只用已有的 `openInterestHist`：不加请求，但告警最多晚约 17 分钟 |
 | D2 | 阈值 | 沿用 crypto-price 现值（资金费率 0.10% / 0.20%，OI 5% / 10% + 价格 0.5%） | 借机下调资金费率阈值（如 0.05%）：90 天回测仍为 0 次，意义不大 |
 | D3 | 切换方式 | 同一 PR 一次切换（§5） | 先并跑 7 天再关 crypto-price：会有双发风险，且几乎没有样本 |
-| D4 | P0 日限额 | 与 M1 规则共用（每资产每日 ≤ 2） | 新规则单独计数：极端行情下 P0 可能多发 |
+| D4 | P0 日限额 | 与 M1 规则共用（每资产每日 ≤ 2）。副作用：资金费率极端常持续数小时，可能先用掉当日 P0 额度，挤掉同日更重要的 M1 P0；因 90 天内从未出现 ≥ 0.20%，接受该风险，首周若发生再改单独计数 | 新规则单独计数：极端行情下 P0 可能多发 |
