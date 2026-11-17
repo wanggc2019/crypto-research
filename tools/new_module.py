@@ -316,9 +316,14 @@ def scaffold(name, desc):
         docs_dst.mkdir(parents=True, exist_ok=True)
         today = _dt.date.today().isoformat()
         for tmpl in sorted(docs_src.glob("*.md")):
+            dst = docs_dst / tmpl.name
+            if dst.exists():
+                # 先评审需求、后建模块时，已有文档（如 requirement.md）不能被模板覆盖。
+                print("保留已有文档：%s" % dst)
+                continue
             text = tmpl.read_text(encoding="utf-8")
             text = text.replace("{{name}}", name).replace("{{desc}}", desc).replace("{{date}}", today)
-            (docs_dst / tmpl.name).write_text(text, encoding="utf-8")
+            dst.write_text(text, encoding="utf-8")
     return module_dir
 
 
