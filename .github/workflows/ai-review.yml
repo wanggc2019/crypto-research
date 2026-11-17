@@ -1,22 +1,32 @@
 name: AI Review
 
+# 只在 PR 打开时审一次（省 Actions 分钟，docs/adr/0012）；后续推送后要重审：给 PR 加标签 ai-review
+# （gh pr edit <n> --add-label ai-review；再次重审先 --remove-label 再加）
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, reopened, ready_for_review, labeled]
 
 permissions:
   contents: read
   issues: write
   pull-requests: write
 
+# 加别的标签（如 module:xxx，常与 opened 同时到达）放进独立的组，不取消正在进行的审查
 concurrency:
-  group: ai-review-${{ github.event.pull_request.number }}
+  group: >-
+    ${{ github.event.action == 'labeled' && github.event.label.name != 'ai-review'
+        && format('ai-review-noop-{0}', github.run_id)
+        || format('ai-review-{0}', github.event.pull_request.number) }}
   cancel-in-progress: true
 
 jobs:
   review:
     # fork PR 的 GITHUB_TOKEN 只读，无法写评论；直接跳过，避免无意义红叉。
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    # 加别的标签不触发（job 跳过不计费）；draft 打开时不审，转 ready 时审一次
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      ((github.event.action == 'labeled' && github.event.label.name == 'ai-review') ||
+       (github.event.action != 'labeled' && !github.event.pull_request.draft))
     runs-on: ubuntu-22.04
     timeout-minutes: 10
     steps:

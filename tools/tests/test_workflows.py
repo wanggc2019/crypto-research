@@ -1,14 +1,20 @@
 # -*- coding: utf-8 -*-
-"""CI workflow 约束：拿得到订阅 token 的 AI 审查 job 只装按哈希锁定的最小依赖，Claude Code 锁定单一版本。"""
+"""CI workflow 约束：
+- 拿得到订阅 token 的 AI 审查 job 只装按哈希锁定的最小依赖，Claude Code 锁定单一版本；
+- 私有仓库 Actions 分钟（docs/adr/0012）：检查合成一个 job、合并到 main 不重跑、AI 审查不随每次推送跑。
+"""
 import re
 import unittest
 from pathlib import Path
+
+import yaml
 
 REPO = Path(__file__).resolve().parents[2]
 WORKFLOW = REPO / ".github" / "workflows" / "ai-review.yml"
 AI_REQ = REPO / ".github" / "ai-review-requirements.txt"
 ROOT_REQ = REPO / "requirements.txt"
 ADR = REPO / "docs" / "adr" / "0011-llm-claude.md"
+WORKFLOWS = REPO / ".github" / "workflows"
 
 
 def norm(name):
@@ -93,6 +99,87 @@ class AiReviewWorkflowTest(unittest.TestCase):
         cmds = run_commands("    steps:\n      - run: |\n          pip3 install \\\n            requests\n")
         self.assertIn("requests", cmds[0])
 
+
+def load(path):
+    """(on 段 dict, 整个文档)；PyYAML 按 YAML 1.1 会把 on 解析成 True；on 可写成 str/list/dict。"""
+    doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+    on = doc.get("on", doc.get(True))
+    if isinstance(on, str):
+        on = {on: None}
+    elif isinstance(on, list):
+        on = {k: None for k in on}
+    return dict(on or {}), doc
+
+
+def steps(doc, job):
+    return doc["jobs"][job]["steps"]
+
+
+class ActionsMinutesTest(unittest.TestCase):
+    def setUp(self):
+        self.ci_on, self.ci = load(WORKFLOWS / "ci.yml")
+        self.ai_on, self.ai = load(WORKFLOWS / "ai-review.yml")
+
+    def test_only_two_workflows(self):
+        names = sorted(p.name for p in WORKFLOWS.glob("*.y*ml"))
+        self.assertEqual(names, ["ai-review.yml", "ci.yml"], "新增 workflow 会多一个按分钟取整计费的 job，先看 ADR 0012")
+
+    def test_no_workflow_runs_on_push(self):
+        for p in WORKFLOWS.glob("*.y*ml"):
+            self.assertNotIn("push", load(p)[0], "%s：合并到 main 不重跑（PR 上与 pre-push 已跑过）" % p.name)
+
+    def test_ci_is_single_job_with_all_checks(self):
+        self.assertEqual(list(self.ci["jobs"]), ["checks"])
+        st = steps(self.ci, "checks")
+        runs = [x.get("run", "") for x in st]
+        uses = [x.get("uses", "") for x in st]
+        self.assertTrue(any("git ls-files" in r for r in runs), "hygiene")
+        self.assertTrue(any(u.startswith("gitleaks/gitleaks-action@") for u in uses), "gitleaks")
+        self.assertIn("make gate", [r.strip() for r in runs], "gate 必须是 run: make gate")
+        title = [x for x in st if "grep -Eq '^\\[(" in x.get("run", "")]
+        self.assertEqual(len(title), 1, "标题检查")
+        self.assertIn("gh pr view", title[0]["run"], "标题要从 API 读当前值，rerun 才能用上新标题")
+        first = next(i for i, x in enumerate(st) if x.get("uses", "").startswith("actions/checkout@"))
+        rest = [x for x in st[first + 1:] if "git ls-files" not in x.get("run", "")]   # hygiene 是第一项检查
+        self.assertTrue(rest)
+        for x in rest:   # 之后每一步：前一步失败也照跑，一次看到全部结果
+            self.assertIn("!cancelled()", x.get("if", ""), x.get("name") or x.get("uses"))
+
+    def test_ci_triggers(self):
+        self.assertNotIn("edited", self.ci_on["pull_request"]["types"], "只改正文会产生 skipped 检查盖住红灯")
+        self.assertNotIn("if", self.ci["jobs"]["checks"], "job 级 if 会产生同名 skipped 检查")
+        self.assertIn("schedule", self.ci_on, "每周兜底跑 main")
+        self.assertIn("pull-requests", self.ci["permissions"], "私有仓库 gitleaks 要读 PR 提交")
+
+    def test_hygiene_fails_explicitly(self):
+        # bash -e 不会因 `! cmd` 失败而退出：以 ! 开头的行不起作用
+        hyg = [x["run"] for x in steps(self.ci, "checks") if "git ls-files" in x.get("run", "")][0]
+        self.assertFalse([ln for ln in hyg.splitlines() if ln.strip().startswith("!")], "不要用 `! cmd`")
+        self.assertIn('exit "$bad"', hyg)
+        for needle in ("\\.env$", "data/", "\\.venv/"):
+            self.assertIn(needle, hyg)
+
+    def test_skipped_labels_do_not_cancel_review(self):
+        # concurrency 先于 job if 生效：加别的标签必须进独立组（run_id），否则会取消正在跑的审查
+        ai = self.ai["concurrency"]["group"]
+        for needle in ("'labeled'", "label.name != 'ai-review'", "github.run_id"):
+            self.assertIn(needle, ai)
+
+    def test_ai_review_not_on_every_push(self):
+        types = self.ai_on["pull_request"]["types"]
+        self.assertNotIn("synchronize", types)
+        self.assertIn("labeled", types)
+        cond = self.ai["jobs"]["review"]["if"]
+        self.assertIn("github.event.label.name == 'ai-review'", cond)
+        self.assertIn("github.event.pull_request.head.repo.full_name == github.repository", cond, "fork PR 拿不到写权限，必须跳过")
+        self.assertIn("!github.event.pull_request.draft", cond, "draft 打开时不审")
+
+    def test_loader_accepts_list_form(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "w.yml"
+            p.write_text("on: [pull_request, push]\njobs: {}\n", encoding="utf-8")
+            self.assertEqual(set(load(p)[0]), {"pull_request", "push"})
 
 if __name__ == "__main__":
     unittest.main()

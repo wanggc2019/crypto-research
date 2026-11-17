@@ -104,11 +104,11 @@ cd crypto-analyst && ../.venv/bin/python -m unittest discover -s tests -v
 
 ## 7. CI
 
-`.github/workflows/ci.yml` 在 push/PR 时跑：
+`.github/workflows/ci.yml` 在 PR 上跑一个 job（合并到 main 不重跑，每周一定时对 main 全量跑一次；见 ADR 0012）：
 - hygiene：`data/`、`.env`、`.venv` 不得入库；
-- lint（libs/tools/全部模块）；
-- libs 单测、tools 单测、每个模块单测；
-- crypto-price 两个快照回放、crypto-analyst fixtures 回放。
+- gitleaks 扫描 PR 提交；
+- `make gate`（lint、全部单测、各模块离线回放、审计）；
+- PR 标题格式。
 
 CI **不联网、不读真实 `.env`**；联网与 Telegram 推送只在本地/手动执行。
 
