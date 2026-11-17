@@ -3,7 +3,7 @@
 > 用途：新会话读完 [AGENTS.md](../AGENTS.md) 后读这份，只放**现在成立的事实 + 待办**。
 > 模块细节（规则、阈值、实测数字、命令全集）在各模块 README / `docs/<module>/`，这里不复制；
 > 决策的来龙去脉在 [ADR](adr/)；历史在 `git log`。
-> 最近更新：2026-11-16
+> 最近更新：2026-11-17
 
 ## 0. 项目一句话
 
@@ -22,7 +22,7 @@
 | 工作方式 | 见 [AGENTS.md](../AGENTS.md)：分支 → `make gate` → PR → CI 绿 → squash merge；不直推 main |
 | 仓库结构 | 模块间零 import；跨模块只读对方 `data/exports/`（契约登记见 ADR 0008）；共享逻辑进 `libs/crypto_core` |
 
-## 2. 模块与定时任务（2026-11-16，`make jobs` 为准）
+## 2. 模块与定时任务（2026-11-17，`make jobs` 为准）
 
 | 模块 | 职责 | launchd 频率 | 详情 |
 |---|---|---|---|
