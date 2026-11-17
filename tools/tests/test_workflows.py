@@ -139,7 +139,10 @@ class ActionsMinutesTest(unittest.TestCase):
         title = [x for x in st if "grep -Eq '^\\[(" in x.get("run", "")]
         self.assertEqual(len(title), 1, "标题检查")
         self.assertIn("gh pr view", title[0]["run"], "标题要从 API 读当前值，rerun 才能用上新标题")
-        for x in st[2:]:   # checkout 之后的每一步：前一步失败也照跑，一次看到全部结果
+        first = next(i for i, x in enumerate(st) if x.get("uses", "").startswith("actions/checkout@"))
+        rest = [x for x in st[first + 1:] if "git ls-files" not in x.get("run", "")]   # hygiene 是第一项检查
+        self.assertTrue(rest)
+        for x in rest:   # 之后每一步：前一步失败也照跑，一次看到全部结果
             self.assertIn("!cancelled()", x.get("if", ""), x.get("name") or x.get("uses"))
 
     def test_ci_triggers(self):

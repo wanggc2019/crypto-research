@@ -104,7 +104,7 @@ cd crypto-analyst && ../.venv/bin/python -m unittest discover -s tests -v
 
 ## 7. CI
 
-`.github/workflows/ci.yml` 在 PR 上跑一个 job（合并到 main 不重跑；见 ADR 0012）：
+`.github/workflows/ci.yml` 在 PR 上跑一个 job（合并到 main 不重跑，每周一定时对 main 全量跑一次；见 ADR 0012）：
 - hygiene：`data/`、`.env`、`.venv` 不得入库；
 - gitleaks 扫描 PR 提交；
 - `make gate`（lint、全部单测、各模块离线回放、审计）；

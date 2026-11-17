@@ -552,7 +552,7 @@ new-module:       ## make new-module name=crypto-price desc="价格告警"
 
 ### 10.2 CI
 
-当前实现见 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)，只在 PR 上跑（另可手动 `workflow_dispatch`），**一个 job `checks`**（私有仓库按 job 取整计费，见 [ADR 0012](adr/0012-ci-actions-minutes.md)）：
+当前实现见 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)，只在 PR 上跑，另有每周一定时对 main 全量跑一次、可手动 `workflow_dispatch`，**一个 job `checks`**（私有仓库按 job 取整计费，见 [ADR 0012](adr/0012-ci-actions-minutes.md)）：
 
 - hygiene：`.env` / `data/` / `.venv/` 不得入库
 - gitleaks：扫描 PR 的全部提交
