@@ -3,7 +3,7 @@
 > 用途：新会话读完 [AGENTS.md](../AGENTS.md) 后读这份，只放**现在成立的事实 + 待办**。
 > 模块细节（规则、阈值、实测数字、命令全集）在各模块 README / `docs/<module>/`，这里不复制；
 > 决策的来龙去脉在 [ADR](adr/)；历史在 `git log`。
-> 最近更新：2026-11-16
+> 最近更新：2026-11-17
 
 ## 0. 项目一句话
 
@@ -22,7 +22,7 @@
 | 工作方式 | 见 [AGENTS.md](../AGENTS.md)：分支 → `make gate` → PR → CI 绿 → squash merge；不直推 main |
 | 仓库结构 | 模块间零 import；跨模块只读对方 `data/exports/`（契约登记见 ADR 0008）；共享逻辑进 `libs/crypto_core` |
 
-## 2. 模块与定时任务（2026-11-16，`make jobs` 为准）
+## 2. 模块与定时任务（2026-11-17，`make jobs` 为准）
 
 | 模块 | 职责 | launchd 频率 | 详情 |
 |---|---|---|---|
@@ -30,7 +30,7 @@
 | crypto-news | 消息面采集/评分/告警 | 每 10 分钟 | [README](../crypto-news/README.md) |
 | crypto-x-kol | 白名单 KOL 的 X 推文监控（r.jina.ai） | 每 5 分钟 | [README](../crypto-x-kol/README.md) |
 | crypto-onchain | 资金流卖压归因 + 链上大额转账告警 | 每 5 分钟 | [README](../crypto-onchain/README.md) |
-| crypto-futures | 合约持仓结构（多空比）告警，Binance USD-M 单所 | 每 5 分钟（**待安装**） | [README](../crypto-futures/README.md) |
+| crypto-futures | 合约持仓结构（多空比）告警，Binance USD-M 单所 | 每 5 分钟（2026-11-17 已安装） | [README](../crypto-futures/README.md) |
 | crypto-policy | 国内外监管政策雷达 + AI 解读 | 每 1 小时 | [README](../crypto-policy/README.md) |
 | crypto-analyst | 日报 / 周报 / 月度归档（只读 exports） | 每日 18:30、周日 22:00、每月 1 日 22:00 | [README](../crypto-analyst/README.md) |
 | crypto-jobs | 加密行业技术岗位情报 | 每日 18:00、周日 10:00；`.alert` 每 2 小时 | [README](../crypto-jobs/README.md) |
@@ -76,7 +76,7 @@ tail -f <module>/data/logs/collect.log
 ## 6. 待办
 
 1. **约 2026-11-23**：看 `make notify-report days=7`，定 `daily_signal_cap` 与是否切 `enforce`（需用户确认）。首日数据（2026-11-16 00:00–10:00，`make notify-report days=1`）：即时信号 23 条，cap=10 时 07:00 前即耗尽，主要是 price 与 news 对 BTC 的近重复 P1。
-2. **crypto-futures 上线**：合并后在主仓库执行 `make launchd module=crypto-futures action=install`；首周看 `make notify-report days=7` 里 crypto-futures 的推送量（预期约 0.5 条/天，>2 条/天就调 `config/rules.yaml` 并用 `scripts/backtest.py` 重跑）。M2（把 crypto-price 的资金费率 / OI 告警迁过来）上线稳定后单独评审。
+2. **crypto-futures 首周观察**（2026-11-17 已安装）：首周看 `make notify-report days=7` 里 crypto-futures 的推送量（预期约 0.5 条/天，>2 条/天就调 `config/rules.yaml` 并用 `scripts/backtest.py` 重跑）。M2（把 crypto-price 的资金费率 / OI 告警迁过来，crypto-price 收窄为纯现货、不改名）需求见 [crypto-futures/requirement-m2.md](crypto-futures/requirement-m2.md)，已评审（D1–D4 按推荐），实现中。
 3. 模块业务待办（可选，按需排期）：
    - crypto-news：Phase 4 早警指标、LLM 三行摘要、周报校准（[方案 §5–§8](crypto-intel-plan.md)）；
    - crypto-price：关键位自动校准；
