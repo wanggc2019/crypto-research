@@ -18,11 +18,17 @@ def _key(rec):
     return (int(rec["ts"]), rec["asset"], rec["rule"])
 
 
-def _price_at(series, ts):
-    """触发时的合约价，与之后 24h 结果同一口径（OI 美元价值 / 张数）。
+REALTIME_RULES = ("funding_extreme", "oi_spike")
 
-    实时规则落在尚未收盘的 5m 桶：取 20 分钟内最新的已收盘 OI 点；仍取不到才退回 RT 标记价。
+
+def _price_at(series, ts, rule):
+    """触发时的合约价（OI 美元价值 / 张数，与之后 24h 结果同口径）。
+
+    M1 规则保持「恰好 ts」；实时规则落在尚未收盘的 5m 桶：取 20 分钟内最新的已收盘 OI 点，
+    仍取不到才退回 RT 标记价（口径略有差别，但比没有结果好）。
     """
+    if rule not in REALTIME_RULES:
+        return ind.price(series, ts)
     p = ind.price(series, ind.latest_at(series, "OI", ts))
     return p if p is not None else ind.value(series, "RT", ts, 1)
 
@@ -36,7 +42,7 @@ def add_cards(records, cards, all_series, source="live"):
         for hit in card["hits"]:
             rec = {"ts": int(card["ts"]), "asset": card["asset"], "rule": hit["rule"],
                    "severity": hit["severity"], "direction": hit["direction"],
-                   "magnitude": hit["magnitude"], "price": _price_at(s, card["ts"]),
+                   "magnitude": hit["magnitude"], "price": _price_at(s, card["ts"], hit["rule"]),
                    "fwd_pct": None, "source": source}
             if _key(rec) in seen:
                 continue

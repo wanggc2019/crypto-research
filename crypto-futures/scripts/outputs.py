@@ -30,7 +30,7 @@ def _asset_snapshot(series, funding, stale, now):
         "price": ind.price(series, oi_ts) if oi_ts else None,
         "price_change_24h_pct": ind.price_change(series, oi_ts, ind.DAY) if oi_ts else None,
         "funding_rate": (funding or {}).get("rate"),
-        "stale": sorted(stale),
+        "stale": sorted(m for m in stale if m in S.METRICS),   # RT 不进导出，保持 futures/snapshot/v1 不变
     }
 
 

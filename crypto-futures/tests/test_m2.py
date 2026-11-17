@@ -286,6 +286,31 @@ class TestReviewFixes(unittest.TestCase):
         self.assertEqual(s["RT"], {})
         self.assertEqual(s["G"][T0], (2.0, 0.67))
 
+    def test_m1_reference_price_unchanged(self):
+        s = helpers.flat_series(T0 - STEP, 10)
+        s["RT"][T0] = (0.003, 99.5, 1.0, 8)
+        self.assertIsNone(reference._price_at(s, T0, "retail_shift"))
+        self.assertEqual(reference._price_at(s, T0, "funding_extreme"), 100.0)
+
+    def test_live_oi_grace_on_first_round(self):
+        st = {"series": {"BTC": S.empty()}, "meta": {}}
+
+        class Dead:
+            def recent(self, *a):
+                return None
+
+            def funding(self, *a):
+                return {"rate": 0.0001, "mark_price": "1"}
+
+            def open_interest(self, *a):
+                return None
+        run.fetch_recent(Dead(), st, {"assets": {"BTC": "BTCUSDT"}}, T0)
+        self.assertEqual(st["meta"]["oi_ok"], {"BTC": T0})
+
+    def test_export_stale_excludes_rt(self):
+        snap = outputs._asset_snapshot(S.empty(), None, {"RT", "G"}, T0)
+        self.assertEqual(snap["stale"], ["G"])
+
     def test_backtest_empty_cache_fails_loudly(self):
         with tempfile.TemporaryDirectory() as d:
             self.assertEqual(backtest.main(["--cache", d]), 2)

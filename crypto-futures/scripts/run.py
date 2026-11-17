@@ -102,6 +102,7 @@ def fetch_recent(fetcher, st, app, now):
         if f:
             fundings[asset] = f
             funding_ok[asset] = now
+        oi_ok.setdefault(asset, now)   # 新接口的宽限期：从第一次尝试起算 60 分钟，避免上线首轮失败就判失效
         o = fetcher.open_interest(asset, symbol)
         if o:
             live_oi[asset] = o
@@ -247,7 +248,7 @@ def run_round(args, app, cfg, paths, now, fetcher, env=None, sender=None):
     reference.prune(st["records"], now)
     oi_rule = ((cfg.get("rules") or {}).get("oi_spike")) or {}
     down = outputs.endpoints_down(st["series"], st["meta"].get("funding_ok") or {}, now, app,
-                                  oi_ok=(st["meta"].get("oi_ok") or {}) if oi_rule.get("enabled") else None)
+                                  oi_ok=(st["meta"].get("oi_ok") or {}) if oi_rule.get("enabled", True) else None)
     result = {
         "now": now, "requests": fetcher.requests, "errors": fetcher.errors, "stale": stale, "down": down,
         "cards": delivered, "p2": p2,

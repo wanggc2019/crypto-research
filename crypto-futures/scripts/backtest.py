@@ -120,6 +120,9 @@ def main(argv=None):
         print("❌ 没有读到任何 5m 数据（检查 --cache / --data 路径），不能当作「零触发」", file=sys.stderr)
         return 2
     attach_rt(all_series, assets, args.data)
+    if not any(_funding_rows(args.data, sym) for sym in assets.values()):
+        print("⚠️ 没有资金费率结算记录（<SYMBOL>_fundingRate.json），funding_extreme 未评估，次数 0 不代表零触发",
+              file=sys.stderr)
     cards, p2, days = replay(all_series, cfg)
     summary = summarize(cards, p2, days)
     if args.json:
