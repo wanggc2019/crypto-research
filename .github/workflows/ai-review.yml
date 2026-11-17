@@ -11,8 +11,12 @@ permissions:
   issues: write
   pull-requests: write
 
+# 加别的标签（如 module:xxx，常与 opened 同时到达）放进独立的组，不取消正在进行的审查
 concurrency:
-  group: ai-review-${{ github.event.pull_request.number }}
+  group: >-
+    ${{ github.event.action == 'labeled' && github.event.label.name != 'ai-review'
+        && format('ai-review-noop-{0}', github.run_id)
+        || format('ai-review-{0}', github.event.pull_request.number) }}
   cancel-in-progress: true
 
 jobs:

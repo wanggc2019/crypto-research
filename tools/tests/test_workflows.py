@@ -100,38 +100,77 @@ class AiReviewWorkflowTest(unittest.TestCase):
         self.assertIn("requests", cmds[0])
 
 
-def triggers(path):
-    """workflow 的 on: 段（PyYAML 按 YAML 1.1 会把 on 解析成 True）。"""
+def load(path):
+    """(on 段 dict, 整个文档)；PyYAML 按 YAML 1.1 会把 on 解析成 True；on 可写成 str/list/dict。"""
     doc = yaml.safe_load(path.read_text(encoding="utf-8"))
     on = doc.get("on", doc.get(True))
-    return {on: None} if isinstance(on, str) else dict(on), doc
+    if isinstance(on, str):
+        on = {on: None}
+    elif isinstance(on, list):
+        on = {k: None for k in on}
+    return dict(on or {}), doc
+
+
+def steps(doc, job):
+    return doc["jobs"][job]["steps"]
 
 
 class ActionsMinutesTest(unittest.TestCase):
+    def setUp(self):
+        self.ci_on, self.ci = load(WORKFLOWS / "ci.yml")
+        self.ai_on, self.ai = load(WORKFLOWS / "ai-review.yml")
+
     def test_only_two_workflows(self):
         names = sorted(p.name for p in WORKFLOWS.glob("*.y*ml"))
         self.assertEqual(names, ["ai-review.yml", "ci.yml"], "新增 workflow 会多一个按分钟取整计费的 job，先看 ADR 0012")
 
     def test_no_workflow_runs_on_push(self):
         for p in WORKFLOWS.glob("*.y*ml"):
-            on, _ = triggers(p)
-            self.assertNotIn("push", on, "%s：合并到 main 不重跑（PR 上与 pre-push 已跑过）" % p.name)
+            self.assertNotIn("push", load(p)[0], "%s：合并到 main 不重跑（PR 上与 pre-push 已跑过）" % p.name)
 
     def test_ci_is_single_job_with_all_checks(self):
-        on, doc = triggers(WORKFLOWS / "ci.yml")
-        self.assertEqual(list(doc["jobs"]), ["checks"])
-        text = (WORKFLOWS / "ci.yml").read_text(encoding="utf-8")
-        for needle in ("git ls-files", "gitleaks/gitleaks-action@", "make gate", "PR 标题"):
-            self.assertIn(needle, text)
-        self.assertIn("edited", on["pull_request"]["types"], "改标题要能重新校验")
+        self.assertEqual(list(self.ci["jobs"]), ["checks"])
+        st = steps(self.ci, "checks")
+        runs = [x.get("run", "") for x in st]
+        uses = [x.get("uses", "") for x in st]
+        self.assertTrue(any("git ls-files" in r for r in runs), "hygiene")
+        self.assertTrue(any(u.startswith("gitleaks/gitleaks-action@") for u in uses), "gitleaks")
+        self.assertIn("make gate", [r.strip() for r in runs], "gate 必须是 run: make gate")
+        title = [x for x in st if "grep -Eq '^\\[(" in x.get("run", "")]
+        self.assertEqual(len(title), 1, "标题检查")
+        self.assertIs(title[0], st[-1], "标题检查放最后")
+        self.assertIn("!cancelled()", title[0]["if"])
+        self.assertNotIn("always()", title[0]["if"])
+
+    def test_ci_edited_only_reruns_on_title_or_base(self):
+        self.assertIn("edited", self.ci_on["pull_request"]["types"])
+        cond = self.ci["jobs"]["checks"]["if"]
+        for needle in ("github.event.action != 'edited'", "github.event.changes.title", "github.event.changes.base"):
+            self.assertIn(needle, cond)
+        self.assertIn("schedule", self.ci_on, "每周兜底跑 main")
+        self.assertIn("pull-requests", self.ci["permissions"], "私有仓库 gitleaks 要读 PR 提交")
+
+    def test_skipped_events_do_not_cancel_running(self):
+        # concurrency 先于 job if 生效：会被 skip 的事件必须进独立组（run_id），否则会取消正在跑的运行
+        ci = self.ci["concurrency"]["group"]
+        for needle in ("'edited'", "changes.title", "changes.base", "github.run_id"):
+            self.assertIn(needle, ci)
+        ai = self.ai["concurrency"]["group"]
+        for needle in ("'labeled'", "label.name != 'ai-review'", "github.run_id"):
+            self.assertIn(needle, ai)
 
     def test_ai_review_not_on_every_push(self):
-        on, _ = triggers(WORKFLOWS / "ai-review.yml")
-        types = on["pull_request"]["types"]
+        types = self.ai_on["pull_request"]["types"]
         self.assertNotIn("synchronize", types)
         self.assertIn("labeled", types)
-        self.assertIn("github.event.label.name == 'ai-review'", (WORKFLOWS / "ai-review.yml").read_text(encoding="utf-8"))
+        self.assertIn("github.event.label.name == 'ai-review'", self.ai["jobs"]["review"]["if"])
 
+    def test_loader_accepts_list_form(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "w.yml"
+            p.write_text("on: [pull_request, push]\njobs: {}\n", encoding="utf-8")
+            self.assertEqual(set(load(p)[0]), {"pull_request", "push"})
 
 if __name__ == "__main__":
     unittest.main()
