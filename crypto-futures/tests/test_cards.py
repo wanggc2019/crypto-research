@@ -40,6 +40,30 @@ def render(asset, ts, funding, ref=None):
                                    job="com.crypto-research.crypto-futures")
 
 
+class TestPositionWording(unittest.TestCase):
+    VALUES = [float(i) for i in range(1, 1001)]       # 1..1000，共 1000 个
+
+    def test_extremes_including_equal(self):
+        self.assertEqual(cards._position(self.VALUES, 1000.0), "7 天最高")
+        self.assertEqual(cards._position(self.VALUES, 1001.0), "7 天最高")
+        self.assertEqual(cards._position(self.VALUES, 1.0), "7 天最低")
+        self.assertEqual(cards._position(self.VALUES, 0.5), "7 天最低")
+
+    def test_bottom_boundary(self):
+        self.assertEqual(cards._position(self.VALUES, 10.0), "7 天最低 1% 以内")   # 低于它的 9 个 = 0.9%
+        self.assertEqual(cards._position(self.VALUES, 11.0), "7 天 1% 分位")       # 低于它的 10 个 = 1.0%
+
+    def test_top_boundary_symmetric(self):
+        self.assertEqual(cards._position(self.VALUES, 991.0), "7 天最高 1% 以内")  # 高于它的 9 个 = 0.9%
+        self.assertEqual(cards._position(self.VALUES, 990.0), "7 天 99% 分位")      # 高于它的 10 个 = 1.0%
+
+    def test_middle(self):
+        self.assertEqual(cards._position(self.VALUES, 500.0), "7 天 50% 分位")
+
+    def test_empty_window(self):
+        self.assertEqual(cards._position([], 1.0), "")
+
+
 class TestSampleCards(unittest.TestCase):
     def check_structure(self, text):
         plain = re.sub(r"<[^>]+>", "", text)
