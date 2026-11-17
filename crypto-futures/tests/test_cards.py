@@ -40,6 +40,25 @@ def render(asset, ts, funding, ref=None):
                                    job="com.crypto-research.crypto-futures")
 
 
+class TestPositionWording(unittest.TestCase):
+    VALUES = [float(i) for i in range(1, 1001)]       # 1..1000
+
+    def test_extremes(self):
+        self.assertEqual(cards._position(self.VALUES, 1000.0), "7 天最高")
+        self.assertEqual(cards._position(self.VALUES, 0.5), "7 天最低")
+
+    def test_near_bottom_is_not_shown_as_zero_percent(self):
+        self.assertEqual(cards._position(self.VALUES, 5.0), "7 天最低 1% 以内")    # 0.5%：不再显示「0% 分位」
+        self.assertEqual(cards._position(self.VALUES, 10.0), "7 天 1% 分位")
+
+    def test_near_top_symmetric(self):
+        self.assertEqual(cards._position(self.VALUES, 995.0), "7 天最高 1% 以内")
+        self.assertEqual(cards._position(self.VALUES, 970.0), "7 天 97% 分位")
+
+    def test_empty_window(self):
+        self.assertEqual(cards._position([], 1.0), "")
+
+
 class TestSampleCards(unittest.TestCase):
     def check_structure(self, text):
         plain = re.sub(r"<[^>]+>", "", text)

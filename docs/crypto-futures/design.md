@@ -58,7 +58,7 @@
 ## 5. 卡片（`cards.py`）
 
 区块固定顺序：标题 → 结论 → 指标 → 背景（合约价 24h · OI 4h · 资金费率）→ 同时出现 → 解读 → 历史参照 → 口径 → 页脚。
-可见文字 ≤ 600 字（超出时只截「解读」，历史参照、口径、页脚与免责声明保持完整），HTML 截断用共享的 `crypto_core.notify.templates.truncate_html`（从 crypto-price 抽出，price 行为不变）。
+7 天位置写「最高 / 最低 / 最高（最低）1% 以内 / N% 分位」，不出现 0% 或 100% 分位；可见文字 ≤ 600 字（超出时只截「解读」，历史参照、口径、页脚与免责声明保持完整），HTML 截断用共享的 `crypto_core.notify.templates.truncate_html`（从 crypto-price 抽出，price 行为不变）。
 用词约束：账户比只说「做多的账户」；大户持仓比下降写「可能减多，也可能加空」；单测禁止「多源核验 / 开多 / 抄底 / 减仓」。
 推送走 `crypto_core.notify.send_signal`（`kind=signal`，进全仓台账与预算），关闭链接预览。
 

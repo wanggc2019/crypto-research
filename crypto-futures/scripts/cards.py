@@ -48,14 +48,22 @@ def _funding(rate):
 
 
 def _position(values, v):
-    """7 天位置：最高 / 最低 / N% 分位；窗口为空返回空串。"""
+    """7 天位置：最高 / 最低 / 最高（最低）1% 以内 / N% 分位；窗口为空返回空串。
+
+    不显示「0% 分位」「100% 分位」：没突破极值却贴着两端时，写成「最低 / 最高 1% 以内」，避免误读成已到极值。
+    """
     if not values or v is None:
         return ""
     if v >= max(values):
         return "7 天最高"
     if v <= min(values):
         return "7 天最低"
-    return "7 天 %d%% 分位" % int(ind.rank_pct(values, v))   # 向下取整：不是最高就不显示 100%
+    rank = ind.rank_pct(values, v)
+    if rank < 1:
+        return "7 天最低 1% 以内"
+    if rank >= 99:
+        return "7 天最高 1% 以内"
+    return "7 天 %d%% 分位" % int(rank)
 
 
 # ---------------------------------------------------------------- 取数
