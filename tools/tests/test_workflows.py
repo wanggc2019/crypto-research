@@ -138,23 +138,26 @@ class ActionsMinutesTest(unittest.TestCase):
         self.assertIn("make gate", [r.strip() for r in runs], "gate 必须是 run: make gate")
         title = [x for x in st if "grep -Eq '^\\[(" in x.get("run", "")]
         self.assertEqual(len(title), 1, "标题检查")
-        self.assertIs(title[0], st[-1], "标题检查放最后")
-        self.assertIn("!cancelled()", title[0]["if"])
-        self.assertNotIn("always()", title[0]["if"])
+        self.assertIn("gh pr view", title[0]["run"], "标题要从 API 读当前值，rerun 才能用上新标题")
+        for x in st[2:]:   # checkout 之后的每一步：前一步失败也照跑，一次看到全部结果
+            self.assertIn("!cancelled()", x.get("if", ""), x.get("name") or x.get("uses"))
 
-    def test_ci_edited_only_reruns_on_title_or_base(self):
-        self.assertIn("edited", self.ci_on["pull_request"]["types"])
-        cond = self.ci["jobs"]["checks"]["if"]
-        for needle in ("github.event.action != 'edited'", "github.event.changes.title", "github.event.changes.base"):
-            self.assertIn(needle, cond)
+    def test_ci_triggers(self):
+        self.assertNotIn("edited", self.ci_on["pull_request"]["types"], "只改正文会产生 skipped 检查盖住红灯")
+        self.assertNotIn("if", self.ci["jobs"]["checks"], "job 级 if 会产生同名 skipped 检查")
         self.assertIn("schedule", self.ci_on, "每周兜底跑 main")
         self.assertIn("pull-requests", self.ci["permissions"], "私有仓库 gitleaks 要读 PR 提交")
 
-    def test_skipped_events_do_not_cancel_running(self):
-        # concurrency 先于 job if 生效：会被 skip 的事件必须进独立组（run_id），否则会取消正在跑的运行
-        ci = self.ci["concurrency"]["group"]
-        for needle in ("'edited'", "changes.title", "changes.base", "github.run_id"):
-            self.assertIn(needle, ci)
+    def test_hygiene_fails_explicitly(self):
+        # bash -e 不会因 `! cmd` 失败而退出：以 ! 开头的行不起作用
+        hyg = [x["run"] for x in steps(self.ci, "checks") if "git ls-files" in x.get("run", "")][0]
+        self.assertFalse([ln for ln in hyg.splitlines() if ln.strip().startswith("!")], "不要用 `! cmd`")
+        self.assertIn('exit "$bad"', hyg)
+        for needle in ("\\.env$", "data/", "\\.venv/"):
+            self.assertIn(needle, hyg)
+
+    def test_skipped_labels_do_not_cancel_review(self):
+        # concurrency 先于 job if 生效：加别的标签必须进独立组（run_id），否则会取消正在跑的审查
         ai = self.ai["concurrency"]["group"]
         for needle in ("'labeled'", "label.name != 'ai-review'", "github.run_id"):
             self.assertIn(needle, ai)
@@ -163,7 +166,10 @@ class ActionsMinutesTest(unittest.TestCase):
         types = self.ai_on["pull_request"]["types"]
         self.assertNotIn("synchronize", types)
         self.assertIn("labeled", types)
-        self.assertIn("github.event.label.name == 'ai-review'", self.ai["jobs"]["review"]["if"])
+        cond = self.ai["jobs"]["review"]["if"]
+        self.assertIn("github.event.label.name == 'ai-review'", cond)
+        self.assertIn("github.event.pull_request.head.repo.full_name == github.repository", cond, "fork PR 拿不到写权限，必须跳过")
+        self.assertIn("!github.event.pull_request.draft", cond, "draft 打开时不审")
 
     def test_loader_accepts_list_form(self):
         import tempfile

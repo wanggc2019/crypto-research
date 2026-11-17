@@ -22,10 +22,11 @@ concurrency:
 jobs:
   review:
     # fork PR 的 GITHUB_TOKEN 只读，无法写评论；直接跳过，避免无意义红叉。
-    # 加别的标签不触发（job 跳过不计费）
+    # 加别的标签不触发（job 跳过不计费）；draft 打开时不审，转 ready 时审一次
     if: >-
       github.event.pull_request.head.repo.full_name == github.repository &&
-      (github.event.action != 'labeled' || github.event.label.name == 'ai-review')
+      ((github.event.action == 'labeled' && github.event.label.name == 'ai-review') ||
+       (github.event.action != 'labeled' && !github.event.pull_request.draft))
     runs-on: ubuntu-22.04
     timeout-minutes: 10
     steps:

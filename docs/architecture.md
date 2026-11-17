@@ -557,7 +557,7 @@ new-module:       ## make new-module name=crypto-price desc="价格告警"
 - hygiene：`.env` / `data/` / `.venv/` 不得入库
 - gitleaks：扫描 PR 的全部提交
 - `make gate`：与本地 / pre-push 完全一致（ruff + libs/tools/各模块单测 + 各模块 `scripts/e2e.py` 离线回放 + 审计）
-- PR 标题：`[scope][type] 摘要`（改标题会重跑整个 job）
+- PR 标题：`[scope][type] 摘要`（改标题后 `gh run rerun <id> --failed`）
 
 另有 `ai-review.yml`：PR 打开时 AI 审查一次；推送后要重审就给 PR 加标签 `ai-review`。
 

@@ -2,9 +2,11 @@ name: CI
 
 # 私有仓库 Actions 按 job 计费、每个 job 不足 1 分钟按 1 分钟算（docs/adr/0012）：
 # 标题 / hygiene / gitleaks / gate 合成一个 job；只在 PR 上跑（合并到 main 不再重跑，本地 pre-push 已跑过 gate）。
+# 不监听 edited：只改正文也会产生一个同名的 skipped 检查，盖住之前 gate 的红灯。
+# 改了标题后重跑：gh run rerun <run-id> --failed（标题检查运行时从 API 读当前标题）。
 on:
   pull_request:
-    types: [opened, synchronize, reopened, edited]
+    types: [opened, synchronize, reopened]
   workflow_dispatch:   # 需要时手动对任意分支全量跑一次
   schedule:
     - cron: "0 2 * * 1"   # 每周一对 main 全量跑一次（gitleaks 扫全部历史），兜底绕过 PR 直推 main 的提交
@@ -13,19 +15,12 @@ permissions:
   contents: read
   pull-requests: read   # 私有仓库下 gitleaks-action 要读 PR 的提交列表
 
-# concurrency 在 job 的 if 之前生效：只改正文的 edited 若与正常运行同组，会把正在跑的 gate 取消掉
-# → 这类事件放进各自独立的组（run_id），不取消任何运行
 concurrency:
-  group: >-
-    ${{ github.event.action == 'edited' && !github.event.changes.title && !github.event.changes.base
-        && format('ci-noop-{0}', github.run_id)
-        || format('ci-{0}', github.event.pull_request.number || github.ref) }}
+  group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   checks:
-    # edited 只在改了标题 / base 分支时才跑（改正文不跑）；整套重跑，避免一次只查标题的绿灯盖住之前 gate 的红灯
-    if: github.event.action != 'edited' || github.event.changes.title || github.event.changes.base
     runs-on: ubuntu-22.04
     timeout-minutes: 20
     steps:
@@ -33,33 +28,45 @@ jobs:
         with:
           fetch-depth: 0   # gitleaks 要扫 PR 的全部提交
 
+      # 一步失败后面照跑（!cancelled()）：一次运行就能看到全部检查结果
+      # 注意：bash -e 不会因 `! cmd` 失败而退出，必须显式 exit 1
       - name: Hygiene（凭据/运行产物不得入库）
         run: |
-          ! git ls-files | grep -E '(^|/)\.env$'
-          ! git ls-files | grep -E '(^|/)data/' | grep -vE '(^|/)tests/fixtures/'
-          ! git ls-files | grep -E '(^|/)\.venv/'
+          bad=0
+          if git ls-files | grep -E '(^|/)\.env$'; then echo "::error::.env 不得入库"; bad=1; fi
+          if git ls-files | grep -E '(^|/)data/' | grep -vE '(^|/)tests/fixtures/'; then echo "::error::data/ 运行产物不得入库"; bad=1; fi
+          if git ls-files | grep -E '(^|/)\.venv/'; then echo "::error::.venv 不得入库"; bad=1; fi
+          exit "$bad"
 
       - name: Gitleaks
+        if: ${{ !cancelled() }}
         uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7  # v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # 个人账号（含私有仓库）不需要 GITLEAKS_LICENSE
 
       - uses: actions/setup-python@7f4fc3e22c37d6ff65e88745f38bd3157c663f7c  # v5
+        if: ${{ !cancelled() }}
         with:
           python-version: "3.12"   # 与线上 .venv 一致（docs/adr/0010）
 
       - name: Install
+        if: ${{ !cancelled() }}
         run: pip install -r requirements.txt
 
       - name: Gate（与本地 make gate / pre-push 完全一致）
+        if: ${{ !cancelled() }}
         run: make gate
 
-      # 放最后：gate 失败时也照样检查标题（被取消时不跑）
       - name: PR 标题（[scope][type] 摘要）
         if: ${{ !cancelled() && github.event_name == 'pull_request' }}
         env:
-          TITLE: ${{ github.event.pull_request.title }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+          EVENT_TITLE: ${{ github.event.pull_request.title }}
         run: |
+          # 从 API 读当前标题：改标题后 gh run rerun 才能用上新标题（事件里的标题是触发时的旧值）
+          TITLE="$(gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json title -q .title 2>/dev/null)" || TITLE=""
+          [ -n "$TITLE" ] || TITLE="$EVENT_TITLE"
           echo "PR title: $TITLE"
           if [ "${#TITLE}" -gt 72 ]; then
             echo "::error::PR 标题过长（${#TITLE} 字符），请控制在 72 字符以内"
