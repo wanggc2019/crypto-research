@@ -19,7 +19,10 @@ python3 scripts/e2e.py                   # 离线端到端回放（make gate 自
 ```
 
 推送用 crypto-futures 专用 Bot：根 `.env` 的 `TELEGRAM_FUTURES_BOT_TOKEN` / `TELEGRAM_FUTURES_CHAT_ID`，
-没填就回退共享 Bot（`TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID`）。仓库级 watchdog 的健康告警仍走共享 Bot。
+token 和 chat 各自没填就回退共享 Bot 的（`TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID`）。只填 token 时，
+新 Bot 要能往共享 chat 发消息：私聊先对它发一次 /start，群聊要把它拉进群，否则发送会被 Telegram 拒绝（403）。
+
+健康告警：平时由仓库级 watchdog 统一发，走**共享 Bot**；watchdog 失效时本模块每轮兜底自查（`healthcheck.py`），那时走**专用 Bot**。
 
 调度：每 300 秒（`config/app.yaml` 的 `poll_seconds`），模板 `deploy/launchd/agent.plist.tmpl`：
 

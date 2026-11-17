@@ -293,8 +293,8 @@ MODULE_BOTS = {"crypto-futures": (("TELEGRAM_FUTURES_BOT_TOKEN",), ("TELEGRAM_FU
 
 
 def module_env(module=None):
-    """按模块选择 Bot：crypto-price / crypto-futures 支持专用 Bot，其余用共享 Bot。"""
-    env = envlib.load_env()
+    """按模块选择 Bot：crypto-price / crypto-futures 支持专用 Bot，其余用共享 Bot。返回新 dict，不改 load_env 的结果。"""
+    env = dict(envlib.load_env())
     if module in MODULE_BOTS:
         bot = envlib.resolve_bot_env(env, *MODULE_BOTS[module])
         env["TELEGRAM_BOT_TOKEN"], env["TELEGRAM_CHAT_ID"] = bot["TELEGRAM_BOT_TOKEN"], bot["TELEGRAM_CHAT_ID"]
