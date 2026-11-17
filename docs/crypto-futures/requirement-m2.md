@@ -1,6 +1,6 @@
 # 需求：crypto-futures M2 —— 资金费率 / OI 告警从 crypto-price 迁入
 
-> 状态：**待评审（2026-11-17）**，评审通过后再写代码｜上游：[M1 需求](requirement.md) §8 · [crypto-price 需求](../crypto-price/requirement.md)
+> 状态：**已评审通过（2026-11-17，D1–D4 均按推荐）**，进入实现｜上游：[M1 需求](requirement.md) §8 · [crypto-price 需求](../crypto-price/requirement.md)
 > 关联：[消息发送规范](../notify-policy.md) · [ADR 0005 领域命名](../adr/0005-domain-naming.md)
 
 ## 1. 要解决什么问题（一句话）
@@ -40,7 +40,7 @@
 
    - 方向：资金费率正 = 多头付费（`long`），负 = 空头付费（`short`）；OI 增 + 价涨 = `up`，OI 减 + 价跌 = `down`；
    - 加剧、同轮合并一张卡、P0 每资产每本地日 ≤ 2 条，全部沿用 M1 的 `governance`（P0 限额与 M1 规则**共用**）。
-2. **OI 用实时值**（待确认 D1）：每轮额外请求 `/fapi/v1/openInterest`（每资产 1 次），连同已在请求的 `premiumIndex` 标记价存入本地 1 天序列，15 分钟变化按时间戳就近取 ≥ 15 分钟前的点；**不**用 `openInterestHist`（最多约 12 分钟延迟，尾部告警会晚到 15 分钟以上）。
+2. **OI 用实时值**（D1）：每轮额外请求 `/fapi/v1/openInterest`（每资产 1 次），连同已在请求的 `premiumIndex` 标记价存入本地 1 天序列，15 分钟变化按时间戳就近取 ≥ 15 分钟前的点；**不**用 `openInterestHist`（最多约 12 分钟延迟，尾部告警会晚到 15 分钟以上）。
 3. **卡片**：沿用 M1 卡片结构（结论 → 指标 → 背景三项 → 解读 → 历史参照 → 口径），标题分别为「资金费率极端」「持仓量急变」；口径行固定写「Binance USD-M 单所」，不出现「多源核验」「价格异动」。资金费率卡片要给出折算年化（rate × 3 × 365）。
 4. **crypto-price 关闭这两条规则**：`config/rules.yaml` 里 `funding.enabled` / `open_interest.enabled` 改为 `false`；**继续采集并导出** `funding_rate` / `funding_ts` / `oi` / `oi_ts`（crypto-onchain 的归因引擎在读），导出契约不变。
 5. 回测：`scripts/backtest.py` 支持两条新规则，用近 30 天数据（资金费率用结算记录）输出触发次数，作为验收依据。
@@ -74,7 +74,7 @@
 2. 之后 crypto-price 删除 `fapi` 采集、衍生品规则代码和这四个导出字段（导出契约升版本），成为纯现货模块；
 3. 届时再评估是否改名（默认不改）。
 
-## 7. 需要评审确认的决策
+## 7. 评审决策（2026-11-17：全部采用推荐项）
 
 | # | 决策 | 推荐 | 备选 |
 |---|---|---|---|
