@@ -72,12 +72,14 @@ def _position(values, v):
 
 
 # ---------------------------------------------------------------- 取数
-def context(series, ts, funding_rate=None, points_7d=2016):
+def context(series, ts, funding_rate=None, points_7d=2016, realtime=False):
     """卡片需要的全部数值（缺失为 None）。
 
-    M2 的实时规则落在当前 5m 桶，此时 G/T/OI 的这个周期还没收盘：各指标取 ≤ ts 且在 20 分钟内的最新点。
+    realtime=True（M2 实时规则）：卡片落在当前 5m 桶，此时 G/T/OI 的这个周期还没收盘，
+    各指标取 ≤ ts 且在 20 分钟内的最新点；M1 规则保持「恰好 ts」的口径，缺失显示「—」。
     """
-    g, t, oi = (ind.latest_at(series, m, ts) for m in ("G", "T", "OI"))
+    lag = 1200 if realtime else 0
+    g, t, oi = (ind.latest_at(series, m, ts, lag) for m in ("G", "T", "OI"))
     return {
         "g": ind.value(series, "G", g), "g_long": ind.value(series, "G", g, 1),
         "g_1h": ind.value(series, "G", g - ind.HOUR), "g_24h": ind.value(series, "G", g - ind.DAY),

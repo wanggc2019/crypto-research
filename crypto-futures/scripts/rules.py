@@ -132,9 +132,9 @@ def extreme_level(series, ts, cfg, keys=None):
     return None
 
 
-def _tiered(value, rc, p1_key, p0_key):
-    """分级阈值：返回 "P0" / "P1" / None（未到 P1）。"""
-    if value < float(rc[p1_key]):
+def _tiered(value, rc, p1_key, p0_key, p1_default):
+    """分级阈值：返回 "P0" / "P1" / None（未到 P1）。缺省值与 config/rules.yaml 一致。"""
+    if value < float(rc.get(p1_key, p1_default)):
         return None
     p0 = rc.get(p0_key)
     return "P0" if p0 is not None and value >= float(p0) else "P1"
@@ -149,7 +149,7 @@ def funding_extreme(series, ts, cfg, keys=None):
     if rate is None:
         return None
     rate_pct = rate * 100.0
-    severity = _tiered(abs(rate_pct), rc, "p1_abs_pct", "p0_abs_pct")
+    severity = _tiered(abs(rate_pct), rc, "p1_abs_pct", "p0_abs_pct", 0.10)
     if severity is None:
         return None
     hours = ind.value(series, "RT", ts, 3)
@@ -176,9 +176,9 @@ def oi_spike(series, ts, cfg, keys=None):
     else:
         return None
     oi_chg, move = ind.pct_change(oi, oi0), ind.pct_change(mark, mark0)
-    if oi_chg == 0 or abs(move) < float(rc["min_price_move_pct"]) or (oi_chg > 0) != (move > 0):
+    if oi_chg == 0 or abs(move) < float(rc.get("min_price_move_pct", 0.5)) or (oi_chg > 0) != (move > 0):
         return None
-    severity = _tiered(abs(oi_chg), rc, "p1_change_pct", "p0_change_pct")
+    severity = _tiered(abs(oi_chg), rc, "p1_change_pct", "p0_change_pct", 5.0)
     if severity is None:
         return None
     return _hit("oi_spike", rc, "up" if oi_chg > 0 else "down", abs(oi_chg),

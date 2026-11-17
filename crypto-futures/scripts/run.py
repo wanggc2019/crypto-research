@@ -119,7 +119,7 @@ def funding_intervals(fetcher, st, cfg, fundings, now):
     cached = meta.get("funding_info") or {}
     rc = ((cfg.get("rules") or {}).get("funding_extreme")) or {}
     p1 = float(rc.get("p1_abs_pct", 0.10))
-    hot = rc.get("enabled", True) and any(abs(f["rate"]) * 100 >= p1 for f in fundings.values())
+    hot = rc.get("enabled", True) and any(abs(_float(f.get("rate")) or 0.0) * 100 >= p1 for f in fundings.values())
     if cached.get("date") != common.local_date(now) or hot:
         got = fetcher.funding_info()
         if got is not None:
@@ -136,14 +136,20 @@ def _float(v):
 
 
 def sample_rt(st, app, fundings, live_oi, intervals, now):
-    """把本轮实时快照写入各资产 RT 序列（当前 5m 桶）：(资金费率, 标记价, 实时 OI, 结算间隔小时)。"""
+    """把本轮实时快照写入各资产 RT 序列（当前 5m 桶）：(资金费率, 标记价, 实时 OI, 结算间隔小时)。
+
+    同一个桶被两轮采到（launchd 抖动 / 手动跑）时按字段合并：本轮取不到的字段保留上一轮的值，
+    避免一次部分失败覆盖掉已有的完整样本。
+    """
     ts = S.bucket(now)
     for asset, symbol in app["assets"].items():
         f, o = fundings.get(asset) or {}, live_oi.get(asset) or {}
         if not f and not o:
             continue
         hours = None if intervals is None else intervals.get(symbol, 8)
-        S.merge(st["series"][asset], S.RT, {ts: (f.get("rate"), _float(f.get("mark_price")), o.get("oi"), hours)})
+        new = (_float(f.get("rate")), _float(f.get("mark_price")), _float(o.get("oi")), hours)
+        old = st["series"][asset].get(S.RT, {}).get(ts) or (None,) * 4
+        S.merge(st["series"][asset], S.RT, {ts: tuple(n if n is not None else p for n, p in zip(new, old))})
 
 
 def stale_metrics(all_series, app, now):
@@ -207,7 +213,8 @@ def deliver(card_list, st, app, cfg, fundings, args, env=None, sender=None):
         ref = reference.stats(st["records"], card["rule"], card["ts"], int(ref_cfg.get("lookback_days", 30)),
                               float(ref_cfg.get("horizon_hours", 24)), int(ref_cfg.get("min_samples", 3)))
         asset = card["asset"]
-        ctx = cards.context(st["series"][asset], card["ts"], (fundings.get(asset) or {}).get("rate"))
+        ctx = cards.context(st["series"][asset], card["ts"], (fundings.get(asset) or {}).get("rate"),
+                            realtime=card["rule"] in cards.RT_RULES)
         link = (app.get("links") or {}).get("trading_data", "").format(symbol=app["assets"][asset])
         text = cards.format_card(card, ctx, ref, link=link, simulated=bool(args.fixtures))
         item = {"card": card, "text": text, "sent": False, "error": ""}
@@ -238,8 +245,9 @@ def run_round(args, app, cfg, paths, now, fetcher, env=None, sender=None):
     if not args.dry_run:
         refresh_cache(fetcher, st, app, cfg, paths, now)
     reference.prune(st["records"], now)
+    oi_rule = ((cfg.get("rules") or {}).get("oi_spike")) or {}
     down = outputs.endpoints_down(st["series"], st["meta"].get("funding_ok") or {}, now, app,
-                                  oi_ok=st["meta"].get("oi_ok") or {})
+                                  oi_ok=(st["meta"].get("oi_ok") or {}) if oi_rule.get("enabled") else None)
     result = {
         "now": now, "requests": fetcher.requests, "errors": fetcher.errors, "stale": stale, "down": down,
         "cards": delivered, "p2": p2,

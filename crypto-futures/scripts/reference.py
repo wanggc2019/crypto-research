@@ -19,8 +19,11 @@ def _key(rec):
 
 
 def _price_at(series, ts):
-    """触发时的合约价：优先 OI 推出的价格；实时规则（当前 5m 桶尚未收盘）退回 RT 标记价。"""
-    p = ind.price(series, ts)
+    """触发时的合约价，与之后 24h 结果同一口径（OI 美元价值 / 张数）。
+
+    实时规则落在尚未收盘的 5m 桶：取 20 分钟内最新的已收盘 OI 点；仍取不到才退回 RT 标记价。
+    """
+    p = ind.price(series, ind.latest_at(series, "OI", ts))
     return p if p is not None else ind.value(series, "RT", ts, 1)
 
 

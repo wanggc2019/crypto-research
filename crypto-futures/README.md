@@ -49,7 +49,7 @@ make launchd module=crypto-futures action=status
 M2 两条规则于 2026-11-17 从 crypto-price 迁入（[需求](../docs/crypto-futures/requirement-m2.md)），基于每轮的实时快照（`RT` 序列），
 阈值沿用 crypto-price 原值；回退：把 `config/rules.yaml` 里对应规则 `enabled` 改为 `false`。
 
-治理：同规则 + 同资产 + 同方向冷却 4h（另有规定的除外）；冷却期内幅度 ≥1.5 倍且距上次 ≥1h 可「加剧」再报；同一资产同一数据点只出一张卡；P0 每资产每本地日 ≤2 条。
+治理：同规则 + 同资产 + 同方向冷却 4h（另有规定的除外）；冷却期内幅度 ≥1.5 倍且距上次 ≥1h 可「加剧」再报；同一资产同一数据点只出一张卡；P0 每资产每本地日 ≤2 条（M2 两条规则与 M1 共用额度：资金费率极端持续数小时时可能先用掉额度，首周观察，发生就改单独计数）。
 29.5 天回测约 0.53 条/天；加上 M2 两条规则后为 0.56 条/天（`oi_spike` 1 次，`funding_extreme` 按结算值 0 次）（详见 [需求 §9](../docs/crypto-futures/requirement.md)）。
 
 ## 产物

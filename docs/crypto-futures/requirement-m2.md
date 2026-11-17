@@ -94,7 +94,7 @@
 
 | 验收 | 结果 |
 |---|---|
-| 1 单测 | `crypto-futures/tests/test_m2.py` 29 项通过；crypto-price `test_rules.py` 新增「线上配置已关闭、不再产出」2 项 |
+| 1 单测 | `crypto-futures/tests/test_m2.py` 35 项通过（含 PR #45 评审补充的 6 项）；crypto-price `test_rules.py` 新增「线上配置已关闭、不再产出」2 项 |
 | 2 卡片 | 两条规则的卡片包含全部必有区块、≤ 600 字、无禁用词（`TestCards`） |
 | 3 回测 | `backtest.py --cache <线上 30 天缓存> --data <结算记录>`：28.5 天 16 张卡（0.56 条/天），`oi_spike` 1 次、`funding_extreme` 0 次 |
 | 4 crypto-price 回放 | `snapshot_normal` / `snapshot_shock` 两份 fixture 规则级告警列表前后逐条一致；导出字段未改 |

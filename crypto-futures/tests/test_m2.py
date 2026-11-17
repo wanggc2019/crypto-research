@@ -150,7 +150,7 @@ class TestCards(unittest.TestCase):
     def render(self, s, ts, funding=0.0012):
         found, _ = engine.step({"BTC": s}, engine.new_state(), CFG, ts, catchup_s=STEP)
         card = found[0]
-        ctx = cards.context(s, ts, funding)
+        ctx = cards.context(s, ts, funding, realtime=card["rule"] in cards.RT_RULES)
         return card, ctx, cards.format_card(card, ctx, {"n": 0, "enough": False}, job="com.crypto-research.x")
 
     def base(self):
@@ -249,6 +249,46 @@ class TestSampling(unittest.TestCase):
         down = outputs.endpoints_down({"BTC": s}, {"BTC": now}, now, {}, oi_ok={"BTC": now - 3 * H})
         self.assertEqual(down, {"BTC": ["实时持仓量"]})
         self.assertEqual(outputs.endpoints_down({"BTC": s}, {"BTC": now}, now, {}), {})
+
+
+class TestReviewFixes(unittest.TestCase):
+    """PR #45 评审：部分失败不覆盖完整样本、缺配置用默认值、rate 缺失不中断、M1 卡片口径不变、空缓存报错。"""
+
+    def test_partial_sample_keeps_previous_fields(self):
+        st = {"series": {"BTC": S.empty()}, "meta": {}}
+        app = {"assets": {"BTC": "BTCUSDT"}}
+        run.sample_rt(st, app, {"BTC": {"rate": 0.0002, "mark_price": "100"}}, {"BTC": {"oi": 10.0}}, {}, T0)
+        run.sample_rt(st, app, {}, {"BTC": {"oi": 11.0}}, {}, T0 + 60)          # 同桶第二轮：资金费率失败
+        self.assertEqual(st["series"]["BTC"]["RT"][T0], (0.0002, 100.0, 11.0, 8))
+
+    def test_missing_threshold_keys_use_defaults(self):
+        bare = helpers.rules_cfg()
+        bare["rules"]["funding_extreme"] = {"enabled": True}
+        bare["rules"]["oi_spike"] = {"enabled": True}
+        self.assertEqual(R.funding_extreme(rt({T0: (0.001, 1.0, 1.0, 8)}), T0, bare)["severity"], "P1")
+        self.assertEqual(R.oi_spike(oi_series(1050.0, 101.0), T0, bare)["severity"], "P1")
+
+    def test_hot_check_tolerates_missing_rate(self):
+        st = {"series": {}, "meta": {}}
+        self.assertEqual(run.funding_intervals(FakeFetcher({"X": 4}), st, CFG, {"BTC": {"rate": None}}, T0), {"X": 4})
+
+    def test_m1_context_does_not_fall_back(self):
+        s = helpers.flat_series(T0 - STEP, 50)
+        self.assertIsNone(cards.context(s, T0)["price"])
+        self.assertEqual(cards.context(s, T0, realtime=True)["price"], 100.0)
+
+    def test_legacy_history_without_rt_loads(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "history-BTC.json")
+            with open(p, "w") as fh:
+                json.dump({"G": {str(T0): [2.0, 0.67]}}, fh)
+            s = S.load(p)
+        self.assertEqual(s["RT"], {})
+        self.assertEqual(s["G"][T0], (2.0, 0.67))
+
+    def test_backtest_empty_cache_fails_loudly(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(backtest.main(["--cache", d]), 2)
 
 
 class TestFetcherFixtures(unittest.TestCase):

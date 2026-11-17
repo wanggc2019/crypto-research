@@ -116,6 +116,9 @@ def main(argv=None):
     if not args.data and not args.cache:
         parser.error("需要 --data 或 --cache")
     all_series = load_cache(args.cache, assets) if args.cache else load_series(args.data, assets)
+    if not any(S.latest_ts(s, "G") for s in all_series.values()):
+        print("❌ 没有读到任何 5m 数据（检查 --cache / --data 路径），不能当作「零触发」", file=sys.stderr)
+        return 2
     attach_rt(all_series, assets, args.data)
     cards, p2, days = replay(all_series, cfg)
     summary = summarize(cards, p2, days)
