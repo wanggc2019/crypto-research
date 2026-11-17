@@ -1,14 +1,20 @@
 # -*- coding: utf-8 -*-
-"""CI workflow 约束：拿得到订阅 token 的 AI 审查 job 只装按哈希锁定的最小依赖，Claude Code 锁定单一版本。"""
+"""CI workflow 约束：
+- 拿得到订阅 token 的 AI 审查 job 只装按哈希锁定的最小依赖，Claude Code 锁定单一版本；
+- 私有仓库 Actions 分钟（docs/adr/0012）：检查合成一个 job、合并到 main 不重跑、AI 审查不随每次推送跑。
+"""
 import re
 import unittest
 from pathlib import Path
+
+import yaml
 
 REPO = Path(__file__).resolve().parents[2]
 WORKFLOW = REPO / ".github" / "workflows" / "ai-review.yml"
 AI_REQ = REPO / ".github" / "ai-review-requirements.txt"
 ROOT_REQ = REPO / "requirements.txt"
 ADR = REPO / "docs" / "adr" / "0011-llm-claude.md"
+WORKFLOWS = REPO / ".github" / "workflows"
 
 
 def norm(name):
@@ -92,6 +98,39 @@ class AiReviewWorkflowTest(unittest.TestCase):
         self.assertEqual(norm("Typing_Extensions"), "typing-extensions")
         cmds = run_commands("    steps:\n      - run: |\n          pip3 install \\\n            requests\n")
         self.assertIn("requests", cmds[0])
+
+
+def triggers(path):
+    """workflow 的 on: 段（PyYAML 按 YAML 1.1 会把 on 解析成 True）。"""
+    doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+    on = doc.get("on", doc.get(True))
+    return {on: None} if isinstance(on, str) else dict(on), doc
+
+
+class ActionsMinutesTest(unittest.TestCase):
+    def test_only_two_workflows(self):
+        names = sorted(p.name for p in WORKFLOWS.glob("*.y*ml"))
+        self.assertEqual(names, ["ai-review.yml", "ci.yml"], "新增 workflow 会多一个按分钟取整计费的 job，先看 ADR 0012")
+
+    def test_no_workflow_runs_on_push(self):
+        for p in WORKFLOWS.glob("*.y*ml"):
+            on, _ = triggers(p)
+            self.assertNotIn("push", on, "%s：合并到 main 不重跑（PR 上与 pre-push 已跑过）" % p.name)
+
+    def test_ci_is_single_job_with_all_checks(self):
+        on, doc = triggers(WORKFLOWS / "ci.yml")
+        self.assertEqual(list(doc["jobs"]), ["checks"])
+        text = (WORKFLOWS / "ci.yml").read_text(encoding="utf-8")
+        for needle in ("git ls-files", "gitleaks/gitleaks-action@", "make gate", "PR 标题"):
+            self.assertIn(needle, text)
+        self.assertIn("edited", on["pull_request"]["types"], "改标题要能重新校验")
+
+    def test_ai_review_not_on_every_push(self):
+        on, _ = triggers(WORKFLOWS / "ai-review.yml")
+        types = on["pull_request"]["types"]
+        self.assertNotIn("synchronize", types)
+        self.assertIn("labeled", types)
+        self.assertIn("github.event.label.name == 'ai-review'", (WORKFLOWS / "ai-review.yml").read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

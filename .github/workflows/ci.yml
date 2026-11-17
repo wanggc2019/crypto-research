@@ -1,29 +1,67 @@
 name: CI
 
+# 私有仓库 Actions 按 job 计费、每个 job 不足 1 分钟按 1 分钟算（docs/adr/0012）：
+# 标题 / hygiene / gitleaks / gate 合成一个 job；只在 PR 上跑（合并到 main 不再重跑，本地 pre-push 已跑过 gate）。
 on:
-  push:
-    branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, edited]
+  workflow_dispatch:   # 需要时手动对任意分支全量跑一次
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  hygiene: # 凭据/运行产物不得入库
+  checks:
+    # edited 只在改了标题时才跑（改正文不跑）；改标题时整套重跑，避免一次只查标题的绿灯盖住之前 gate 的红灯
+    if: github.event.action != 'edited' || github.event.changes.title
     runs-on: ubuntu-22.04
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - name: No secrets / data / venv tracked
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        with:
+          fetch-depth: 0   # gitleaks 要扫 PR 的全部提交
+
+      - name: Hygiene（凭据/运行产物不得入库）
         run: |
           ! git ls-files | grep -E '(^|/)\.env$'
           ! git ls-files | grep -E '(^|/)data/' | grep -vE '(^|/)tests/fixtures/'
           ! git ls-files | grep -E '(^|/)\.venv/'
 
-  gate: # 唯一质量门：与本地 make gate / pre-push 完全一致（自动发现 crypto-* 模块：ruff + 单测 + scripts/e2e.py）
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Gitleaks
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7  # v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # 个人账号（含私有仓库）不需要 GITLEAKS_LICENSE
+
+      - uses: actions/setup-python@7f4fc3e22c37d6ff65e88745f38bd3157c663f7c  # v5
         with:
           python-version: "3.12"   # 与线上 .venv 一致（docs/adr/0010）
+
       - name: Install
         run: pip install -r requirements.txt
-      - name: Gate
+
+      - name: Gate（与本地 make gate / pre-push 完全一致）
         run: make gate
+
+      # 放最后且 always()：标题不合格时也能同时看到 gate 结果
+      - name: PR 标题（[scope][type] 摘要）
+        if: always() && github.event_name == 'pull_request'
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          echo "PR title: $TITLE"
+          if [ "${#TITLE}" -gt 72 ]; then
+            echo "::error::PR 标题过长（${#TITLE} 字符），请控制在 72 字符以内"
+            exit 1
+          fi
+          if echo "$TITLE" | grep -Eiq '(^|[\[ (])(wip|fixup|tmp)([\] )]|$)'; then
+            echo "::error::PR 标题不要使用 WIP/fixup/tmp"
+            exit 1
+          fi
+          if ! echo "$TITLE" | grep -Eq '^\[(crypto-news|crypto-price|crypto-analyst|crypto-policy|crypto-onchain|crypto-x-kol|crypto-jobs|crypto-knowledge|libs|tools|docs|ci|repo)\]\[(feat|fix|docs|chore|refactor|test|perf|build|revert)\] .+'; then
+            echo "::error::PR 标题格式：[scope][type] 摘要（例：[crypto-news][feat] 英文标题 AI 翻译）"
+            exit 1
+          fi

@@ -23,7 +23,7 @@
 ```
 crypto-research/                        # 一个仓库 = 多个自包含需求模块 + 共享库
 ├── README.md / Makefile / pyproject.toml / env.example / .env
-├── .github/workflows/ci.yml            # hygiene / lint / libs / 各模块测试
+├── .github/workflows/ci.yml            # 单 job：hygiene + gitleaks + make gate + PR 标题（ai-review.yml：PR 打开时 AI 审查）
 ├── docs/                               # 架构、Runbook、约定、ADR、需求、方案、HANDOFF
 ├── libs/crypto_core/                   # 共享能力（模块只向下依赖）
 │   └── src/crypto_core/
@@ -64,7 +64,7 @@ launchd（各模块主任务）
 2. **根目录只放共享层**：`README.md`、`.env`/`env.example`、`.gitignore`、`docs/`、`.github/`、`.vscode/`。
 3. **模块之间不互相 import**，只通过文件/数据契约交互；公共能力下沉到 `libs/crypto_core`（禁止在模块里复制共享逻辑）。
 4. 运行产物一律放模块内 `data/`（已被 `.gitignore` 覆盖），密钥只放根 `.env`。
-5. 新模块自带 README，并在本文件「模块」表加一行；CI 在 `.github/workflows/ci.yml` 加一个 job。
+5. 新模块自带 README，并在本文件「模块」表加一行；CI 无需改动（gate 自动发现模块）。
 
 ## 共享凭据
 

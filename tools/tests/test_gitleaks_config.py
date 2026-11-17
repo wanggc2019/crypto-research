@@ -17,9 +17,9 @@ class TestGitleaksConfig(unittest.TestCase):
         self.assertIn("gitleaks git --pre-commit --staged", text)
 
     def test_workflow_is_real_and_pinned(self):
-        workflow = REPO / ".github" / "workflows" / "gitleaks.yml"
+        # gitleaks 已并入 ci.yml 的 checks job（docs/adr/0012）
+        workflow = REPO / ".github" / "workflows" / "ci.yml"
         text = workflow.read_text(encoding="utf-8")
-        self.assertGreater(len(text.strip()), 0, "gitleaks.yml 不能是空文件")
         self.assertIn("gitleaks/gitleaks-action@", text)
         self.assertRegex(text, r"gitleaks-action@[0-9a-f]{40}")
         self.assertIn("pull_request", text)

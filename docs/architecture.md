@@ -55,7 +55,7 @@ crypto-research/                     # 仓库根 = 共享层（不放业务代�
 ├── README.md                        # 模块总览 + 结构图 + 约定 + 快速开始
 ├── pyproject.toml / Makefile        # ruff 全仓配置 + setup/lint/test/verify/launchd/prune
 ├── env.example / .env               # 凭据模板 / 真实凭据（gitignored）
-├── .github/workflows/ci.yml         # hygiene + lint + libs + 各模块测试（全离线）
+├── .github/workflows/ci.yml         # 单 job：hygiene + gitleaks + make gate + PR 标题（全离线）
 ├── .vscode/                         # 解释器、extraPaths、调试配置
 │
 ├── docs/
@@ -552,10 +552,14 @@ new-module:       ## make new-module name=crypto-price desc="价格告警"
 
 ### 10.2 CI
 
-当前实现见 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)，两个 job：
+当前实现见 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)，只在 PR 上跑（另可手动 `workflow_dispatch`），**一个 job `checks`**（私有仓库按 job 取整计费，见 [ADR 0012](adr/0012-ci-actions-minutes.md)）：
 
-- `hygiene`：`.env` / `data/` / `.venv/` 不得入库
-- `gate`：`make gate`，与本地 / pre-push 完全一致（ruff + libs/tools/各模块单测 + 各模块 `scripts/e2e.py` 离线回放 + 审计）
+- hygiene：`.env` / `data/` / `.venv/` 不得入库
+- gitleaks：扫描 PR 的全部提交
+- `make gate`：与本地 / pre-push 完全一致（ruff + libs/tools/各模块单测 + 各模块 `scripts/e2e.py` 离线回放 + 审计）
+- PR 标题：`[scope][type] 摘要`（改标题会重跑整个 job）
+
+另有 `ai-review.yml`：PR 打开时 AI 审查一次；推送后要重审就给 PR 加标签 `ai-review`。
 
 新增模块时 CI 无需改动：gate 自动发现 `crypto-*/` 的 `tests/` 与 `scripts/e2e.py`（脚手架默认生成）；只需在根 README 模块表加一行。
 

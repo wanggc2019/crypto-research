@@ -58,7 +58,7 @@
 - **一个 PR 只做一件事**；跨模块改动 scope 用 `repo`。
 - 分支名：`<type>/<scope>-<slug>`，如 `feat/crypto-news-ai-translate`、`chore/repo-pr-title-convention`。
 - 不使用 `WIP`/`fixup`/`tmp`；草稿用 GitHub Draft PR。
-- 标题由 CI workflow `PR Title` 校验；模板见 `.github/pull_request_template.md`。
+- 标题由 CI 的 `checks` job 最后一步校验；模板见 `.github/pull_request_template.md`。
 - 可选：给 PR 加 `module:<scope>` 标签，便于按模块筛选。
 
 > **流程自测记录（2026-11-09）**：用一条真实 PR 跑通

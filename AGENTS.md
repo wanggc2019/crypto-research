@@ -55,7 +55,7 @@ make gate
 git add <本轮相关文件>            # 不要 -A
 git commit -m "feat(crypto-x-kol): ..."
 git push -u origin HEAD
-gh pr create                     # 标题：[scope][type] 摘要（≤72 字符，CI check-title 校验）
+gh pr create                     # 标题：[scope][type] 摘要（≤72 字符，CI 的 checks job 校验）
                                  # 正文按 .github/pull_request_template.md：需求/改动/验证/风险回退
 gh pr checks <n> --watch         # CI 全绿
 gh pr merge <n> --squash --delete-branch
