@@ -51,8 +51,15 @@ def load_config(name):
     return _CFG_CACHE[name]
 
 
+BOT_TOKEN_KEYS = ("TELEGRAM_FUTURES_BOT_TOKEN",)
+BOT_CHAT_KEYS = ("TELEGRAM_FUTURES_CHAT_ID",)
+
+
 def load_env():
-    return _env.load_env()
+    """根 .env；Telegram 用 crypto-futures 专用 Bot（TELEGRAM_FUTURES_*），没填回退共享 TELEGRAM_*。"""
+    raw = _env.load_env()
+    bot = _env.resolve_bot_env(raw, BOT_TOKEN_KEYS, BOT_CHAT_KEYS)
+    return dict(raw, TELEGRAM_BOT_TOKEN=bot["TELEGRAM_BOT_TOKEN"], TELEGRAM_CHAT_ID=bot["TELEGRAM_CHAT_ID"])
 
 
 def ts_iso(dt=None):

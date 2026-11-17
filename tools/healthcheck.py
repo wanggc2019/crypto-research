@@ -288,9 +288,16 @@ def check_disk(module, max_data_mb=500, max_log_kb=2048, fix=False):
     return {"name": "disk", "state": state, "detail": "；".join(parts), "fixed": fixed}
 
 
+# 专用 Bot 的模块（没填就回退共享 Bot）；crypto-price 另有旧别名，单独处理
+MODULE_BOTS = {"crypto-futures": (("TELEGRAM_FUTURES_BOT_TOKEN",), ("TELEGRAM_FUTURES_CHAT_ID",))}
+
+
 def module_env(module=None):
-    """按模块选择 Bot：crypto-price 支持专用 TELEGRAM_PRICE_*，其余用共享 Bot。"""
-    env = envlib.load_env()
+    """按模块选择 Bot：crypto-price / crypto-futures 支持专用 Bot，其余用共享 Bot。返回新 dict，不改 load_env 的结果。"""
+    env = dict(envlib.load_env())
+    if module in MODULE_BOTS:
+        bot = envlib.resolve_bot_env(env, *MODULE_BOTS[module])
+        env["TELEGRAM_BOT_TOKEN"], env["TELEGRAM_CHAT_ID"] = bot["TELEGRAM_BOT_TOKEN"], bot["TELEGRAM_CHAT_ID"]
     if module == "crypto-price":
         token = env.get("TELEGRAM_PRICE_BOT_TOKEN") or env.get("TELEGRAM_PRICE_BOT") or ""
         chat = env.get("TELEGRAM_PRICE_CHAT_ID") or ""

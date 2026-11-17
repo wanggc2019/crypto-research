@@ -335,6 +335,33 @@ class TestModuleEnv(unittest.TestCase):
         self.assertEqual(loaded["TELEGRAM_BOT_TOKEN"], "price")
         self.assertEqual(loaded["TELEGRAM_CHAT_ID"], "2")
 
+    def test_futures_uses_dedicated_bot_with_fallback(self):
+        env = {"TELEGRAM_BOT_TOKEN": "shared", "TELEGRAM_CHAT_ID": "1",
+               "TELEGRAM_FUTURES_BOT_TOKEN": "futures", "TELEGRAM_FUTURES_CHAT_ID": "3"}
+        with mock.patch.object(healthcheck.envlib, "load_env", return_value=dict(env)):
+            loaded = healthcheck.module_env("crypto-futures")
+        self.assertEqual((loaded["TELEGRAM_BOT_TOKEN"], loaded["TELEGRAM_CHAT_ID"]), ("futures", "3"))
+        shared = {"TELEGRAM_BOT_TOKEN": "shared", "TELEGRAM_CHAT_ID": "1"}
+        with mock.patch.object(healthcheck.envlib, "load_env", return_value=dict(shared)):
+            loaded = healthcheck.module_env("crypto-futures")
+        self.assertEqual((loaded["TELEGRAM_BOT_TOKEN"], loaded["TELEGRAM_CHAT_ID"]), ("shared", "1"))
+
+    def test_does_not_mutate_loaded_env(self):
+        env = {"TELEGRAM_BOT_TOKEN": "shared", "TELEGRAM_CHAT_ID": "1", "TELEGRAM_FUTURES_BOT_TOKEN": "futures"}
+        with mock.patch.object(healthcheck.envlib, "load_env", return_value=env):   # 同一个对象
+            healthcheck.module_env("crypto-futures")
+            loaded = healthcheck.module_env("crypto-news")
+        self.assertEqual(loaded["TELEGRAM_BOT_TOKEN"], "shared")
+        self.assertEqual(env["TELEGRAM_BOT_TOKEN"], "shared")
+
+    def test_futures_bot_keys_match_module(self):
+        """健康检查与模块推送必须读同一组变量名，避免两边 Bot 不一致。"""
+        import ast
+        source = (healthcheck.REPO / "crypto-futures" / "scripts" / "common.py").read_text(encoding="utf-8")
+        consts = {node.targets[0].id: ast.literal_eval(node.value) for node in ast.parse(source).body
+                  if isinstance(node, ast.Assign) and getattr(node.targets[0], "id", "").startswith("BOT_")}
+        self.assertEqual((consts["BOT_TOKEN_KEYS"], consts["BOT_CHAT_KEYS"]), healthcheck.MODULE_BOTS["crypto-futures"])
+
     def test_other_module_uses_shared_bot(self):
         env = {"TELEGRAM_BOT_TOKEN": "shared", "TELEGRAM_CHAT_ID": "1"}
         with mock.patch.object(healthcheck.envlib, "load_env", return_value=dict(env)):
