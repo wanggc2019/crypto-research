@@ -223,7 +223,7 @@
 | 期 | 内容 | 是否本需求 |
 |---|---|---|
 | M1 | 新模块 + 5 项采集 + 5 条规则（§3）+ 新卡片 + exports + `backtest.py` + launchd | ✅ |
-| M2 | 把 crypto-price 的 `funding` / `open_interest` 告警迁到本模块、用新卡片；crypto-price 保留这两个导出字段（crypto-onchain 在读），只关掉对应规则 | ❌ M1 上线后单独评审 |
+| M2 | 把 crypto-price 的 `funding` / `open_interest` 告警迁到本模块、用新卡片；crypto-price 保留这两个导出字段（crypto-onchain 在读），只关掉对应规则 | ❌ 单独评审：[requirement-m2.md](requirement-m2.md)（待评审） |
 | M3 | crypto-analyst 日报展示、crypto-onchain 归因接入、多所（OKX 多空比） | ❌ 另开需求 |
 
 ## 9. 回测依据
