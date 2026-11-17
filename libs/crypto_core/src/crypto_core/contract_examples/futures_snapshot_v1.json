@@ -1,0 +1,24 @@
+{
+ "schema": "futures/snapshot/v1",
+ "generated_at": "2026-11-17T18:00:00",
+ "source": "binance_usdm",
+ "scope": "Binance USD-M 单所 · 5m 数据",
+ "assets": {
+  "BTC": {
+   "ts": 1794922800,
+   "account_ratio": 2.69,
+   "account_long_share": 0.729,
+   "account_ratio_change_24h_pct": 3.1,
+   "top_position_ratio": 1.78,
+   "top_position_ratio_change_24h_pct": -1.2,
+   "taker_ratio_15m": 0.97,
+   "oi_usd": 7030000000.0,
+   "oi_change_4h_pct": -0.8,
+   "price": 92150.0,
+   "price_change_24h_pct": 0.6,
+   "funding_rate": 0.0001,
+   "stale": []
+  }
+ },
+ "today_signals": {"P1": 1}
+}

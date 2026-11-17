@@ -1,7 +1,7 @@
 <!--
 PR 标题格式（CI 会校验，必须遵守）：
   [scope][type] 摘要
-  scope: crypto-news | crypto-price | crypto-analyst | crypto-policy | crypto-onchain |
+  scope: crypto-news | crypto-price | crypto-analyst | crypto-policy | crypto-onchain | crypto-futures |
          crypto-x-kol | crypto-jobs | crypto-knowledge | libs | tools | docs | ci | repo
   type : feat | fix | docs | chore | refactor | test | perf | build | revert
   示例：[crypto-news][feat] 英文标题 AI 中文翻译

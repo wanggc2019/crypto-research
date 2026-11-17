@@ -148,9 +148,46 @@ def parse_open_interest_hist(raw):
         ts = _ms_to_s(row.get("timestamp"))
         if oi is None or ts is None or oi <= 0:
             continue
-        out.append({"symbol": str(row.get("symbol") or ""), "oi": oi, "ts": ts})
+        out.append({"symbol": str(row.get("symbol") or ""), "oi": oi, "ts": ts,
+                    "oi_usd": _float(row.get("sumOpenInterestValue"))})
     out.sort(key=lambda r: r["ts"])
     return out
+
+
+def _ratio_rows(raw, fields):
+    """/futures/data/* 列表响应的通用解析：fields 为 (输出名, 原始字段名)；任一字段非法即丢弃该行。"""
+    data = _loads(raw)
+    if not isinstance(data, list):
+        return []
+    out = {}
+    for row in data:
+        if not isinstance(row, dict):
+            continue
+        ts = _ms_to_s(row.get("timestamp"))
+        values = {name: _float(row.get(src)) for name, src in fields}
+        if ts is None or any(v is None or v < 0 for v in values.values()):
+            continue
+        values.update({"symbol": str(row.get("symbol") or ""), "ts": ts})
+        out[ts] = values   # 同一时间戳重复时取后者
+    return [out[k] for k in sorted(out)]
+
+
+def parse_long_short_ratio(raw):
+    """解析 globalLongShortAccountRatio / topLongShortPositionRatio（字段相同）。
+
+    返回 [{symbol, ts, ratio, long_share, short_share}]（旧→新，按 ts 去重）；
+    ratio = 多/空，long_share/short_share 为 0–1 的占比。解析失败返回 []。
+    """
+    return _ratio_rows(raw, (("ratio", "longShortRatio"), ("long_share", "longAccount"),
+                             ("short_share", "shortAccount")))
+
+
+def parse_taker_ratio(raw):
+    """解析 /futures/data/takerlongshortRatio，返回 [{symbol, ts, buy_vol, sell_vol, ratio}]（旧→新）。
+
+    ratio 为接口给的 buySellRatio；需要多点聚合时请对 buy_vol / sell_vol 分别求和再相除。
+    """
+    return _ratio_rows(raw, (("buy_vol", "buyVol"), ("sell_vol", "sellVol"), ("ratio", "buySellRatio")))
 
 
 def parse_funding(raw):

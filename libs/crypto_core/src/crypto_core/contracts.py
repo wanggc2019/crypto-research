@@ -45,6 +45,12 @@ CONTRACTS = {
         "item_container": ("list", "items"), "item_required": ("handle", "text", "url"),
         "consumers": ("crypto-analyst",),
     },
+    "futures/snapshot/v1": {
+        "module": "crypto-futures", "file": "latest.json",
+        "required": {"schema": str, "generated_at": str, "assets": dict},
+        "item_container": ("map", "assets"), "item_required": ("ts", "account_ratio", "top_position_ratio"),
+        "consumers": (),
+    },
     "onchain/pressure/v1": {
         "module": "crypto-onchain", "file": "onchain-pressure.json",
         "required": {"schema": str, "generated_at": str, "assets": dict},

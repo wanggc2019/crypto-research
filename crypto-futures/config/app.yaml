@@ -1,0 +1,37 @@
+# crypto-futures 运行配置：数据源端点、轮询、历史与缓存。全部为 Binance USD-M 公开接口（免 key）。
+# 阈值与告警治理在 rules.yaml；凭据（Telegram）只在仓库根 .env。
+schema_version: 1
+updated: "2026-11-17"
+
+poll_seconds: 300          # launchd 周期；数据最小粒度 5m，更快没有意义
+
+assets:                    # 关注范围（AGENTS §0）；值为 Binance USD-M 合约代码
+  BTC: BTCUSDT
+  ETH: ETHUSDT
+  BNB: BNBUSDT
+
+binance:
+  base: "https://fapi.binance.com"
+  period: 5m
+  recent_limit: 12         # 每轮每接口取最近 12 个点（1 小时），去重并入历史，防延迟抖动漏点
+  page_limit: 500          # 分页回补单次上限（接口最大 500）
+  timeout_seconds: 8
+  pause_seconds: 0.15      # 分页回补之间的间隔，避免突发请求
+
+history:
+  keep_days: 7.05          # 本地 5m 历史：7 天窗口 + 当前 1 小时余量
+  gap_backfill_min: 60     # 本地最新点比当前早超过 60 分钟 → 分页回补缺口
+  backfill_retry_min: 360  # 冷启动回补失败后最快 6 小时再试（期间 7 天规则不评估）
+  stale_min: 20            # 接口最新点距当前 > 20 分钟视为过期（实测最慢约 12 分钟）
+  catchup_min: 60          # 每轮只评估最近 60 分钟内尚未评估的数据点（不对旧数据补发告警）
+
+cache30d:
+  enabled: true            # 关掉后不拉 30 天缓存、历史参照只用本地触发记录
+  days: 29.5               # 每日重拉的历史参照缓存（接口上限 30 天，留余量）
+  fallback_days: 29        # 遇到 -1130 时改用 29 天重试一次
+
+health:
+  endpoint_down_min: 60    # 任一接口连续失败/过期超过 60 分钟 → last_run.json 标记，交给 healthcheck 告警
+
+links:
+  trading_data: "https://www.binance.com/zh-CN/futures/funding-history/perpetual/trading-data?contract={symbol}"

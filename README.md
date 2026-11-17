@@ -13,6 +13,7 @@
 | [`crypto-policy/`](crypto-policy/README.md) | 国内数字货币政策/法规/案例雷达 → 法规库 + 速报 + 解读草稿（规则门过滤，AI 只处理候选） | Python 3.12（标准库） | 2026-11-08 上线：5 个 T0/T1 源（+2 备用）、6 小时、零 API；P0/P1 推送 + AI 解读草稿（每天 08:30） |
 | [`crypto-jobs/`](crypto-jobs/README.md) | 加密行业技术岗位（DevOps/SRE/MLOps/开发）市场情报：多源采集 → 技能词典抽取 → 每日快照/差分 → 周趋势 Telegram | Python 3.12（标准库） | 2026-11-08 新建 MVP：公开 ATS/招聘站、零成本、每日 18:00 日更 + 周日 10:00 周报 + 每 2 小时新岗位速报（两个 launchd 任务）、离线 fixtures 回放；2026-11-09 纳入开发岗位 |
 | [`crypto-onchain/`](crypto-onchain/README.md) | 链上/交易所资金流"卖压归因"（DefiLlama CEX 净流 + Binance 逐笔主动卖 + OKX 清算 + 稳定币净增发 → 4 类归因 + exports） | Python 3.12（标准库） | 2026-11-09 新建，**M2 归因引擎 + 链上大额转账（公共 RPC，≥$5M）**：零 key、零成本、影子模式（只落盘/不推送）；2 周校准后才接 M3 告警 |
+| [`crypto-futures/`](crypto-futures/README.md) | BTC/ETH/BNB 合约持仓结构（账户多空比 / 大户持仓比 / 主动买卖 / OI）告警：背离、急转、失衡、拥挤加杠杆 | Python 3.12（标准库） | 2026-11-17 新建，M1：Binance USD-M 公开接口零 key，5m 粒度，回测约 0.5 条/天 |
 | [`crypto-knowledge/`](crypto-knowledge/README.md) | 每日 4 条：13:00 概念课 / 19:00 理论或实践课 / 21:00 回顾总结（周日为本周回顾）/ 23:00 复盘课（间隔复习） | Python 3.12（标准库） | 2026-11-09 新建；160 条课程内容（4 阶段，每条 10–15 分钟）、SRS 1/3/7/14/30/60 天、4 时段 launchd；独立 Bot `独立 Bot` |
 
 > 历史：2026-11-08 之前的代码直接平铺在仓库根（`scripts/`、`config/`、`tests/`、`data/`），
@@ -40,6 +41,8 @@ crypto-research/                        # 一个仓库 = 多个自包含需求�
 ├── crypto-news/                        # 模块 1：消息面情报（10 分钟）
 │   └── scripts/ config/ tests/ deploy/launchd/ data/
 ├── crypto-price/                       # 模块 2：价格/衍生品异动（60 秒）
+│   └── scripts/ config/ tests/ deploy/launchd/ data/
+├── crypto-futures/                     # 合约持仓结构（多空比）告警（300 秒）
 │   └── scripts/ config/ tests/ deploy/launchd/ data/
 └── crypto-<next>/                      # 后续需求按同样约定新增（链上/宏观/报告…）
 ```

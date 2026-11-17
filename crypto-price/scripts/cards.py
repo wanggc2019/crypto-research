@@ -9,7 +9,7 @@ import html
 import os
 
 from crypto_core import timeutil
-from crypto_core.notify.templates import MAX_LEN, esc
+from crypto_core.notify.templates import MAX_LEN, esc, truncate_html
 
 ICON = {"P0": "🚨", "P1": "⚠️", "P2": "ℹ️"}
 SEVERITY_LABEL = {"P0": "P0", "P1": "P1", "P2": "P2"}
@@ -116,18 +116,8 @@ def _sources_line(evidence):
 
 
 def _truncate(text):
-    if len(text) <= MAX_LEN:
-        return text
-    cut = text[: MAX_LEN - 1]
-    # 不切断 HTML 标签
-    if cut.rfind("<") > cut.rfind(">"):
-        cut = cut[: cut.rfind("<")]
-    # 不切断 HTML 实体（如 &amp; / &#39;）
-    amp = cut.rfind("&")
-    semi = cut.rfind(";")
-    if amp > semi and MAX_LEN - len(cut) < 10:
-        cut = cut[:amp]
-    return cut + "…"
+    """不切断 HTML 标签与实体的截断（实现已抽到 crypto_core.notify.templates.truncate_html）。"""
+    return truncate_html(text, MAX_LEN)
 
 
 def _price_lines(alert, metrics):

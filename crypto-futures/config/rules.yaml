@@ -1,0 +1,44 @@
+# crypto-futures 告警规则与治理。阈值来自 5m 线上口径回测（docs/crypto-futures/requirement.md §9）。
+# 改阈值后用 scripts/backtest.py 在最近 30 天数据上重跑，看推送量再上线。
+schema_version: 1
+updated: "2026-11-17"
+
+rules:
+  crowding_build:          # 拥挤加杠杆：OI 4h ≥ +5% 且账户比处在 7 天 p95 以上 / p5 以下
+    enabled: true
+    severity: P0
+    oi_change_4h_pct: 5.0
+    high_quantile: 0.95
+    low_quantile: 0.05
+  smart_divergence:        # 账户比与大户持仓比 24h 反向变化
+    enabled: true
+    severity: P1
+    change_24h_pct: 15.0
+    cooldown_hours: 12     # 24h 窗口条件会持续成立，4h 冷却会反复报
+  retail_shift:            # 账户比 1h 急转
+    enabled: true
+    severity: P1
+    change_1h_pct: 20.0
+  taker_burst:             # 15 分钟主动买卖失衡（先分别求和再相除）
+    enabled: true
+    severity: P1
+    ratio: 3.5             # R ≥ 3.5 或 R ≤ 1/3.5（对称）
+    volume_multiple: 3.0   # 15 分钟成交量 ≥ 前 24h 滚动 15 分钟成交量中位数 × 3
+  extreme_level:           # 账户比创 7 天极值：只落盘、不推送
+    enabled: true
+    severity: P2
+
+window:
+  points_7d: 2016          # 7 天 = 2016 个 5m 点（不含当前点）
+  min_coverage: 0.9        # 有效点不足 90% 不评估 7 天规则
+
+governance:
+  cooldown_hours: 4        # 同规则 + 同资产 + 同方向
+  escalate_multiple: 1.5   # 冷却期内幅度达到上次推送的 1.5 倍……
+  escalate_min_gap_hours: 1  # ……且距上次 ≥ 1 小时，可再推一次（标注「加剧」）
+  p0_daily_cap: 2          # 每资产每本地日最多 2 条 P0
+
+reference:
+  lookback_days: 30
+  min_samples: 3
+  horizon_hours: 24

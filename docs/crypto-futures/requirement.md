@@ -1,6 +1,6 @@
 # 需求：crypto-futures —— 合约持仓结构监控与告警
 
-> 状态：**需求已评审通过（2026-11-17），M1 待实现**；2026-11-17 按 PR #39 评审意见修订（5m 口径重新回测、冷启动、历史参照、过期与健康检查）｜模块目录：`crypto-futures/`（实现时用 `make new-module` 生成；该命令不会覆盖本文件）
+> 状态：**需求已评审通过，M1 已实现（2026-11-17）**；实现与本文的差异见 [design.md](design.md) §1（只用已收盘周期）、§4（「同轮合并」按同一数据点）、§7（健康告警冷却沿用仓库统一的 60 分钟）；2026-11-17 按 PR #39 评审意见修订（5m 口径重新回测、冷启动、历史参照、过期与健康检查）｜模块目录：`crypto-futures/`（实现时用 `make new-module` 生成；该命令不会覆盖本文件）
 > 关联：[crypto-price 需求](../crypto-price/requirement.md) · [消息发送规范](../notify-policy.md) · [约定](../conventions.md)
 > 命名：交易所把这块业务叫「合约 / Futures」（Binance `fapi`、OKX Futures/Perpetual）；不用 `contract`（容易被理解成智能合约），也不用 `derivatives`（还包括期权，超出关注范围）。
 
