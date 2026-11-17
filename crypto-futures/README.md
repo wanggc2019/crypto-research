@@ -18,6 +18,9 @@ python3 scripts/backtest.py --data <dir> # 用历史 5m 数据回放规则，看
 python3 scripts/e2e.py                   # 离线端到端回放（make gate 自动跑）
 ```
 
+推送用 crypto-futures 专用 Bot：根 `.env` 的 `TELEGRAM_FUTURES_BOT_TOKEN` / `TELEGRAM_FUTURES_CHAT_ID`，
+没填就回退共享 Bot（`TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID`）。仓库级 watchdog 的健康告警仍走共享 Bot。
+
 调度：每 300 秒（`config/app.yaml` 的 `poll_seconds`），模板 `deploy/launchd/agent.plist.tmpl`：
 
 ```bash

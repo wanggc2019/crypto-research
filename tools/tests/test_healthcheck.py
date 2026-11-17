@@ -335,6 +335,17 @@ class TestModuleEnv(unittest.TestCase):
         self.assertEqual(loaded["TELEGRAM_BOT_TOKEN"], "price")
         self.assertEqual(loaded["TELEGRAM_CHAT_ID"], "2")
 
+    def test_futures_uses_dedicated_bot_with_fallback(self):
+        env = {"TELEGRAM_BOT_TOKEN": "shared", "TELEGRAM_CHAT_ID": "1",
+               "TELEGRAM_FUTURES_BOT_TOKEN": "futures", "TELEGRAM_FUTURES_CHAT_ID": "3"}
+        with mock.patch.object(healthcheck.envlib, "load_env", return_value=dict(env)):
+            loaded = healthcheck.module_env("crypto-futures")
+        self.assertEqual((loaded["TELEGRAM_BOT_TOKEN"], loaded["TELEGRAM_CHAT_ID"]), ("futures", "3"))
+        shared = {"TELEGRAM_BOT_TOKEN": "shared", "TELEGRAM_CHAT_ID": "1"}
+        with mock.patch.object(healthcheck.envlib, "load_env", return_value=dict(shared)):
+            loaded = healthcheck.module_env("crypto-futures")
+        self.assertEqual((loaded["TELEGRAM_BOT_TOKEN"], loaded["TELEGRAM_CHAT_ID"]), ("shared", "1"))
+
     def test_other_module_uses_shared_bot(self):
         env = {"TELEGRAM_BOT_TOKEN": "shared", "TELEGRAM_CHAT_ID": "1"}
         with mock.patch.object(healthcheck.envlib, "load_env", return_value=dict(env)):
