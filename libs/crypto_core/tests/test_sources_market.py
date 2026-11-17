@@ -214,6 +214,14 @@ class TestMarket(unittest.TestCase):
     def test_funding_bad(self):
         self.assertIsNone(binance.parse_funding(b'{"symbol":"X"}'))
 
+    def test_funding_info(self):
+        raw = b'[{"symbol":"BTCUSDT","fundingIntervalHours":4},{"symbol":"X","fundingIntervalHours":"bad"},' \
+              b'{"fundingIntervalHours":8},"junk",{"symbol":"ETHUSDT","fundingIntervalHours":8}]'
+        self.assertEqual(binance.parse_funding_info(raw), {"BTCUSDT": 4, "ETHUSDT": 8})
+        self.assertEqual(binance.parse_funding_info(b"[]"), {})
+        self.assertIsNone(binance.parse_funding_info(b'{"code":-1}'))
+        self.assertIsNone(binance.parse_funding_info(b"not json"))
+
     def test_open_interest_hist(self):
         raw = b'[{"symbol":"BTCUSDT","sumOpenInterest":"2.0","timestamp":1794177000000},' \
               b'{"symbol":"BTCUSDT","sumOpenInterest":"1.0","timestamp":1794176100000}]'

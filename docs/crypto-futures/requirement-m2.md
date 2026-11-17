@@ -1,6 +1,6 @@
 # 需求：crypto-futures M2 —— 资金费率 / OI 告警从 crypto-price 迁入
 
-> 状态：**已评审通过（2026-11-17，D1–D4 均按推荐）**，进入实现｜上游：[M1 需求](requirement.md) §8 · [crypto-price 需求](../crypto-price/requirement.md)
+> 状态：**已实现（2026-11-17）**；评审通过（D1–D4 均按推荐）。验收证据见 §8｜上游：[M1 需求](requirement.md) §8 · [crypto-price 需求](../crypto-price/requirement.md)
 > 关联：[消息发送规范](../notify-policy.md) · [ADR 0005 领域命名](../adr/0005-domain-naming.md)
 
 ## 1. 要解决什么问题（一句话）
@@ -89,3 +89,14 @@
 | D2 | 阈值 | 沿用 crypto-price 现值（资金费率 0.10% / 0.20%，OI 5% / 10% + 价格 0.5%） | 借机下调资金费率阈值（如 0.05%）：90 天回测仍为 0 次，意义不大 |
 | D3 | 切换方式 | 同一 PR 一次切换（§5） | 先并跑 7 天再关 crypto-price：会有双发风险，且几乎没有样本 |
 | D4 | P0 日限额 | 与 M1 规则共用（每资产每日 ≤ 2）。副作用：资金费率极端常持续数小时，可能先用掉当日 P0 额度，挤掉同日更重要的 M1 P0；90 天结算值从未 ≥ 0.20%，但实时值口径会更多（§5 已知风险），所以首周观察项明确盯「funding P0 是否挤占 M1 P0 额度」，发生即改单独计数 | 新规则单独计数：极端行情下 P0 可能多发 |
+
+## 8. 实现与验收记录（2026-11-17）
+
+| 验收 | 结果 |
+|---|---|
+| 1 单测 | `crypto-futures/tests/test_m2.py` 29 项通过；crypto-price `test_rules.py` 新增「线上配置已关闭、不再产出」2 项 |
+| 2 卡片 | 两条规则的卡片包含全部必有区块、≤ 600 字、无禁用词（`TestCards`） |
+| 3 回测 | `backtest.py --cache <线上 30 天缓存> --data <结算记录>`：28.5 天 16 张卡（0.56 条/天），`oi_spike` 1 次、`funding_extreme` 0 次 |
+| 4 crypto-price 回放 | `snapshot_normal` / `snapshot_shock` 两份 fixture 规则级告警列表前后逐条一致；导出字段未改 |
+| 5 请求量 | 联网 `run.py --once --dry-run --json`（读主仓库数据目录）：19 次 = 15 + 3 次实时 OI + 当日首次 `fundingInfo`，0 错误 |
+| 6 上线 | 合并后下一轮自动生效；24 小时 `collect.log` 与台账待观察 |

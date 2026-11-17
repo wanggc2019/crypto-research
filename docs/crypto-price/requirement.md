@@ -1,6 +1,6 @@
 # 需求：crypto-price —— 主流币价格/衍生品异动实时告警
 
-> 状态：已立项并实现（2026-11-08）｜模块目录：[`crypto-price/`](../../crypto-price/README.md)
+> 状态：已立项并实现（2026-11-08）；**2026-11-17 资金费率 / 持仓量告警迁到 crypto-futures**（[M2 需求](../crypto-futures/requirement-m2.md)），本模块只保留现货价格类告警，仍采集并导出这两个字段｜模块目录：[`crypto-price/`](../../crypto-price/README.md)
 > 文档区：本目录（需求 / 设计 / 业务架构）｜仓库技术架构：[architecture.md](../architecture.md)
 > 关联：[设计文档](design.md) · [业务架构图](architecture.md) · [HANDOFF §6](../HANDOFF.md) · [约定](../conventions.md)
 
@@ -14,7 +14,7 @@
 
 - 多交易所**免密钥**行情：Binance（现货 + USD-M 永续）、OKX（现货）、Coinbase（现货）三源交叉核验；单源失败自动降级/回退。
 - 时间窗口：`1m / 5m / 15m / 1h / 24h`（REST 轮询，默认 60 秒一轮）。
-- 规则：急涨急跌、24h 大幅波动、24h 新高/新低、成交量放大、资金费率极端、持仓量（OI）异动、关键整数关口突破、多源价差异常。
+- 规则：急涨急跌、24h 大幅波动、24h 新高/新低、成交量放大、关键整数关口突破、多源价差异常。（资金费率极端、持仓量异动两条规则 2026-11-17 起在 `config/rules.yaml` 关闭，改由 crypto-futures 的 `funding_extreme` / `oi_spike` 负责；代码保留，回退改回 `enabled: true`。）
 - 分级 `P0/P1/P2`：P0/P1 全天即时推送（无夜间静默、无日限额）；P2 只落盘归档。
 - 告警治理：去重键、按规则冷却、加剧升级、跨重启状态持久化；不做夜间压制/日限额。
 - 端到端可验证：离线单测 + fixtures 回放 + 联网 `--dry-run`；`--test` 验证 Telegram 通道。

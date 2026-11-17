@@ -18,6 +18,12 @@ def _key(rec):
     return (int(rec["ts"]), rec["asset"], rec["rule"])
 
 
+def _price_at(series, ts):
+    """触发时的合约价：优先 OI 推出的价格；实时规则（当前 5m 桶尚未收盘）退回 RT 标记价。"""
+    p = ind.price(series, ts)
+    return p if p is not None else ind.value(series, "RT", ts, 1)
+
+
 def add_cards(records, cards, all_series, source="live"):
     """把推送卡片里的每条命中记成一条触发记录（同 ts+资产+规则去重），返回新增条数。"""
     seen = {_key(r) for r in records}
@@ -27,7 +33,7 @@ def add_cards(records, cards, all_series, source="live"):
         for hit in card["hits"]:
             rec = {"ts": int(card["ts"]), "asset": card["asset"], "rule": hit["rule"],
                    "severity": hit["severity"], "direction": hit["direction"],
-                   "magnitude": hit["magnitude"], "price": ind.price(s, card["ts"]),
+                   "magnitude": hit["magnitude"], "price": _price_at(s, card["ts"]),
                    "fwd_pct": None, "source": source}
             if _key(rec) in seen:
                 continue

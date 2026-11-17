@@ -22,6 +22,17 @@ def value(series, metric, ts, idx=0):
     return float(row[idx])
 
 
+def latest_at(series, metric, ts, max_lag_s=1200):
+    """ts 本身有点就返回 ts；否则返回 [ts-max_lag_s, ts) 内最新的点；都没有仍返回 ts（取值时自然为 None）。"""
+    bucket = series.get(metric) or {}
+    if ts in bucket:
+        return ts
+    for back in range(STEP, int(max_lag_s) + 1, STEP):
+        if ts - back in bucket:
+            return ts - back
+    return ts
+
+
 def pct_change(cur, ref):
     if cur is None or ref is None or ref == 0:
         return None

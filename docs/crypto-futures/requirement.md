@@ -206,7 +206,7 @@
 2. 回放一致：用 §9 的 5m 数据切片做 fixtures，`--fixtures` 回放的触发记录与 `backtest.py` 在同一份数据上的输出**完全一致**（两者共用规则代码）。
 3. 卡片：§5.3 三个时点的 fixtures 渲染结果包含 §5.2 的全部必有区块、背景三项顺序固定、长度 ≤ 600 字；单测断言不出现「多源核验」「开多」「抄底」「减仓」字样。
 4. `python3 scripts/run.py --once --dry-run --json` 联网输出 3 资产 × 5 指标：四个 `/futures/data` 指标与同一 `timestamp` 的接口返回完全一致；资金费率与同一分钟内单独请求 `premiumIndex` 得到的 `lastFundingRate` 一致。
-5. 请求量：常规 ≤ 15 次 / 5 分钟；每日 30 天缓存 ≤ 220 次；单次 `limit` ≤ 500。
+5. 请求量：常规 ≤ 15 次 / 5 分钟（M2 起 ≤ 18 次，见 [requirement-m2.md](requirement-m2.md) §4.5）；每日 30 天缓存 ≤ 220 次；单次 `limit` ≤ 500。
 6. 失败降级：断网或 429 时记 SKIP、rc=0、不告警。**任一接口**连续失败或过期超过 1 小时，自检发一条健康告警（按接口去重，6 小时冷却；复用现有 healthcheck），避免单条规则静默失效。
 7. 上线运行 24 小时：每资产每接口本地点数 ≥ 280（理论 288），无重复点，`data/` 增长 < 5 MB/天；`collect.log` 每 300 秒有 start/done。
 8. 上线首周：实际推送量与 §9 估算同量级（≤ 2 条/天）；超出则调阈值并记录。每条推送在台账里 `module=crypto-futures`、`kind=signal`。
@@ -223,7 +223,7 @@
 | 期 | 内容 | 是否本需求 |
 |---|---|---|
 | M1 | 新模块 + 5 项采集 + 5 条规则（§3）+ 新卡片 + exports + `backtest.py` + launchd | ✅ |
-| M2 | 把 crypto-price 的 `funding` / `open_interest` 告警迁到本模块、用新卡片；crypto-price 保留 `funding_rate` / `funding_ts` / `oi` / `oi_ts` 四个导出字段（crypto-onchain 在读），只关掉对应规则 | ❌ 单独评审：[requirement-m2.md](requirement-m2.md)（已评审，D1–D4 按推荐） |
+| M2 | 把 crypto-price 的 `funding` / `open_interest` 告警迁到本模块、用新卡片；crypto-price 保留 `funding_rate` / `funding_ts` / `oi` / `oi_ts` 四个导出字段（crypto-onchain 在读），只关掉对应规则 | ❌ 单独评审：[requirement-m2.md](requirement-m2.md)（已实现，2026-11-17） |
 | M3 | crypto-analyst 日报展示、crypto-onchain 归因接入、多所（OKX 多空比） | ❌ 另开需求 |
 
 ## 9. 回测依据

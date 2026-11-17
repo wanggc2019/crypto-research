@@ -59,10 +59,15 @@ def snapshot(quotes=None, stats=None, candles=None, funding=None, oi=None, error
 
 
 class RuleTestCase(unittest.TestCase):
-    """公共夹具：默认行情无任何事件，各用例只改需要触发的字段。"""
+    """公共夹具：默认行情无任何事件，各用例只改需要触发的字段。
+
+    funding / open_interest 线上已关闭（M2 迁到 crypto-futures），但代码保留作回退：测试里显式打开，继续覆盖。
+    """
 
     def setUp(self):
         self.rules = copy.deepcopy(RULES_CFG)
+        for name in ("funding", "open_interest"):
+            self.rules["rules"][name]["enabled"] = True
         self.watchlist = WATCHLIST
 
     def evaluate(self, snap, state=None, now=NOW, rules_cfg=None):
@@ -249,6 +254,21 @@ class TestVolumeSpike(RuleTestCase):
         rows = volume_candles()[:30]
         snap = snapshot(quotes={"BTC": quote(101.0)}, candles={"BTC": {"rows": rows}})
         self.assert_no_rule(self.evaluate(snap), "volume_spike")
+
+
+# ---------------------------------------------------------------- M2：线上配置已关闭
+class TestMigratedRulesDisabled(unittest.TestCase):
+    def test_live_config_disables_funding_and_oi(self):
+        self.assertFalse(RULES_CFG["rules"]["funding"]["enabled"])
+        self.assertFalse(RULES_CFG["rules"]["open_interest"]["enabled"])
+
+    def test_live_config_emits_no_funding_or_oi(self):
+        snap = snapshot(quotes={"BTC": quote(101.0)}, candles={"BTC": {"rows": fast_candles({"m15": 100.0})}},
+                        funding={"BTC": {"rate": 0.003, "mark_price": 100.0, "ts": NOW}},
+                        oi={"BTC": {"oi": 120.0, "ts": NOW}})
+        state = {"oi_history": {"BTC": [{"ts": NOW - 900, "oi": 100.0}]}}
+        events = rules.evaluate(snap, state, copy.deepcopy(RULES_CFG), WATCHLIST, now=NOW)
+        self.assertEqual([e for e in events if e["rule"] in ("funding", "open_interest")], [])
 
 
 # ---------------------------------------------------------------- funding

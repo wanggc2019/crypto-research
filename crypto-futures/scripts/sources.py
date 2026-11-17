@@ -74,7 +74,7 @@ class Fetcher:
         self.requests += 1
         if self.fixture_dir:
             return self._fixture(path, params)
-        url = self.base + path + "?" + urllib.parse.urlencode(params)
+        url = self.base + path + ("?" + urllib.parse.urlencode(params) if params else "")
         try:
             return http.get_json(url, timeout=float(self.cfg.get("timeout_seconds", 8)))
         except urllib.error.HTTPError as e:
@@ -86,13 +86,15 @@ class Fetcher:
 
     def _fixture(self, path, params):
         endpoint = path.rsplit("/", 1)[-1]
-        key = (params["symbol"], endpoint)
+        key = (params.get("symbol", "ALL"), endpoint)   # fundingInfo 不带 symbol → ALL_fundingInfo.json
         if key not in self._fixture_cache:
-            self._fixture_cache[key] = read_raw(self.fixture_dir, params["symbol"], endpoint)
+            self._fixture_cache[key] = read_raw(self.fixture_dir, key[0], endpoint)
         raw = self._fixture_cache[key]
         if raw is None:
             raise FetchError("skip", "fixture 缺失：%s_%s" % key)
-        return raw if isinstance(raw, dict) else _slice(raw, params, self.now)
+        if isinstance(raw, dict) or endpoint == "fundingInfo":   # 快照类接口原样返回，不按时间切片
+            return raw
+        return _slice(raw, params, self.now)
 
     def _note(self, asset, endpoint, err):
         self.errors.append({"asset": asset, "endpoint": endpoint, "kind": err.kind, "error": str(err)[:200]})
@@ -138,6 +140,30 @@ class Fetcher:
         parsed = binance.parse_funding(raw)
         if parsed is None:
             self._note(asset, "premiumIndex", FetchError("error", "parse_failed"))
+        return parsed
+
+    def open_interest(self, asset, symbol):
+        """实时持仓量（/fapi/v1/openInterest，M2 oi_spike 用）；失败返回 None。"""
+        try:
+            raw = self._get("/fapi/v1/openInterest", {"symbol": symbol})
+        except FetchError as e:
+            self._note(asset, "openInterest", e)
+            return None
+        parsed = binance.parse_open_interest(raw)
+        if parsed is None:
+            self._note(asset, "openInterest", FetchError("error", "parse_failed"))
+        return parsed
+
+    def funding_info(self):
+        """各合约资金费率结算间隔 {symbol: 小时}（只列出被调整过的合约）；失败返回 None。"""
+        try:
+            raw = self._get("/fapi/v1/fundingInfo", {})
+        except FetchError as e:
+            self._note("*", "fundingInfo", e)
+            return None
+        parsed = binance.parse_funding_info(raw)
+        if parsed is None:
+            self._note("*", "fundingInfo", FetchError("error", "parse_failed"))
         return parsed
 
 

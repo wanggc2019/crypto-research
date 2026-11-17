@@ -42,14 +42,17 @@ rules:
     p0_min_move_pct: 1.0
 
   # 永续 8h 资金费率绝对值：极端正费率=多头拥挤，极端负费率=空头拥挤。
+  # 2026-11-17 起迁到 crypto-futures（funding_extreme，docs/crypto-futures/requirement-m2.md），这里关闭；
+  # 采集与导出字段保留（crypto-onchain 在读）。回退：改回 true。
   funding:
-    enabled: true
+    enabled: false
     p1_abs_pct: 0.10
     p0_abs_pct: 0.20
 
   # 15m 持仓量变化：必须与价格同向波动 >= only_with_move_pct 才算异动。
+  # 2026-11-17 起迁到 crypto-futures（oi_spike），这里关闭；OI 采集与导出保留。回退：改回 true。
   open_interest:
-    enabled: true
+    enabled: false
     window_min: 15
     p1_change_pct: 5.0
     p0_change_pct: 10.0

@@ -566,7 +566,7 @@ def _test_message(snapshot, cfg=None):
     lines += [
         "多源核验：%s" % _source_status_line(snapshot),
         "数据源请求：%s/%s 成功" % (h if h is not None else "—", t if t is not None else "—"),
-        "已启用规则：急涨急跌 / 24h 波动 / 新高新低 / 放量 / 资金费率 / 持仓量 / 关键位 / 数据质量",
+        "已启用规则：急涨急跌 / 24h 波动 / 新高新低 / 放量 / 关键位 / 数据质量（资金费率 / 持仓量告警已迁到 crypto-futures）",
         "轮询 %ss ｜ 静默 %s｜ 这条是静默通知测试，不会响铃。" % (
             app.get("poll_seconds", 60), quiet_desc),
     ]

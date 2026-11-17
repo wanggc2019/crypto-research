@@ -90,7 +90,9 @@ def ensure_history(fetcher, st, app, now):
 
 
 def fetch_recent(fetcher, st, app, now):
+    """各指标最近 12 个 5m 点 + 资金费率 + 实时 OI；返回 (fundings, live_oi)。"""
     fundings, funding_ok = {}, st["meta"].setdefault("funding_ok", {})
+    live_oi, oi_ok = {}, st["meta"].setdefault("oi_ok", {})
     for asset, symbol in app["assets"].items():
         for metric in S.METRICS:
             pts = fetcher.recent(asset, symbol, metric)
@@ -100,12 +102,53 @@ def fetch_recent(fetcher, st, app, now):
         if f:
             fundings[asset] = f
             funding_ok[asset] = now
-    return fundings
+        o = fetcher.open_interest(asset, symbol)
+        if o:
+            live_oi[asset] = o
+            oi_ok[asset] = now
+    return fundings, live_oi
+
+
+def funding_intervals(fetcher, st, cfg, fundings, now):
+    """{symbol: 结算间隔小时}；从未取到时返回 None（卡片注明「按 8h 折算」）。
+
+    每天取一次 fundingInfo；本轮任一资金费率越过 funding_extreme 的 P1 阈值时当轮强制刷新
+    （Binance 往往在费率极端时临时缩短结算间隔，旧缓存会低估年化）。
+    """
+    meta = st["meta"]
+    cached = meta.get("funding_info") or {}
+    rc = ((cfg.get("rules") or {}).get("funding_extreme")) or {}
+    p1 = float(rc.get("p1_abs_pct", 0.10))
+    hot = rc.get("enabled", True) and any(abs(f["rate"]) * 100 >= p1 for f in fundings.values())
+    if cached.get("date") != common.local_date(now) or hot:
+        got = fetcher.funding_info()
+        if got is not None:
+            cached = {"date": common.local_date(now), "ts": now, "intervals": got}
+            meta["funding_info"] = cached
+    return cached.get("intervals") if "intervals" in cached else None
+
+
+def _float(v):
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def sample_rt(st, app, fundings, live_oi, intervals, now):
+    """把本轮实时快照写入各资产 RT 序列（当前 5m 桶）：(资金费率, 标记价, 实时 OI, 结算间隔小时)。"""
+    ts = S.bucket(now)
+    for asset, symbol in app["assets"].items():
+        f, o = fundings.get(asset) or {}, live_oi.get(asset) or {}
+        if not f and not o:
+            continue
+        hours = None if intervals is None else intervals.get(symbol, 8)
+        S.merge(st["series"][asset], S.RT, {ts: (f.get("rate"), _float(f.get("mark_price")), o.get("oi"), hours)})
 
 
 def stale_metrics(all_series, app, now):
     limit = now - float((app.get("history") or {}).get("stale_min", 20)) * 60
-    return {a: {m for m in S.METRICS if (S.latest_ts(s, m) or 0) < limit} for a, s in all_series.items()}
+    return {a: {m for m in S.ALL if (S.latest_ts(s, m) or 0) < limit} for a, s in all_series.items()}
 
 
 # ---------------------------------------------------------------- 30 天缓存 + 历史参照预热
@@ -182,7 +225,8 @@ def deliver(card_list, st, app, cfg, fundings, args, env=None, sender=None):
 def run_round(args, app, cfg, paths, now, fetcher, env=None, sender=None):
     st = load_round_state(paths, app["assets"])
     ensure_history(fetcher, st, app, now)
-    fundings = fetch_recent(fetcher, st, app, now)
+    fundings, live_oi = fetch_recent(fetcher, st, app, now)
+    sample_rt(st, app, fundings, live_oi, funding_intervals(fetcher, st, cfg, fundings, now), now)
     keep_from = now - float((app.get("history") or {}).get("keep_days", 7.05)) * DAY
     for s in st["series"].values():
         S.prune(s, keep_from)
@@ -194,7 +238,8 @@ def run_round(args, app, cfg, paths, now, fetcher, env=None, sender=None):
     if not args.dry_run:
         refresh_cache(fetcher, st, app, cfg, paths, now)
     reference.prune(st["records"], now)
-    down = outputs.endpoints_down(st["series"], st["meta"].get("funding_ok") or {}, now, app)
+    down = outputs.endpoints_down(st["series"], st["meta"].get("funding_ok") or {}, now, app,
+                                  oi_ok=st["meta"].get("oi_ok") or {})
     result = {
         "now": now, "requests": fetcher.requests, "errors": fetcher.errors, "stale": stale, "down": down,
         "cards": delivered, "p2": p2,
