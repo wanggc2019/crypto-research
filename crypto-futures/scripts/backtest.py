@@ -9,6 +9,8 @@ M2 两条实时规则（funding_extreme / oi_spike）没有历史接口，回测
 - 实时 OI / 标记价 ← ``openInterestHist`` 的 5m 张数与 ``美元价值 / 张数``（线上用实时值，见 requirement-m2 §4.3）；
 - 资金费率 ← 可选的 ``<SYMBOL>_fundingRate.json``（``/fapi/v1/fundingRate`` 结算记录），**只放在结算时刻所在的 5m 桶**，
   所以回测数的是「越过阈值的结算次数」，会低估线上实时值的触发（requirement-m2 §5 已知风险）。
+- long_flush 线上要求连续 N 个实时样本，结算记录每 8h 才一个，回测按 ``confirm_rounds=1`` 评估
+  （结算值本身是 8h 均值，已经平滑；见 requirement-flush §4）。
 
 用法：
     python3 scripts/backtest.py --data <dir>            # 打印推送卡片与各规则次数
@@ -104,6 +106,15 @@ def summarize(cards, p2, days):
             "by_rule": by_rule, "by_asset": by_asset, "by_severity": by_sev, "p2_hits": len(p2)}
 
 
+def backtest_cfg(cfg):
+    """回测口径：long_flush 用结算记录，每 8h 一个样本，确认轮数按 1（不改原 cfg）。"""
+    out = json.loads(json.dumps(cfg))
+    rc = (out.get("rules") or {}).get("long_flush")
+    if rc:
+        rc["confirm_rounds"] = 1
+    return out
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="crypto-futures 规则离线回放")
     parser.add_argument("--data", help="原始 5m 数据目录（见文件头说明）")
@@ -121,9 +132,9 @@ def main(argv=None):
         return 2
     attach_rt(all_series, assets, args.data)
     if not any(_funding_rows(args.data, sym) for sym in assets.values()):
-        print("⚠️ 没有资金费率结算记录（<SYMBOL>_fundingRate.json），funding_extreme 未评估，次数 0 不代表零触发",
+        print("⚠️ 没有资金费率结算记录（<SYMBOL>_fundingRate.json），funding_extreme / long_flush 未评估，次数 0 不代表零触发",
               file=sys.stderr)
-    cards, p2, days = replay(all_series, cfg)
+    cards, p2, days = replay(all_series, backtest_cfg(cfg))
     summary = summarize(cards, p2, days)
     if args.json:
         print(json.dumps({"summary": summary, "cards": cards}, ensure_ascii=False, indent=1))

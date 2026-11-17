@@ -76,7 +76,7 @@ tail -f <module>/data/logs/collect.log
 ## 6. 待办
 
 1. **约 2026-11-23**：看 `make notify-report days=7`，定 `daily_signal_cap` 与是否切 `enforce`（需用户确认）。首日数据（2026-11-16 00:00–10:00，`make notify-report days=1`）：即时信号 23 条，cap=10 时 07:00 前即耗尽，主要是 price 与 news 对 BTC 的近重复 P1。
-2. **crypto-futures 首周观察**（2026-11-17 已安装）：首周看 `make notify-report days=7` 里 crypto-futures 的推送量（预期约 0.5 条/天，>2 条/天就调 `config/rules.yaml` 并用 `scripts/backtest.py` 重跑）。M2（把 crypto-price 的资金费率 / OI 告警迁过来，crypto-price 收窄为纯现货、不改名）需求见 [crypto-futures/requirement-m2.md](crypto-futures/requirement-m2.md)，**已实现**（2026-11-17）。首周额外盯：`funding_extreme` 实时值触发是否 > 1 条/天、funding P0 是否挤占 M1 P0 额度；M3（下游改读 crypto-futures 导出、crypto-price 删 fapi 采集）另开需求。
+2. **crypto-futures 首周观察**（2026-11-17 已安装）：首周看 `make notify-report days=7` 里 crypto-futures 的推送量（预期约 0.5 条/天，>2 条/天就调 `config/rules.yaml` 并用 `scripts/backtest.py` 重跑）。M2（把 crypto-price 的资金费率 / OI 告警迁过来，crypto-price 收窄为纯现货、不改名）需求见 [crypto-futures/requirement-m2.md](crypto-futures/requirement-m2.md)，**已实现**（2026-11-17）。首周额外盯：`funding_extreme` 实时值触发是否 > 1 条/天、funding P0 是否挤占 M1 P0 额度；M3（下游改读 crypto-futures 导出、crypto-price 删 fapi 采集）另开需求。多头出清提醒 `long_flush`（资金费率转负 + 账户比 24h 降 ≥10%，P1）基于 M2 实现（[需求](crypto-futures/requirement-flush.md)），首周看是否 > 1 条/天。
 3. 模块业务待办（可选，按需排期）：
    - crypto-news：Phase 4 早警指标、LLM 三行摘要、周报校准（[方案 §5–§8](crypto-intel-plan.md)）；
    - crypto-price：关键位自动校准；

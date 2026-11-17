@@ -39,6 +39,14 @@ rules:
     p0_change_pct: 10.0
     min_price_move_pct: 0.5
     cooldown_hours: 1
+  # ---- 多头出清（docs/crypto-futures/requirement-flush.md）：去杠杆后段的结构信号，不是见底判断
+  long_flush:              # 资金费率连续 N 轮 ≤ 阈值（转负）且账户多空比 24h 下降 ≥ X%；回退：enabled 改 false
+    enabled: true
+    severity: P1
+    funding_max_pct: -0.002  # 实时资金费率 %（≤ 此值才算「转负」，滤掉 −0.0001% 这类贴零噪声）
+    confirm_rounds: 2        # 连续 N 个实时样本（每 5 分钟一个）都满足；回测用结算值时按 1
+    g_drop_24h_pct: 10.0     # 账户多空比 24h 下降至少 10%
+    cooldown_hours: 12       # 出清状态会持续数小时，按 12h 冷却
 
 window:
   points_7d: 2016          # 7 天 = 2016 个 5m 点（不含当前点）

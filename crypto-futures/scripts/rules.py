@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""rules.py —— 7 条规则的判定（纯函数）。M1 5 条看持仓结构；M2 2 条（funding_extreme / oi_spike）看实时快照 RT。线上 run.py 与离线 backtest.py 共用这一份代码。
+"""rules.py —— 8 条规则的判定（纯函数）。M1 5 条看持仓结构；M2 2 条（funding_extreme / oi_spike）看实时快照 RT；long_flush 组合实时资金费率与账户比。线上 run.py 与离线 backtest.py 共用这一份代码。
 
 每条规则只依赖自己的输入（REQUIRES）；输入缺失或过期时只跳过这条规则（docs §3.1）。
 返回的 hit：``{"rule", "severity", "direction", "magnitude", "metrics"}``；
@@ -16,10 +16,11 @@ REQUIRES = {
     "extreme_level": ("G",),
     "funding_extreme": ("RT",),
     "oi_spike": ("RT",),
+    "long_flush": ("G", "RT"),
 }
 # 同一数据点同级别多条命中时，ORDER 靠前者做卡片主规则：M1 规则在前，M2 迁入的两条随后
 ORDER = ("crowding_build", "smart_divergence", "retail_shift", "taker_burst", "funding_extreme", "oi_spike",
-         "extreme_level")
+         "long_flush", "extreme_level")
 RT_REF_BACK = (15 * 60, 20 * 60)   # oi_spike 参考桶：优先 −15 分钟，缺失用 −20 分钟（docs requirement-m2 §3.2）
 DEFAULT_FUNDING_HOURS = 8
 SEVERITY_RANK = {"P0": 0, "P1": 1, "P2": 2}
@@ -186,8 +187,41 @@ def oi_spike(series, ts, cfg, keys=None):
                  "oi": oi, "oi_ref": oi0, "mark_price": mark}, severity=severity)
 
 
+def _funding_recent(series, ts, n):
+    """ts 所在（或 10 分钟内最近）的 RT 桶起往前，最多 n 个**有资金费率**的样本；
+    只在 n+1 个连续 5m 桶内找，中间空档太多（如 Mac 休眠）视为样本不足。"""
+    start = ind.latest_at(series, "RT", ts, 600)
+    out = []
+    for k in range(n + 1):
+        rate = ind.value(series, "RT", start - k * ind.STEP, 0)
+        if rate is not None:
+            out.append(rate)
+            if len(out) == n:
+                break
+    return out
+
+
+def long_flush(series, ts, cfg, keys=None):
+    """多头出清：资金费率连续 N 轮 ≤ 阈值（转负）且账户多空比 24h 下降 ≥ X%（docs requirement-flush.md）。"""
+    rc = _rule_cfg(cfg, "long_flush")
+    if not rc:
+        return None
+    n = max(1, int(rc.get("confirm_rounds", 2)))
+    thr = float(rc.get("funding_max_pct", -0.002))
+    rates = _funding_recent(series, ts, n)
+    if len(rates) < n or any(r * 100.0 > thr for r in rates):
+        return None
+    dg = ind.chg(series, "G", ts, ind.DAY)
+    if dg is None or dg > -float(rc.get("g_drop_24h_pct", 10.0)):
+        return None
+    return _hit("long_flush", rc, "down", abs(dg),
+                {"rate_pct": rates[0] * 100.0, "funding_max_pct": thr, "confirm_rounds": n,
+                 "g_change_24h_pct": dg})
+
+
 RULES = {
     "crowding_build": crowding_build,
+    "long_flush": long_flush,
     "funding_extreme": funding_extreme,
     "oi_spike": oi_spike,
     "smart_divergence": smart_divergence,

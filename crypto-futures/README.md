@@ -45,12 +45,13 @@ make launchd module=crypto-futures action=status
 | 账户比创 7 天极值 `extreme_level` | P2 | 只落盘，不推送 |
 | 资金费率极端 `funding_extreme`（M2） | P1 / P0 | 当前资金费率（`premiumIndex` 实时值）绝对值 ≥ 0.10% 为 P1、≥ 0.20% 为 P0；冷却 2h |
 | 持仓量急变 `oi_spike`（M2） | P1 / P0 | 实时 OI 15 分钟变化 ≥ 5%（P0 ≥ 10%），且合约标记价同向变动 ≥ 0.5%；参考点只取 −15 / −20 分钟桶；冷却 1h |
+| 多头出清 `long_flush` | P1 | 实时资金费率连续 2 轮 ≤ −0.002%（转负），且账户多空比 24h 下降 ≥ 10%；冷却 12h；BNB 费率恒 0 不会触发（[需求](../docs/crypto-futures/requirement-flush.md)） |
 
 M2 两条规则于 2026-11-17 从 crypto-price 迁入（[需求](../docs/crypto-futures/requirement-m2.md)），基于每轮的实时快照（`RT` 序列），
 阈值沿用 crypto-price 原值；回退：把 `config/rules.yaml` 里对应规则 `enabled` 改为 `false`。
 
 治理：同规则 + 同资产 + 同方向冷却 4h（另有规定的除外）；冷却期内幅度 ≥1.5 倍且距上次 ≥1h 可「加剧」再报；同一资产同一数据点只出一张卡；P0 每资产每本地日 ≤2 条（M2 两条规则与 M1 共用额度：资金费率极端持续数小时时可能先用掉额度，首周观察，发生就改单独计数）。
-29.5 天回测约 0.53 条/天；加上 M2 两条规则后为 0.56 条/天（`oi_spike` 1 次，`funding_extreme` 按结算值 0 次）（详见 [需求 §9](../docs/crypto-futures/requirement.md)）。
+29.5 天回测约 0.53 条/天；加上 M2 两条规则后为 0.56 条/天（`oi_spike` 1 次，`funding_extreme` 按结算值 0 次）；再加 `long_flush` 约 0.74 条/天（ETH 5 次）（详见 [需求 §9](../docs/crypto-futures/requirement.md)）。
 
 ## 产物
 

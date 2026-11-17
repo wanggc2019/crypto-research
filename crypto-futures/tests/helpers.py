@@ -52,6 +52,8 @@ def rules_cfg(**overrides):
             "funding_extreme": {"enabled": True, "p1_abs_pct": 0.10, "p0_abs_pct": 0.20, "cooldown_hours": 2},
             "oi_spike": {"enabled": True, "p1_change_pct": 5.0, "p0_change_pct": 10.0, "min_price_move_pct": 0.5,
                          "cooldown_hours": 1},
+            "long_flush": {"enabled": True, "severity": "P1", "funding_max_pct": -0.002, "confirm_rounds": 2,
+                           "g_drop_24h_pct": 10.0, "cooldown_hours": 12},
         },
         "window": {"points_7d": 2016, "min_coverage": 0.9},
         "governance": {"cooldown_hours": 4, "escalate_multiple": 1.5, "escalate_min_gap_hours": 1,

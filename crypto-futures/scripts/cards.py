@@ -24,6 +24,7 @@ RULE_CN = {
     "extreme_level": "账户比创 7 天极值",
     "funding_extreme": "资金费率极端",
     "oi_spike": "持仓量急变",
+    "long_flush": "多头出清（费率转负 + 账户比回落）",
 }
 SCOPE = "Binance USD-M 单所 · 5m 数据"
 SCOPE_RT = "Binance USD-M 单所 · 实时快照（每 5 分钟）"
@@ -140,8 +141,15 @@ def _oi_line(m):
         _pct(m["price_change_pct"], 2))
 
 
+def _flush_line(m):
+    return "• 实时资金费率 %s（连续 %d 轮 ≤ %s）" % (
+        _funding(m["rate_pct"] / 100), m["confirm_rounds"], _funding(m["funding_max_pct"] / 100))
+
+
 def _metric_lines(card, ctx):
     rule, metrics = card["rule"], card["hits"][0]["metrics"]
+    if rule == "long_flush":
+        return [_flush_line(metrics), _g_line(ctx, "24h", True)]
     if rule == "funding_extreme":
         return [_funding_line(metrics), _g_line(ctx, "1h", True)]
     if rule == "oi_spike":
@@ -191,6 +199,8 @@ READING = {
                                  "这描述的是持仓成本，不代表接下来的方向。",
     ("funding_extreme", "short"): "资金费率为负且很低：永续价格明显低于现货，持有空头要持续付费，空头较拥挤。"
                                   "这描述的是持仓成本，不代表接下来的方向。",
+    ("long_flush", "down"): "资金费率转负、做多账户明显减少：多头杠杆在出清，持仓成本从多头付费转为空头付费。"
+                            "常见于急跌后段，但不代表已经见底，费率可能转正、账户比也可能再回升。",
     ("oi_spike", "up"): "短时间内合约持仓快速增加，同时价格同向变动，杠杆在快速累积。只说明仓位变化的速度，"
                         "不说明是谁在建仓，也不代表会持续。",
     ("oi_spike", "down"): "短时间内合约持仓快速减少，同时价格同向变动，可能是主动平仓，也可能是强平。"
@@ -209,6 +219,9 @@ def _conclusion(card, ctx):
     if card["rule"] == "funding_extreme":
         side = "多头向空头付费" if card["direction"] == "long" else "空头向多头付费"
         return "资金费率 %s，%s" % (_funding(metrics["rate_pct"] / 100), side)
+    if card["rule"] == "long_flush":
+        return "资金费率转负（%s），24h 内账户多空比下降 %.0f%%" % (
+            _funding(metrics["rate_pct"] / 100), abs(metrics["g_change_24h_pct"]))
     if card["rule"] == "oi_spike":
         return "%d 分钟内 OI %s %.1f%%，合约价同步%s %.2f%%" % (
             metrics["window_min"], "增加" if card["direction"] == "up" else "减少", abs(metrics["oi_change_pct"]),
