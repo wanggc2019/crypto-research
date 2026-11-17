@@ -221,6 +221,38 @@ class TestMarket(unittest.TestCase):
         self.assertEqual([r["oi"] for r in rows], [1.0, 2.0])  # 按 ts 旧→新
         self.assertEqual(rows[0]["ts"], 1794176100)
 
+    def test_open_interest_hist_usd_value(self):
+        raw = b'[{"symbol":"BTCUSDT","sumOpenInterest":"2.0","sumOpenInterestValue":"150000","timestamp":1794177000000},' \
+              b'{"symbol":"BTCUSDT","sumOpenInterest":"1.0","timestamp":1794176100000}]'
+        rows = binance.parse_open_interest_hist(raw)
+        self.assertIsNone(rows[0]["oi_usd"])          # 缺字段 → None，不丢行
+        self.assertEqual(rows[1]["oi_usd"], 150000.0)
+
+    def test_long_short_ratio(self):
+        raw = b'[{"symbol":"BTCUSDT","longShortRatio":"2.6928","longAccount":"0.7292","shortAccount":"0.2708",' \
+              b'"timestamp":1794861300000},' \
+              b'{"symbol":"BTCUSDT","longShortRatio":"2.6914","longAccount":"0.7291","shortAccount":"0.2709",' \
+              b'"timestamp":1794861000000},' \
+              b'{"symbol":"BTCUSDT","longShortRatio":"bad","longAccount":"0.7","shortAccount":"0.3","timestamp":1}]'
+        rows = binance.parse_long_short_ratio(raw)
+        self.assertEqual([r["ts"] for r in rows], [1794861000, 1794861300])   # 旧→新，坏行丢弃
+        self.assertAlmostEqual(rows[1]["ratio"], 2.6928)
+        self.assertAlmostEqual(rows[1]["long_share"], 0.7292)
+
+    def test_long_short_ratio_bad(self):
+        self.assertEqual(binance.parse_long_short_ratio(b"[]"), [])
+        self.assertEqual(binance.parse_long_short_ratio(b'{"code":-1130,"msg":"x"}'), [])
+        self.assertEqual(binance.parse_long_short_ratio(b"not json"), [])
+        self.assertEqual(binance.parse_long_short_ratio(b'[{"longShortRatio":"1.2","timestamp":1}]'), [])
+
+    def test_taker_ratio(self):
+        raw = b'[{"buySellRatio":"2.6675","sellVol":"221.583","buyVol":"591.062","timestamp":1794860700000},' \
+              b'{"buySellRatio":"0.4066","sellVol":"172.513","buyVol":"70.144","timestamp":1794860700000}]'
+        rows = binance.parse_taker_ratio(raw)
+        self.assertEqual(len(rows), 1)                 # 同一时间戳去重，取后者
+        self.assertAlmostEqual(rows[0]["buy_vol"], 70.144)
+        self.assertEqual(binance.parse_taker_ratio(b'[{"buyVol":"1","timestamp":1}]'), [])
+
     def test_open_interest_hist_bad(self):
         self.assertEqual(binance.parse_open_interest_hist(b'{"symbol":"BTCUSDT"}'), [])
         self.assertEqual(binance.parse_open_interest_hist(b'not json'), [])

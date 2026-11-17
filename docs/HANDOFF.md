@@ -30,6 +30,7 @@
 | crypto-news | 消息面采集/评分/告警 | 每 10 分钟 | [README](../crypto-news/README.md) |
 | crypto-x-kol | 白名单 KOL 的 X 推文监控（r.jina.ai） | 每 5 分钟 | [README](../crypto-x-kol/README.md) |
 | crypto-onchain | 资金流卖压归因 + 链上大额转账告警 | 每 5 分钟 | [README](../crypto-onchain/README.md) |
+| crypto-futures | 合约持仓结构（多空比）告警，Binance USD-M 单所 | 每 5 分钟（**待安装**） | [README](../crypto-futures/README.md) |
 | crypto-policy | 国内外监管政策雷达 + AI 解读 | 每 1 小时 | [README](../crypto-policy/README.md) |
 | crypto-analyst | 日报 / 周报 / 月度归档（只读 exports） | 每日 18:30、周日 22:00、每月 1 日 22:00 | [README](../crypto-analyst/README.md) |
 | crypto-jobs | 加密行业技术岗位情报 | 每日 18:00、周日 10:00；`.alert` 每 2 小时 | [README](../crypto-jobs/README.md) |
@@ -75,7 +76,8 @@ tail -f <module>/data/logs/collect.log
 ## 6. 待办
 
 1. **约 2026-11-23**：看 `make notify-report days=7`，定 `daily_signal_cap` 与是否切 `enforce`（需用户确认）。首日数据（2026-11-16 00:00–10:00，`make notify-report days=1`）：即时信号 23 条，cap=10 时 07:00 前即耗尽，主要是 price 与 news 对 BTC 的近重复 P1。
-2. 模块业务待办（可选，按需排期）：
+2. **crypto-futures 上线**：合并后在主仓库执行 `make launchd module=crypto-futures action=install`；首周看 `make notify-report days=7` 里 crypto-futures 的推送量（预期约 0.5 条/天，>2 条/天就调 `config/rules.yaml` 并用 `scripts/backtest.py` 重跑）。M2（把 crypto-price 的资金费率 / OI 告警迁过来）上线稳定后单独评审。
+3. 模块业务待办（可选，按需排期）：
    - crypto-news：Phase 4 早警指标、LLM 三行摘要、周报校准（[方案 §5–§8](crypto-intel-plan.md)）；
    - crypto-price：关键位自动校准；
    - crypto-jobs：源扩充 / 薪资解析 / 技能共现（[design §P1](crypto-jobs/design.md)）；

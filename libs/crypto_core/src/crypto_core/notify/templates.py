@@ -42,6 +42,22 @@ def _truncate(text):
     return cut + "…"
 
 
+def truncate_html(text, max_len=MAX_LEN):
+    """把 Telegram HTML 文本截到 max_len 以内：不切断 HTML 标签，也不切断结尾附近的实体（&amp; 等）。
+
+    各模块的告警卡片共用（crypto-price / crypto-futures）。
+    """
+    if len(text) <= max_len:
+        return text
+    cut = text[: max_len - 1]
+    if cut.rfind("<") > cut.rfind(">"):
+        cut = cut[: cut.rfind("<")]
+    amp, semi = cut.rfind("&"), cut.rfind(";")
+    if amp > semi and max_len - len(cut) < 10:
+        cut = cut[:amp]
+    return cut + "…"
+
+
 def format_alert(a):
     """渲染 P0/P1 告警卡片；a 可以是 dict（既有格式）或 events.Alert。"""
     if not isinstance(a, dict):

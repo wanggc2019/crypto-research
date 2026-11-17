@@ -39,6 +39,14 @@ class TestTemplates(unittest.TestCase):
         self.assertIn("⚠️", text)
         self.assertLessEqual(len(text), MAX_LEN)
 
+    def test_truncate_html_keeps_tags_and_entities_whole(self):
+        self.assertEqual(templates.truncate_html("short", 10), "short")
+        cut = templates.truncate_html("abcdefgh<b>bold</b>", 11)
+        self.assertEqual(cut, "abcdefgh…")                 # 不留下半个 <b
+        cut = templates.truncate_html("abcdef&amp;xyz", 10)
+        self.assertEqual(cut, "abcdef…")                    # 不留下半个 &amp;
+        self.assertLessEqual(len(templates.truncate_html("x" * 5000)), MAX_LEN)
+
     def test_module_badge_and_job(self):
         text = templates.format_alert({
             "severity": "P1", "category": "price", "title": "BTC 急跌",

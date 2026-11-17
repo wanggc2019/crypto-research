@@ -232,6 +232,8 @@ def check_last_run(module, stale_min=25, fix=False):
         last = {}
     if isinstance(last, dict):
         if last.get("primary_ok") is False:
+            if last.get("detail"):   # 模块自带的说明（如 crypto-futures 的接口失效）优先
+                return {"name": "last_run", "state": FAIL, "detail": str(last["detail"])[:300]}
             missing = last.get("primary_missing") or {}
             detail = "、".join("%s:%s" % (asset, "/".join(names)) for asset, names in missing.items())
             return {"name": "last_run", "state": FAIL,

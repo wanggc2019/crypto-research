@@ -82,7 +82,7 @@ class TestLastRunState(unittest.TestCase):
 class TestCoreSourcePolicy(unittest.TestCase):
     """只要 Binance/OKX 有报价，Coinbase 等非核心源失败不应告警。"""
 
-    def _run(self, primary_ok, complete=True, missing=None):
+    def _run(self, primary_ok, complete=True, missing=None, detail=None):
         with tempfile.TemporaryDirectory() as tmp:
             data = os.path.join(tmp, "data", "state")
             os.makedirs(data)
@@ -91,7 +91,7 @@ class TestCoreSourcePolicy(unittest.TestCase):
                 f.write(LOG_BAD.replace("rc=1", "rc=1"))  # 6/9 源失败 rc=1
             with open(os.path.join(data, "last_run.json"), "w", encoding="utf-8") as f:
                 json.dump({"primary_ok": primary_ok, "primary_complete": complete,
-                           "primary_missing": missing or {}}, f)
+                           "primary_missing": missing or {}, "detail": detail}, f)
             with mock.patch.object(healthcheck, "log_path", return_value=Path(log)), \
                     mock.patch.object(healthcheck, "module_dir", return_value=Path(tmp)):
                 return healthcheck.check_last_run("crypto-price")
@@ -117,6 +117,14 @@ class TestCoreSourcePolicy(unittest.TestCase):
                 result = healthcheck.check_last_run("crypto-price")
         self.assertEqual(result["state"], healthcheck.WARN)
         self.assertIn("主源降级", result["detail"])
+
+    def test_module_detail_overrides_price_wording(self):
+        # crypto-futures：接口超过 1 小时无新数据 → FAIL，告警正文用模块给的说明
+        result = self._run(False, complete=False, missing={"BTC": ["主动买卖量"]},
+                           detail="接口超过 1 小时无新数据，相关规则已停用：BTC 主动买卖量")
+        self.assertEqual(result["state"], healthcheck.FAIL)
+        self.assertIn("BTC 主动买卖量", result["detail"])
+        self.assertNotIn("主源报价不足", result["detail"])
 
     def test_missing_primary_is_fail(self):
         result = self._run(False, complete=False, missing={"BTC": ["binance"]})
