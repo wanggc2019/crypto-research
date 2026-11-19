@@ -237,13 +237,14 @@ def plan_network_reruns(module_states, retries):
 
     - 网络类 FAIL 且没有重跑记录 → 本轮重跑并压住告警（记下时间）；
     - 已重跑过仍 FAIL → 照常告警，不再重跑（记录保留，直到恢复）；
-    - 恢复（ok/warn）→ 清掉记录；running（正在跑，可能就是重跑那一轮）保留记录。
+    - 只保留「仍是网络类 FAIL」或「正在跑（可能就是重跑那一轮）」的记录；恢复、转为非网络类 FAIL、
+      不再受检的模块都清掉，下次断网可以再重跑。
     """
-    retries = {m: ts for m, ts in (retries or {}).items() if isinstance(ts, (int, float))}
-    for module, info in module_states.items():
-        if info.get("state") in ("ok", "warn"):
-            retries.pop(module, None)
-    to_rerun = [m for m in network_failed_modules(module_states) if m not in retries]
+    network_failed = network_failed_modules(module_states)
+    keep = set(network_failed) | {m for m, s in module_states.items() if s.get("state") == "running"}
+    retries = {m: ts for m, ts in (retries or {}).items()
+               if isinstance(ts, (int, float)) and m in keep}
+    to_rerun = [m for m in network_failed if m not in retries]
     return to_rerun, retries
 
 
@@ -372,11 +373,11 @@ def kickstart(module):
         return False
 
 
-def _network_reruns(old, module_states, job_errors, muted):
+def _network_reruns(old, module_states, job_errors, allow_rerun=True):
     """网络类故障且网络已恢复 → 重跑并从本轮告警里去掉。返回 (alert_states, alert_jobs, rerun)。"""
     to_rerun, retries = plan_network_reruns(module_states, old.get("network_retries"))
     rerun = []
-    if to_rerun and muted != "--no-notify" and network_ok():
+    if to_rerun and allow_rerun and network_ok():
         for module in to_rerun:
             if kickstart(module):
                 retries[module] = time.time()
@@ -488,7 +489,9 @@ def run_once(no_notify=False, no_agent=False, dry_run=False,
         job_errors, job_warns = _split_job_problems(jobs_problems)
 
         muted = "休眠后首轮，降噪跳过发送" if slept else ("--no-notify" if no_notify else "")
-        alert_states, alert_jobs, rerun = _network_reruns(old, module_states, job_errors, muted)
+        # 手动 --no-notify 运行不重跑（只看结果）；--dry-run 在函数开头已返回
+        alert_states, alert_jobs, rerun = _network_reruns(old, module_states, job_errors,
+                                                          allow_rerun=not no_notify)
         text, digest, notified = _fail_alert(old, alert_states, alert_jobs, muted)
         warn_text, warn_notified = _warn_digest(old, module_states, job_warns, muted, warn_digest_hour)
 

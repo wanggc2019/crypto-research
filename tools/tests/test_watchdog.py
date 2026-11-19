@@ -212,6 +212,9 @@ class TestNetworkRerun(unittest.TestCase):
         self.assertEqual(retries, {})
         # 坏 state 容错
         self.assertEqual(watchdog.plan_network_reruns({}, {"x": "bad"})[1], {})
+        # 重跑后转为非网络类 FAIL、或模块已不在检查范围 → 清记录（下次断网可以再重跑）
+        _, retries = watchdog.plan_network_reruns({"crypto-policy": OTHER}, {"crypto-policy": 1.0, "gone": 1.0})
+        self.assertEqual(retries, {})
 
     def test_without_modules_drops_module_and_its_launchd_job(self):
         states = {"crypto-policy": NET, "crypto-news": OTHER}
@@ -222,11 +225,12 @@ class TestNetworkRerun(unittest.TestCase):
         self.assertEqual(list(s), ["crypto-news"])
         self.assertEqual(j, [{"module": "crypto-news", "status": "失败"}])
 
-    def run_reruns(self, states, old, net=True, kick=True, muted=""):
+    def run_reruns(self, states, old, net=True, kick=True, allow=True):
+        kick_fn = kick if callable(kick) else (lambda module: kick)
         with mock.patch.object(watchdog, "network_ok", return_value=net) as probe, \
-             mock.patch.object(watchdog, "kickstart", return_value=kick) as ks, \
+             mock.patch.object(watchdog, "kickstart", side_effect=kick_fn) as ks, \
              mock.patch.object(watchdog, "log"):
-            out = watchdog._network_reruns(old, states, [{"module": "crypto-policy", "status": "失败"}], muted)
+            out = watchdog._network_reruns(old, states, [{"module": "crypto-policy", "status": "失败"}], allow)
         return out, probe, ks
 
     def test_rerun_suppresses_alert_when_network_back(self):
@@ -249,14 +253,25 @@ class TestNetworkRerun(unittest.TestCase):
         self.assertIn("crypto-policy", watchdog.build_message(states, jobs))
 
     def test_no_rerun_when_network_still_down_or_kickstart_fails_or_manual(self):
-        for kwargs in ({"net": False}, {"kick": False}, {"muted": "--no-notify"}):
+        for kwargs in ({"net": False}, {"kick": False}, {"allow": False}):
             old = {}
             (states, jobs, rerun), _, _ = self.run_reruns({"crypto-policy": NET}, old, **kwargs)
             self.assertEqual(rerun, [], kwargs)
             self.assertIn("crypto-policy", states, kwargs)
             self.assertEqual(old["network_retries"], {}, kwargs)
 
+    def test_partial_kickstart_failure_only_holds_rerun_modules(self):
+        old = {}
+        states = {"crypto-policy": NET, "crypto-x-kol": NET}
+        (alert, _, rerun), _, _ = self.run_reruns(states, old, kick=lambda m: m == "crypto-policy")
+        self.assertEqual(rerun, ["crypto-policy"])
+        self.assertEqual(list(alert), ["crypto-x-kol"], "kickstart 失败的模块照常告警")
+        self.assertEqual(list(old["network_retries"]), ["crypto-policy"])
+
     def test_network_ok_treats_http_error_as_reachable(self):
+        with mock.patch("urllib.request.urlopen") as ok:
+            self.assertTrue(watchdog.network_ok())
+            ok.return_value.close.assert_called_once()
         import urllib.error
         err = urllib.error.HTTPError(watchdog.NETWORK_PROBE_URL, 404, "nf", {}, None)
         with mock.patch("urllib.request.urlopen", side_effect=err):
