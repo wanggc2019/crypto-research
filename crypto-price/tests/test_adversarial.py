@@ -230,7 +230,8 @@ class TestRobustState(BaseCase):
                   "quotes": {}, "stats": {}, "candles": {}, "funding": {}, "oi": {},
                   "errors": [{"source": "binance", "asset": "BTC", "error": "TimeoutError"}],
                   "sources_ok": 0, "sources_total": 9}
-        events = rules.evaluate(outage, {}, cfg["rules"], cfg["watchlist"], now=DAY_NOW)
+        # 已连续 2 轮全挂 → 本轮是第 3 轮，发 P0
+        events = rules.evaluate(outage, {"outage_streak": 2}, cfg["rules"], cfg["watchlist"], now=DAY_NOW)
         self.assertTrue(events)
         self.assertEqual(events[0]["severity"], "P0")
         self.assertTrue(events[0]["force_send"])
@@ -243,6 +244,43 @@ class TestRobustState(BaseCase):
         self.assertEqual(kept["last_prices"], state["last_prices"])
         self.assertEqual(kept["extremes"], state["extremes"])
         self.assertTrue(kept["oi_history"]["BTC"])
+
+
+    def outage_snapshot(self):
+        return {"ts": "2026-11-08T12:00:00", "ts_epoch": int(DAY_NOW.timestamp()),
+                "quotes": {}, "stats": {}, "candles": {}, "funding": {}, "oi": {},
+                "errors": [{"source": "binance", "asset": "BTC", "error": "URLError"}],
+                "sources_ok": 0, "sources_total": 9}
+
+    def test_outage_needs_consecutive_rounds(self):
+        # 2026-11-19 21:08：Mac 进 DarkWake 时 DNS 瞬断一轮就发了 P0 → 连续 3 轮（约 2 分钟）才发
+        cfg = common.load_all_configs()
+        self.assertEqual(cfg["rules"]["consensus"]["outage_alert_rounds"], 3)
+        outage, state = self.outage_snapshot(), {}
+        for round_no in (1, 2):
+            events = rules.evaluate(outage, state, cfg["rules"], cfg["watchlist"], now=DAY_NOW)
+            self.assertEqual(events, [], "第 %d 轮不发（也不能退化成逐资产 P1）" % round_no)
+            self.assertFalse(rules.outage_alert_due(state, outage, cfg["rules"]))
+            state = rules.advance_state(state, outage, now=DAY_NOW)
+            self.assertEqual(state["outage_streak"], round_no)
+        self.assertTrue(rules.outage_alert_due(state, outage, cfg["rules"]))
+        events = rules.evaluate(outage, state, cfg["rules"], cfg["watchlist"], now=DAY_NOW)
+        self.assertEqual([e["severity"] for e in events], ["P0"])
+        self.assertIn("连续 3 轮", "".join(events[0]["detail"]))
+
+    def test_outage_streak_resets_on_recovery(self):
+        cfg = common.load_all_configs()
+        state = rules.advance_state({"outage_streak": 2}, self.outage_snapshot(), now=DAY_NOW)
+        ok = dict(self.outage_snapshot(), sources_ok=9, errors=[])
+        self.assertEqual(rules.advance_state(state, ok, now=DAY_NOW)["outage_streak"], 0)
+        self.assertFalse(rules.outage_alert_due({"outage_streak": 0}, self.outage_snapshot(), cfg["rules"]))
+
+    def test_outage_rounds_configurable_and_state_tolerant(self):
+        cfg = common.load_all_configs()
+        rules_cfg = dict(cfg["rules"], consensus=dict(cfg["rules"]["consensus"], outage_alert_rounds=1))
+        self.assertTrue(rules.outage_alert_due({}, self.outage_snapshot(), rules_cfg))
+        for bad in ("x", -5, None, [1]):
+            self.assertFalse(rules.outage_alert_due({"outage_streak": bad}, self.outage_snapshot(), cfg["rules"]))
 
 
 # ---------------------------------------------------------------- 已通过：数据质量阻断
@@ -315,6 +353,9 @@ class TestLockAndDegrade(BaseCase):
             os.makedirs(os.path.join(fixture, source), exist_ok=True)
             with open(os.path.join(fixture, source, "%s_BTC.json" % kind), "wb") as f:
                 f.write(b"{broken json")
+        os.makedirs(os.path.join(self.data, "state"), exist_ok=True)
+        with open(os.path.join(self.data, "state", "market_state.json"), "w", encoding="utf-8") as f:
+            json.dump({"outage_streak": 2}, f)   # 已连续 2 轮全挂，本轮第 3 轮
         rc, out, _ = self.run_main([
             "--fixtures", fixture, "--dry-run", "--json", "--data-dir", self.data,
         ], now=DAY_NOW)

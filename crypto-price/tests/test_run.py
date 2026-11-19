@@ -149,9 +149,16 @@ class TestReplay(unittest.TestCase):
             "sources_ok": 0, "sources_total": 9,
         }
         path = os.path.join(self.data, "outage.json")
-        os.makedirs(self.data, exist_ok=True)
+        os.makedirs(os.path.join(self.data, "state"), exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(snapshot, f)
+        # 第 1 轮：只算降级（rc=1，看门狗不即时告警），不发 P0
+        rc, out, _ = call_main(["--snapshot", path, "--data-dir", self.data, "--dry-run", "--json"])
+        self.assertEqual(rc, 1, out)
+        self.assertEqual(json.loads(out)["events"], [])
+        # 已连续 2 轮 → 第 3 轮 rc=3 + P0
+        with open(os.path.join(self.data, "state", "market_state.json"), "w", encoding="utf-8") as f:
+            json.dump({"outage_streak": 2}, f)
         rc, out, _ = call_main(["--snapshot", path, "--data-dir", self.data, "--dry-run", "--json"])
         self.assertEqual(rc, 3, out)
         payload = json.loads(out)

@@ -289,9 +289,10 @@ def _rule_now(snapshot, source_mode, now):
     return now
 
 
-def _source_rc(snapshot, primary_ok):
+def _source_rc(snapshot, primary_ok, outage_due=True):
     if int(snapshot.get("sources_ok") or 0) <= 0:
-        return 3
+        # 未达连续轮数的全源不可用（瞬断）只算降级：看门狗不即时告警
+        return 3 if outage_due else 1
     if not primary_ok:
         return 1  # 主源报价不足（< min_primary_sources），数据质量不保
     return 0  # 主源数量够；单个主源降级/次级源失败不告警
@@ -375,12 +376,12 @@ def run_cycle(args, paths, cfg, now=None):
         import rules
         rule_now = _rule_now(snapshot, source_mode, now)
         state = common.safe_json_load(os.path.join(paths["state"], "market_state.json"), {})
-        # 全源不可用时 evaluate 自己会产出 P0 data_quality(force_send) 事件；这里只决定退出码。
+        # 全源不可用连续达到 outage_alert_rounds 轮时 evaluate 产出 P0 data_quality(force_send)；这里只决定退出码。
         events = rules.evaluate(snapshot, state, cfg["rules"], cfg["watchlist"], now=rule_now)
         new_state = rules.advance_state(state, snapshot, now=rule_now)
         if not args.dry_run:
             common.safe_json_dump(os.path.join(paths["state"], "market_state.json"), new_state)
-        out["rc"] = _source_rc(snapshot, primary_ok)
+        out["rc"] = _source_rc(snapshot, primary_ok, rules.outage_alert_due(state, snapshot, cfg["rules"]))
         events = _sort_events(events)
         out["events"] = events
         delivery_result = _deliver(events, cfg["rules"], paths, cfg["app"], now,
