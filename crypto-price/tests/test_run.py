@@ -149,15 +149,36 @@ class TestReplay(unittest.TestCase):
             "sources_ok": 0, "sources_total": 9,
         }
         path = os.path.join(self.data, "outage.json")
+        os.makedirs(os.path.join(self.data, "state"), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(snapshot, f)
+        # 不带 --dry-run 连跑三轮，验证 streak 真实落盘累加（不带 --notify，不会发送）
+        for round_no, want_rc in ((1, 1), (2, 1), (3, 3)):
+            rc, out, _ = call_main(["--snapshot", path, "--data-dir", self.data, "--json"])
+            self.assertEqual(rc, want_rc, "第 %d 轮：%s" % (round_no, out))
+            payload = json.loads(out)
+            if round_no < 3:
+                self.assertEqual(payload["events"], [], "前两轮只算降级（rc=1，看门狗不即时告警），不发 P0")
+                logs = [os.path.join(d, f) for d, _, fs in os.walk(self.data) for f in fs if f == "price.log"]
+                self.assertTrue(any("全源不可用第 %d 轮" % round_no in open(p, encoding="utf-8").read() for p in logs))
+            with open(os.path.join(self.data, "state", "market_state.json"), encoding="utf-8") as f:
+                self.assertEqual(json.load(f)["outage_streak"], round_no)
+        payload = json.loads(out)
+        self.assertEqual(payload["events"][0]["dedupe_key"], "price:ALL:data_quality:flat")
+        self.assertEqual(payload["events"][0]["severity"], "P0")
+        self.assertTrue(payload["events"][0]["force_send"])
+
+    def test_zero_sources_without_total_stays_rc3(self):
+        # 快照缺 sources_total 时规则层不认定为「全源不可用」，rc 不能因此降成 1 永远静默
+        snapshot = {"ts": "2026-11-08T00:00:00", "ts_epoch": 1794081600,
+                    "quotes": {}, "stats": {}, "candles": {}, "funding": {}, "oi": {},
+                    "errors": [], "sources_ok": 0}
+        path = os.path.join(self.data, "no_total.json")
         os.makedirs(self.data, exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(snapshot, f)
         rc, out, _ = call_main(["--snapshot", path, "--data-dir", self.data, "--dry-run", "--json"])
         self.assertEqual(rc, 3, out)
-        payload = json.loads(out)
-        self.assertEqual(payload["events"][0]["dedupe_key"], "price:ALL:data_quality:flat")
-        self.assertEqual(payload["events"][0]["severity"], "P0")
-        self.assertTrue(payload["events"][0]["force_send"])
 
 
 class TestSimulatedAlert(unittest.TestCase):

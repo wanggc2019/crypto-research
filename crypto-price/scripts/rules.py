@@ -4,9 +4,9 @@
 
 契约见 docs/crypto-price/design.md §2、§5：
     evaluate(snapshot, state, rules_cfg, watchlist, now=None) -> list[event]
-    advance_state(state, snapshot, now=None) -> new_state   # 不修改入参
+    advance_state(state, snapshot, now=None, rules_cfg=None) -> new_state   # 不修改入参
 阈值全部来自 rules_cfg；数据质量不达标时跳过价格类规则、仍评估 funding/open_interest，
-全源不可用发 P0（force_send）；同一资产同一轮 fast_move 多窗口只报最强一条。
+全源不可用连续 consensus.outage_alert_rounds 轮（默认 3）才发 P0（force_send），单轮瞬断不打扰；同一资产同一轮 fast_move 多窗口只报最强一条。
 常量/格式化/事件结构等通用辅助见 rules_util.py。
 """
 import copy
@@ -83,13 +83,65 @@ def _sources_outage(snapshot):
     return ok is not None and total is not None and total > 0 and ok <= 0
 
 
-def _quality_events(snapshot, assets, qualities, ts):
-    """全源不可用 → 单条 P0（force_send）；单资产数据异常 → P1。"""
+DEFAULT_OUTAGE_ALERT_ROUNDS = 3
+# 两次全挂间隔超过它就不算「连续」（从 1 重新计）：隔开关机/长时间合盖留下的旧计数。
+# 不能太紧：真实断网（连接超时而非 DNS 秒失败）单轮会变慢、下一轮可能被锁跳过，间隔会到几分钟
+DEFAULT_OUTAGE_MAX_GAP_SECONDS = 600
+
+
+def _int_or_zero(value):
+    return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else 0
+
+
+def sources_outage(snapshot):
+    """本轮是否全源不可用（run.py 的退出码与此口径一致）。"""
+    return _sources_outage(snapshot if isinstance(snapshot, dict) else {})
+
+
+def outage_max_gap_seconds(rules_cfg):
+    _, consensus = _config(rules_cfg)
+    return _int_or_zero(consensus.get("outage_max_gap_seconds")) or DEFAULT_OUTAGE_MAX_GAP_SECONDS
+
+
+def outage_streak(state, snapshot, now=None, max_gap=DEFAULT_OUTAGE_MAX_GAP_SECONDS):
+    """含本轮在内，连续全源不可用的轮数（本轮正常 → 0；与上次全挂间隔 > max_gap → 从 1 重新计）。"""
+    snapshot = snapshot if isinstance(snapshot, dict) else {}
+    if not _sources_outage(snapshot):
+        return 0
+    state = state if isinstance(state, dict) else {}
+    previous = _int_or_zero(state.get("outage_streak"))
+    last_ts = _num(state.get("outage_last_ts"))
+    now_ts, _ = _clock(now, snapshot)
+    if previous and (last_ts is None or not 0 <= now_ts - last_ts <= max_gap):
+        previous = 0
+    return previous + 1
+
+
+def outage_alert_rounds(rules_cfg):
+    """连续几轮才发 P0；0 = 立即（按 1），缺省/非法 = 3。"""
+    _, consensus = _config(rules_cfg)
+    value = consensus.get("outage_alert_rounds")
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+        return max(1, value)
+    if value is not None:
+        LOGGER.warning("consensus.outage_alert_rounds=%r 非法，按 %d", value, DEFAULT_OUTAGE_ALERT_ROUNDS)
+    return DEFAULT_OUTAGE_ALERT_ROUNDS
+
+
+def outage_alert_due(state, snapshot, rules_cfg, now=None):
+    """全源不可用且已连续达到 outage_alert_rounds 轮 → 该发 P0（run.py 据此给 rc=3，否则 rc=1）。"""
+    streak = outage_streak(state, snapshot, now, outage_max_gap_seconds(rules_cfg))
+    return streak >= outage_alert_rounds(rules_cfg)
+
+
+def _quality_events(snapshot, assets, qualities, ts, streak=1):
+    """全源不可用 → 单条 P0（force_send，调用方已确认达到连续轮数）；单资产数据异常 → P1。"""
     why, action = _note("data_quality", "flat")
     if _sources_outage(snapshot):
         total = int(_num(snapshot.get("sources_total")) or 0)
         errors = snapshot.get("errors") if isinstance(snapshot.get("errors"), list) else []
-        detail = ["可用源 0/%d" % total, "本轮跳过全部价格类规则，仅评估衍生品指标"]
+        detail = ["可用源 0/%d（已连续 %d 轮）" % (total, streak),
+                  "本轮跳过全部价格类规则，仅评估衍生品指标"]
         snippets = [(item.get("error") if isinstance(item, dict) else item) for item in errors[:3]]
         snippets = [str(text)[:60] for text in snippets if text]
         if snippets:
@@ -390,6 +442,7 @@ def _sanitize_state(state):
     if not isinstance(state, dict):
         return {}
     result = dict(state)
+    result["outage_streak"] = _int_or_zero(result.get("outage_streak"))
     for key in ("extremes", "last_prices"):
         value = result.get(key)
         result[key] = {
@@ -428,8 +481,13 @@ def evaluate(snapshot, state, rules_cfg, watchlist, now=None):
     qualities = {asset: _quality(_section(snapshot, "quotes", asset), consensus, now_ts)
                  for asset in assets}
     outage = _sources_outage(snapshot)
-    events = _quality_events(snapshot, assets, qualities, ts) if (
-        outage or _enabled(rules, "data_quality")) else []
+    if outage:
+        # 未达连续轮数：不发（也不能落到逐资产 P1，那样每轮都会报三条）
+        due = outage_alert_due(state, snapshot, rules_cfg, now)
+        streak = outage_streak(state, snapshot, now, outage_max_gap_seconds(rules_cfg))
+        events = _quality_events(snapshot, assets, qualities, ts, streak) if due else []
+    else:
+        events = _quality_events(snapshot, assets, qualities, ts) if _enabled(rules, "data_quality") else []
     price_assets = [] if outage else [asset for asset in assets if qualities[asset]["ok"]]
     for rule_name, handler in (("fast_move", _fast_move), ("day_move", _day_move),
                                ("new_extreme", _new_extreme), ("volume_spike", _volume_spike),
@@ -451,7 +509,7 @@ def evaluate(snapshot, state, rules_cfg, watchlist, now=None):
     return events
 
 
-def advance_state(state, snapshot, now=None):
+def advance_state(state, snapshot, now=None, rules_cfg=None):
     """产出下一轮 state（新对象）：last_prices / 24h extremes / 24h OI 历史。"""
     snapshot = snapshot if isinstance(snapshot, dict) else {}
     new_state = copy.deepcopy(_sanitize_state(state))
@@ -497,5 +555,11 @@ def advance_state(state, snapshot, now=None):
         rows.sort(key=lambda row: _num(row.get("ts")) or 0.0)
         oi_history[asset] = rows[-OI_MAX_ROWS:]
 
-    new_state.update({"last_prices": last_prices, "extremes": extremes, "oi_history": oi_history})
+    streak = outage_streak(state, snapshot, now, outage_max_gap_seconds(rules_cfg))
+    new_state.update({"last_prices": last_prices, "extremes": extremes, "oi_history": oi_history,
+                      "outage_streak": streak})
+    if streak:
+        new_state["outage_last_ts"] = now_ts
+    else:
+        new_state.pop("outage_last_ts", None)
     return new_state
