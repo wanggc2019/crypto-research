@@ -8,6 +8,7 @@ import time
 import unittest
 from datetime import datetime
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -182,6 +183,86 @@ class TestSleepRecovery(unittest.TestCase):
         self.assertTrue(watchdog.looks_like_sleep(now - 1000, now_ts=now))  # >15 分钟 → 休眠
         self.assertTrue(watchdog.looks_like_sleep(now - 1000, now_ts=now,
                                                    interval=60, factor=2))  # 阈值下限 600s
+
+
+
+NET = {"state": "fail", "rc": 2, "causes": ["网络不可用/被限流"]}
+OTHER = {"state": "fail", "rc": 2, "causes": ["配置错误"]}
+
+
+class TestNetworkRerun(unittest.TestCase):
+    """2026-11-17 16:03/16:08：断网恢复后才发出的过时告警 → 先重跑，下一轮仍失败才告警。"""
+
+    def test_network_failed_modules(self):
+        states = {"crypto-policy": NET, "crypto-news": OTHER, "crypto-price": {"state": "ok"},
+                  "crypto-x-kol": {"state": "warn", "causes": ["网络不可用/被限流"]}}
+        self.assertEqual(watchdog.network_failed_modules(states), ["crypto-policy"])
+
+    def test_plan_reruns_once_then_alerts(self):
+        to_rerun, retries = watchdog.plan_network_reruns({"crypto-policy": NET}, {})
+        self.assertEqual(to_rerun, ["crypto-policy"])
+        # 已重跑过、下一轮仍失败 → 不再重跑（照常告警）
+        to_rerun, retries = watchdog.plan_network_reruns({"crypto-policy": NET}, {"crypto-policy": 1.0})
+        self.assertEqual((to_rerun, retries), ([], {"crypto-policy": 1.0}))
+        # 正在跑（可能就是重跑那一轮）→ 保留记录
+        _, retries = watchdog.plan_network_reruns({"crypto-policy": {"state": "running"}}, {"crypto-policy": 1.0})
+        self.assertIn("crypto-policy", retries)
+        # 恢复 → 清记录，下次再断网可以再重跑
+        _, retries = watchdog.plan_network_reruns({"crypto-policy": {"state": "ok"}}, {"crypto-policy": 1.0})
+        self.assertEqual(retries, {})
+        # 坏 state 容错
+        self.assertEqual(watchdog.plan_network_reruns({}, {"x": "bad"})[1], {})
+
+    def test_without_modules_drops_module_and_its_launchd_job(self):
+        states = {"crypto-policy": NET, "crypto-news": OTHER}
+        jobs = [{"module": "crypto-policy", "status": "失败"},
+                {"label": "com.crypto-research.crypto-policy", "status": "失败"},
+                {"module": "crypto-news", "status": "失败"}]
+        s, j = watchdog.without_modules(states, jobs, ["crypto-policy"])
+        self.assertEqual(list(s), ["crypto-news"])
+        self.assertEqual(j, [{"module": "crypto-news", "status": "失败"}])
+
+    def run_reruns(self, states, old, net=True, kick=True, muted=""):
+        with mock.patch.object(watchdog, "network_ok", return_value=net) as probe, \
+             mock.patch.object(watchdog, "kickstart", return_value=kick) as ks, \
+             mock.patch.object(watchdog, "log"):
+            out = watchdog._network_reruns(old, states, [{"module": "crypto-policy", "status": "失败"}], muted)
+        return out, probe, ks
+
+    def test_rerun_suppresses_alert_when_network_back(self):
+        old = {}
+        (states, jobs, rerun), _, ks = self.run_reruns({"crypto-policy": NET, "crypto-news": OTHER}, old)
+        ks.assert_called_once_with("crypto-policy")
+        self.assertEqual(rerun, ["crypto-policy"])
+        self.assertEqual(list(states), ["crypto-news"], "非网络类故障照常告警")
+        self.assertEqual(jobs, [])
+        self.assertIn("crypto-policy", old["network_retries"])
+        self.assertTrue(watchdog.build_message(states, jobs), "其余故障的告警不受影响")
+
+    def test_second_round_still_failing_alerts(self):
+        old = {"network_retries": {"crypto-policy": time.time() - 300}}
+        (states, jobs, rerun), probe, ks = self.run_reruns({"crypto-policy": NET}, old)
+        self.assertEqual(rerun, [])
+        ks.assert_not_called()
+        probe.assert_not_called()
+        self.assertIn("crypto-policy", states)
+        self.assertIn("crypto-policy", watchdog.build_message(states, jobs))
+
+    def test_no_rerun_when_network_still_down_or_kickstart_fails_or_manual(self):
+        for kwargs in ({"net": False}, {"kick": False}, {"muted": "--no-notify"}):
+            old = {}
+            (states, jobs, rerun), _, _ = self.run_reruns({"crypto-policy": NET}, old, **kwargs)
+            self.assertEqual(rerun, [], kwargs)
+            self.assertIn("crypto-policy", states, kwargs)
+            self.assertEqual(old["network_retries"], {}, kwargs)
+
+    def test_network_ok_treats_http_error_as_reachable(self):
+        import urllib.error
+        err = urllib.error.HTTPError(watchdog.NETWORK_PROBE_URL, 404, "nf", {}, None)
+        with mock.patch("urllib.request.urlopen", side_effect=err):
+            self.assertTrue(watchdog.network_ok())
+        with mock.patch("urllib.request.urlopen", side_effect=urllib.error.URLError("dns")):
+            self.assertFalse(watchdog.network_ok())
 
 
 if __name__ == "__main__":
