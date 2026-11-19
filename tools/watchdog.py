@@ -10,7 +10,9 @@
   4. 汇总为**一条** Telegram 告警（仅 FAIL + launchd error/warn；批次 digest + 60 分钟冷却）；
      另外每天一条「WARN/降级汇总」，避免降级运行长期静默
   5. 写心跳 `data/state/watchdog.json` 与日志 `data/logs/watchdog.log`
-  6. 单实例锁（15 分钟旧锁自清）；模块正在跑（`collect.lock` < 30 分钟）时跳过该模块，避免并发写 health.json
+  6. 网络类故障（断网恢复后才发出的过时告警）：网络已恢复时先 `launchctl kickstart` 重跑该模块、
+     本轮不告警；下一轮（5 分钟后）仍失败才告警，且不再重跑
+  7. 单实例锁（15 分钟旧锁自清）；模块正在跑（`collect.lock` < 30 分钟）时跳过该模块，避免并发写 health.json
 
 用法：
     python3 tools/watchdog.py --once [--no-notify] [--no-agent] [--dry-run]
@@ -46,6 +48,10 @@ NETWORK_EVERY_HOURS = 24      # 每 24h 附带一次联网检查（--network）
 WARN_DIGEST_HOUR = 9          # 每天 09:00 后第一次运行时发「降级（WARN）汇总」
 SLEEP_GAP_FACTOR = 3          # 距上一轮 > 3×周期（≥15 分钟）→ 视为休眠/停机后首轮
 STALE_AFTER_SLEEP_MIN = 1440  # 休眠后首轮把「最近一轮」阈值放宽到 24h，避免误报
+NETWORK_CAUSE = "网络不可用"   # healthcheck.diagnose 的网络类原因（"网络不可用/被限流"）
+NETWORK_PROBE_URL = "https://api.telegram.org/"   # 告警出口本身：它不通时告警也发不出去
+NETWORK_PROBE_TIMEOUT = 5
+JOB_LABEL_PREFIX = "com.crypto-research."
 STATE_DIR = REPO / "data" / "state"
 LOG_DIR = REPO / "data" / "logs"
 STATE_PATH = STATE_DIR / "watchdog.json"
@@ -220,6 +226,37 @@ def build_warn_digest(module_states, jobs_problems=None, now=None):
     return "\n".join(lines)
 
 
+def network_failed_modules(module_states):
+    """原因推断含「网络不可用」的 FAIL 模块。"""
+    return sorted(m for m, s in module_states.items()
+                  if s.get("state") == "fail" and any(NETWORK_CAUSE in str(c) for c in (s.get("causes") or [])))
+
+
+def plan_network_reruns(module_states, retries):
+    """断网恢复后先重跑、不告警。返回 (to_rerun, new_retries)。
+
+    - 网络类 FAIL 且没有重跑记录 → 本轮重跑并压住告警（记下时间）；
+    - 已重跑过仍 FAIL → 照常告警，不再重跑（记录保留，直到恢复）；
+    - 只保留「仍是网络类 FAIL」或「正在跑（可能就是重跑那一轮）」的记录；恢复、转为非网络类 FAIL、
+      不再受检的模块都清掉，下次断网可以再重跑。
+    """
+    network_failed = network_failed_modules(module_states)
+    keep = set(network_failed) | {m for m, s in module_states.items() if s.get("state") == "running"}
+    retries = {m: ts for m, ts in (retries or {}).items()
+               if isinstance(ts, (int, float)) and m in keep}
+    to_rerun = [m for m in network_failed if m not in retries]
+    return to_rerun, retries
+
+
+def without_modules(module_states, job_errors, held):
+    """把本轮压住的模块从告警输入里去掉（模块条目 + 同名 launchd 任务错误）。"""
+    held = set(held or [])
+    labels = {JOB_LABEL_PREFIX + m for m in held}
+    states = {m: s for m, s in module_states.items() if m not in held}
+    jobs = [p for p in job_errors if p.get("module") not in held and p.get("label") not in labels]
+    return states, jobs
+
+
 # ---------------------------------------------------------------- 运行
 def log(line):
     LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -310,6 +347,46 @@ def notify(text):
     except Exception as exc:  # noqa: BLE001 - 告警失败不能影响看门狗
         log("告警异常：%s" % exc)
         return False
+
+
+def network_ok():
+    """网络是否已恢复：能连上 Telegram API（任何 HTTP 响应都算通，含 404）。"""
+    import urllib.error
+    import urllib.request
+    try:
+        urllib.request.urlopen(NETWORK_PROBE_URL, timeout=NETWORK_PROBE_TIMEOUT).close()
+        return True
+    except urllib.error.HTTPError:
+        return True
+    except Exception:  # noqa: BLE001 - DNS/TLS/超时都算不通
+        return False
+
+
+def kickstart(module):
+    """让模块的 launchd 任务立刻跑一轮（不加 -k：正在跑就不打断）。"""
+    label = JOB_LABEL_PREFIX + module
+    try:
+        proc = subprocess.run(["launchctl", "kickstart", "gui/%d/%s" % (os.getuid(), label)],
+                              capture_output=True, text=True, timeout=15)
+        return proc.returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def _network_reruns(old, module_states, job_errors, allow_rerun=True):
+    """网络类故障且网络已恢复 → 重跑并从本轮告警里去掉。返回 (alert_states, alert_jobs, rerun)。"""
+    to_rerun, retries = plan_network_reruns(module_states, old.get("network_retries"))
+    rerun = []
+    if to_rerun and allow_rerun and network_ok():
+        for module in to_rerun:
+            if kickstart(module):
+                retries[module] = time.time()
+                rerun.append(module)
+        if rerun:
+            log("网络已恢复：%s 上一轮因网络失败，已重跑，本轮不告警；下一轮仍失败再告警" % "、".join(rerun))
+    old["network_retries"] = retries
+    states, jobs = without_modules(module_states, job_errors, rerun)
+    return states, jobs, rerun
 
 
 def _module_state(rc, payload, output, ai):
@@ -412,7 +489,10 @@ def run_once(no_notify=False, no_agent=False, dry_run=False,
         job_errors, job_warns = _split_job_problems(jobs_problems)
 
         muted = "休眠后首轮，降噪跳过发送" if slept else ("--no-notify" if no_notify else "")
-        text, digest, notified = _fail_alert(old, module_states, job_errors, muted)
+        # 手动 --no-notify 运行不重跑（只看结果）；--dry-run 在函数开头已返回
+        alert_states, alert_jobs, rerun = _network_reruns(old, module_states, job_errors,
+                                                          allow_rerun=not no_notify)
+        text, digest, notified = _fail_alert(old, alert_states, alert_jobs, muted)
         warn_text, warn_notified = _warn_digest(old, module_states, job_warns, muted, warn_digest_hour)
 
         duration = round(time.time() - started, 2)
@@ -420,11 +500,11 @@ def run_once(no_notify=False, no_agent=False, dry_run=False,
         for info in module_states.values():
             states[info["state"]] = states.get(info["state"], 0) + 1
         summary =("watchdog: 检查 %d 模块（运行中跳过 %d，未接入 %d），launchd 失败 %d/降级 %d，"
-                   "告警=%s，降级汇总=%s，联网=%s，休眠恢复=%s（%.2fs）" % (
+                   "告警=%s，降级汇总=%s，联网=%s，休眠恢复=%s，断网重跑=%s（%.2fs）" % (
                        len(module_states) - len(skipped), len(skipped), len(unmonitored),
                        len(job_errors), len(job_warns), "yes" if notified else "no",
                        "yes" if warn_notified else "no", "yes" if network_due else "no",
-                       "yes" if slept else "no", duration))
+                       "yes" if slept else "no", ",".join(rerun) or "-", duration))
         log("run：%s states=%s 未接入=%s" % (
             summary, ",".join("%s×%d" % (k, v) for k, v in sorted(states.items())),
             ",".join(unmonitored) or "-"))

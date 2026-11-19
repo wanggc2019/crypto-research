@@ -268,6 +268,7 @@ crypto-price 额外排查：
 | 周期任务 | **每 24h** 附带一次联网检查（`--network`，可 `--network-every-hours 0` 关闭）；**每天 09:00 后**发一条 WARN/降级汇总（`--warn-digest-hour 0` 表示当天第一次就发） |
 | 未接入模块 | 没有 `collect.log` 的（如尚未跑过的新模块）走 launchd 任务检查、不误报；首次跑出 `collect.log` 后自动纳入（`crypto-analyst` 已补 `collect.sh`，下次 18:30 跑完即纳入） |
 | 休眠/停机恢复 | 距上一轮看门狗 > **15 分钟**（3×周期）判定为休眠后首轮：该轮**只自愈，不发即时告警、不调 AI**，健康检查的「最近一轮」阈值临时放宽到 24h；下一轮（5 分钟后）恢复正常判定，避免睡眠唤醒后一批假告警 |
+| 断网恢复后先重跑 | 模块 FAIL 且原因推断为「网络不可用」、而此刻网络已恢复（能连上 Telegram API）→ `launchctl kickstart` 重跑该模块，**本轮不告警**（含同名 launchd 错误）；下一轮（5 分钟后）仍 FAIL 才照常告警，且不再重跑；恢复后清记录（`watchdog.json` 的 `network_retries`）。网络仍不通时维持原逻辑。日志汇总行 `断网重跑=<模块>`（2026-11-19 起，避免断网恢复后收到过时告警） |
 | 安装 / 查看 | `.venv/bin/python tools/watchdog.py --install` / `--status` / `--uninstall` |
 | 心跳 / 日志 | `data/state/watchdog.json`（每轮结论）、`data/logs/watchdog.log`（每轮一行 + 异常块）、`data/logs/watchdog.{out,err}.log` |
 | 单模块 healthcheck 入口 | `<repo>/.venv/bin/python tools/healthcheck.py --module crypto-news --notify --fix --agent`（手动排查用） |
