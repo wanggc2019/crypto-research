@@ -1,6 +1,6 @@
 # crypto-price · 文档
 
-> 模块：价格/衍生品异动实时告警（每 60 秒）｜代码：[`crypto-price/`](../../crypto-price/README.md)
+> 模块：现货价格异动实时告警（每 60 秒；资金费率 / OI 告警已迁到 crypto-futures）｜代码：[`crypto-price/`](../../crypto-price/README.md)
 
 | 文档 | 内容 |
 |---|---|

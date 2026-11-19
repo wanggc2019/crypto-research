@@ -15,6 +15,7 @@
 ./scripts/run.sh --dry-run --json        # 联网取数但不写盘、不推送（冒烟用）
 python3 scripts/run.py --test            # 发一条测试消息（标明「测试」）
 python3 scripts/backtest.py --data <dir> # 用历史 5m 数据回放规则，看各规则推送量（改阈值后必跑）
+python3 scripts/backtest.py --cache data/state [--data <资金费率结算记录目录>]  # 直接用线上 30 天缓存回放
 python3 scripts/e2e.py                   # 离线端到端回放（make gate 自动跑）
 ```
 
@@ -42,9 +43,14 @@ make launchd module=crypto-futures action=status
 | 账户比急转 `retail_shift` | P1 | 1h 账户比变化绝对值 ≥ 20% |
 | 合约主动买卖失衡 `taker_burst` | P1 | 15 分钟 Σ买 / Σ卖 ≥ 3.5 或 ≤ 1/3.5，且成交量 ≥ 前 24h 中位数 3 倍 |
 | 账户比创 7 天极值 `extreme_level` | P2 | 只落盘，不推送 |
+| 资金费率极端 `funding_extreme`（M2） | P1 / P0 | 当前资金费率（`premiumIndex` 实时值）绝对值 ≥ 0.10% 为 P1、≥ 0.20% 为 P0；冷却 2h |
+| 持仓量急变 `oi_spike`（M2） | P1 / P0 | 实时 OI 15 分钟变化 ≥ 5%（P0 ≥ 10%），且合约标记价同向变动 ≥ 0.5%；参考点只取 −15 / −20 分钟桶；冷却 1h |
 
-治理：同规则 + 同资产 + 同方向冷却 4h；冷却期内幅度 ≥1.5 倍且距上次 ≥1h 可「加剧」再报；同一资产同一数据点只出一张卡；P0 每资产每本地日 ≤2 条。
-29.5 天回测约 0.53 条/天（详见 [需求 §9](../docs/crypto-futures/requirement.md)）。
+M2 两条规则于 2026-11-17 从 crypto-price 迁入（[需求](../docs/crypto-futures/requirement-m2.md)），基于每轮的实时快照（`RT` 序列），
+阈值沿用 crypto-price 原值；回退：把 `config/rules.yaml` 里对应规则 `enabled` 改为 `false`。
+
+治理：同规则 + 同资产 + 同方向冷却 4h（另有规定的除外）；冷却期内幅度 ≥1.5 倍且距上次 ≥1h 可「加剧」再报；同一资产同一数据点只出一张卡；P0 每资产每本地日 ≤2 条（M2 两条规则与 M1 共用额度：资金费率极端持续数小时时可能先用掉额度，首周观察，发生就改单独计数）。
+29.5 天回测约 0.53 条/天；加上 M2 两条规则后为 0.56 条/天（`oi_spike` 1 次，`funding_extreme` 按结算值 0 次）（详见 [需求 §9](../docs/crypto-futures/requirement.md)）。
 
 ## 产物
 

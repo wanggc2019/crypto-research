@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""rules.py —— 5 条规则的判定（纯函数）。线上 run.py 与离线 backtest.py 共用这一份代码。
+"""rules.py —— 7 条规则的判定（纯函数）。M1 5 条看持仓结构；M2 2 条（funding_extreme / oi_spike）看实时快照 RT。线上 run.py 与离线 backtest.py 共用这一份代码。
 
 每条规则只依赖自己的输入（REQUIRES）；输入缺失或过期时只跳过这条规则（docs §3.1）。
 返回的 hit：``{"rule", "severity", "direction", "magnitude", "metrics"}``；
@@ -14,8 +14,14 @@ REQUIRES = {
     "retail_shift": ("G",),
     "taker_burst": ("K",),
     "extreme_level": ("G",),
+    "funding_extreme": ("RT",),
+    "oi_spike": ("RT",),
 }
-ORDER = ("crowding_build", "smart_divergence", "retail_shift", "taker_burst", "extreme_level")
+# 同一数据点同级别多条命中时，ORDER 靠前者做卡片主规则：M1 规则在前，M2 迁入的两条随后
+ORDER = ("crowding_build", "smart_divergence", "retail_shift", "taker_burst", "funding_extreme", "oi_spike",
+         "extreme_level")
+RT_REF_BACK = (15 * 60, 20 * 60)   # oi_spike 参考桶：优先 −15 分钟，缺失用 −20 分钟（docs requirement-m2 §3.2）
+DEFAULT_FUNDING_HOURS = 8
 SEVERITY_RANK = {"P0": 0, "P1": 1, "P2": 2}
 
 
@@ -24,8 +30,8 @@ def _rule_cfg(cfg, name):
     return rc if rc.get("enabled", True) else None
 
 
-def _hit(name, rc, direction, magnitude, metrics):
-    return {"rule": name, "severity": rc.get("severity", "P1"), "direction": direction,
+def _hit(name, rc, direction, magnitude, metrics, severity=None):
+    return {"rule": name, "severity": severity or rc.get("severity", "P1"), "direction": direction,
             "magnitude": round(float(magnitude), 6), "metrics": metrics}
 
 
@@ -126,8 +132,64 @@ def extreme_level(series, ts, cfg, keys=None):
     return None
 
 
+def _tiered(value, rc, p1_key, p0_key, p1_default):
+    """分级阈值：返回 "P0" / "P1" / None（未到 P1）。缺省值与 config/rules.yaml 一致。"""
+    if value < float(rc.get(p1_key, p1_default)):
+        return None
+    p0 = rc.get(p0_key)
+    return "P0" if p0 is not None and value >= float(p0) else "P1"
+
+
+def funding_extreme(series, ts, cfg, keys=None):
+    """当前资金费率绝对值越过阈值；正 = 多头付费（long），负 = 空头付费（short）。"""
+    rc = _rule_cfg(cfg, "funding_extreme")
+    if not rc:
+        return None
+    rate = ind.value(series, "RT", ts, 0)
+    if rate is None:
+        return None
+    rate_pct = rate * 100.0
+    severity = _tiered(abs(rate_pct), rc, "p1_abs_pct", "p0_abs_pct", 0.10)
+    if severity is None:
+        return None
+    hours = ind.value(series, "RT", ts, 3)
+    known = hours is not None and hours > 0
+    hours = hours if known else DEFAULT_FUNDING_HOURS
+    return _hit("funding_extreme", rc, "long" if rate > 0 else "short", abs(rate_pct),
+                {"rate_pct": rate_pct, "interval_hours": hours, "interval_known": known,
+                 "annualized_pct": rate_pct * (24.0 / hours) * 365,
+                 "mark_price": ind.value(series, "RT", ts, 1)}, severity=severity)
+
+
+def oi_spike(series, ts, cfg, keys=None):
+    """实时 OI 15 分钟急变且合约标记价同向变动；OI 与标记价用同一个参考桶。"""
+    rc = _rule_cfg(cfg, "oi_spike")
+    if not rc:
+        return None
+    oi, mark = ind.value(series, "RT", ts, 2), ind.value(series, "RT", ts, 1)
+    if not oi or not mark:
+        return None
+    for back in RT_REF_BACK:
+        oi0, mark0 = ind.value(series, "RT", ts - back, 2), ind.value(series, "RT", ts - back, 1)
+        if oi0 and mark0:
+            break
+    else:
+        return None
+    oi_chg, move = ind.pct_change(oi, oi0), ind.pct_change(mark, mark0)
+    if oi_chg == 0 or abs(move) < float(rc.get("min_price_move_pct", 0.5)) or (oi_chg > 0) != (move > 0):
+        return None
+    severity = _tiered(abs(oi_chg), rc, "p1_change_pct", "p0_change_pct", 5.0)
+    if severity is None:
+        return None
+    return _hit("oi_spike", rc, "up" if oi_chg > 0 else "down", abs(oi_chg),
+                {"oi_change_pct": oi_chg, "price_change_pct": move, "window_min": back // 60,
+                 "oi": oi, "oi_ref": oi0, "mark_price": mark}, severity=severity)
+
+
 RULES = {
     "crowding_build": crowding_build,
+    "funding_extreme": funding_extreme,
+    "oi_spike": oi_spike,
     "smart_divergence": smart_divergence,
     "retail_shift": retail_shift,
     "taker_burst": taker_burst,

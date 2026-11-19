@@ -9,7 +9,8 @@ import series as S
 
 import common
 
-METRIC_CN = {"G": "账户多空比", "T": "大户持仓比", "K": "主动买卖量", "OI": "持仓量", "F": "资金费率"}
+METRIC_CN = {"G": "账户多空比", "T": "大户持仓比", "K": "主动买卖量", "OI": "持仓量", "F": "资金费率",
+             "LOI": "实时持仓量"}
 
 
 def _asset_snapshot(series, funding, stale, now):
@@ -29,7 +30,7 @@ def _asset_snapshot(series, funding, stale, now):
         "price": ind.price(series, oi_ts) if oi_ts else None,
         "price_change_24h_pct": ind.price_change(series, oi_ts, ind.DAY) if oi_ts else None,
         "funding_rate": (funding or {}).get("rate"),
-        "stale": sorted(stale),
+        "stale": sorted(m for m in stale if m in S.METRICS),   # RT 不进导出，保持 futures/snapshot/v1 不变
     }
 
 
@@ -50,8 +51,11 @@ def build_export(all_series, fundings, stale, records, now):
     }
 
 
-def endpoints_down(all_series, funding_ok, now, app):
-    """{asset: [指标中文名]}：最新数据点早于 (过期阈值 + 失效阈值)，或资金费率超过失效阈值没取到。"""
+def endpoints_down(all_series, funding_ok, now, app, oi_ok=None):
+    """{asset: [指标中文名]}：最新数据点早于 (过期阈值 + 失效阈值)，或资金费率 / 实时 OI 超过失效阈值没取到。
+
+    oi_ok 为 None（旧调用方）时不检查实时 OI。
+    """
     hist = (app or {}).get("history") or {}
     down_s = float(((app or {}).get("health") or {}).get("endpoint_down_min", 60)) * 60
     limit = now - float(hist.get("stale_min", 20)) * 60 - down_s
@@ -60,6 +64,8 @@ def endpoints_down(all_series, funding_ok, now, app):
         bad = [METRIC_CN[m] for m in S.METRICS if (S.latest_ts(s, m) or 0) < limit]
         if now - float(funding_ok.get(asset) or 0) > down_s:
             bad.append(METRIC_CN["F"])
+        if oi_ok is not None and now - float(oi_ok.get(asset) or 0) > down_s:
+            bad.append(METRIC_CN["LOI"])
         if bad:
             out[asset] = bad
     return out

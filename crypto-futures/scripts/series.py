@@ -5,11 +5,15 @@
 内存结构：``{"G": {ts: (ratio, long_share)}, "T": {...}, "K": {ts: (buy_vol, sell_vol)}, "OI": {ts: (oi, oi_usd)}}``
 - ``G`` 账户多空比（globalLongShortAccountRatio）；``T`` 大户持仓多空比（topLongShortPositionRatio）；
 - ``K`` 合约主动买卖量（takerlongshortRatio）；``OI`` 持仓量历史（openInterestHist）；
+- ``RT`` 实时快照（M2）：每轮采样一次，按采样时刻**向下取整到 5m 桶**存 ``(funding_rate, mark_price, oi, interval_h)``；
+  只来自线上每轮采集（不回补），所以不在 METRICS 里（METRICS = 有历史接口、可回补的指标）；
 - ``ts`` 为 epoch 秒（5m 对齐），同一 ts 只保留一份（后到覆盖先到）。
 """
 import json
 
 METRICS = ("G", "T", "K", "OI")
+RT = "RT"
+ALL = METRICS + (RT,)
 ENDPOINTS = {
     "G": "globalLongShortAccountRatio",
     "T": "topLongShortPositionRatio",
@@ -20,7 +24,12 @@ STEP = 300   # 5m
 
 
 def empty():
-    return {m: {} for m in METRICS}
+    return {m: {} for m in ALL}
+
+
+def bucket(ts):
+    """采样时刻 → 所在 5m 桶的起点。"""
+    return int(ts) - int(ts) % STEP
 
 
 def rows_to_points(metric, rows):
@@ -69,14 +78,14 @@ def count_between(series, metric, start_ts, end_ts):
 
 
 def to_json(series):
-    return {m: {str(ts): list(v) for ts, v in sorted((series.get(m) or {}).items())} for m in METRICS}
+    return {m: {str(ts): list(v) for ts, v in sorted((series.get(m) or {}).items())} for m in ALL}
 
 
 def from_json(data):
     out = empty()
     if not isinstance(data, dict):
         return out
-    for m in METRICS:
+    for m in ALL:
         for ts, v in (data.get(m) or {}).items():
             try:
                 out[m][int(ts)] = tuple(v)

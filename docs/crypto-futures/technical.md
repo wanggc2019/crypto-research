@@ -8,13 +8,13 @@
 crypto-futures/
 ├── config/
 │   ├── app.yaml          # 资产、端点、轮询、历史 / 缓存 / 健康阈值
-│   └── rules.yaml        # 5 条规则阈值与治理参数
+│   └── rules.yaml        # 7 条规则阈值与治理参数（M1 5 条 + M2 2 条）
 ├── scripts/
 │   ├── run.py            # 一轮主流程 + CLI（--notify / --dry-run / --fixtures / --now / --json / --test）
 │   ├── sources.py        # Fetcher：联网（crypto_core.http）/ fixtures 切片；只取已收盘周期；skip / error 分类
 │   ├── series.py         # 5m 序列结构、合并、裁剪、紧凑落盘
 │   ├── indicators.py     # 纯函数派生量（精确对齐变化、7 天窗口、分位、15 分钟主动买卖、合约价）
-│   ├── rules.py          # 5 条规则（纯函数）
+│   ├── rules.py          # 7 条规则（纯函数）
 │   ├── engine.py         # 游标 + 治理（冷却 / 加剧 / 合并 / P0 上限），线上与回测共用
 │   ├── reference.py      # 触发记录、补 24h 结果、历史参照统计
 │   ├── cards.py          # Telegram HTML 卡片
@@ -38,7 +38,9 @@ launchd（每 300s）→ collect.sh → module_round.sh（锁 / start-done 日�
   → run.sh --notify → run.py
       ├─ load_round_state      history-*.json / engine.json / triggers.json / fetch.json
       ├─ ensure_history        冷启动 7 天 / 缺口回补（Fetcher.history，分页 500）
-      ├─ fetch_recent          15 次请求：4 指标 × 3 资产 + premiumIndex × 3
+      ├─ fetch_recent          18 次请求：4 指标 × 3 资产 + premiumIndex × 3 + openInterest × 3（M2）
+      ├─ funding_intervals     fundingInfo：每天 1 次；资金费率越过 P1 阈值时当轮刷新
+      ├─ sample_rt             写当前 5m 桶的 RT 点
       ├─ stale_metrics         按指标判过期（20 分钟）
       ├─ engine.step           游标 → rules → 治理 → cards / p2
       ├─ deliver               reference.stats → cards.format_card → send_signal（台账 + 预算）
@@ -50,18 +52,18 @@ launchd（每 300s）→ collect.sh → module_round.sh（锁 / start-done 日�
 
 | 文件 | 结构 | 大小 / 保留 |
 |---|---|---|
-| `state/history-<A>.json` | `{G,T,K,OI: {ts: [v1, v2]}}` 紧凑 JSON | 约 0.3 MB / 资产，7.05 天 |
+| `state/history-<A>.json` | `{G,T,K,OI: {ts: [v1, v2]}, RT: {ts: [rate, mark, oi, interval_h]}}` 紧凑 JSON | 约 0.35 MB / 资产，7.05 天 |
 | `state/cache30d-<A>.json` | 同上 | 约 1.2 MB / 资产，每天覆盖 |
 | `state/engine.json` | `{cursor: {A: {rule: ts}}, last: {"rule|A|dir": [ts, mag]}, p0: {"A|date": n}}` | 只留 2 天内 |
 | `state/triggers.json` | `[{ts, asset, rule, severity, direction, magnitude, price, fwd_pct, source}]` | 365 天 |
-| `state/fetch.json` | 回补尝试时间、资金费率最后成功时间、缓存日期、是否已预热 | — |
+| `state/fetch.json` | 回补尝试时间、资金费率 / 实时 OI 最后成功时间、`fundingInfo` 缓存、缓存日期、是否已预热 | — |
 | `state/last_run.json` | healthcheck 契约（`primary_ok` / `detail` / `requests` / `errors`） | 覆盖 |
 | `exports/latest.json` | `futures/snapshot/v1` | 覆盖 |
 | `raw/<日期>/cards.jsonl`、`p2.jsonl` | 每轮追加 | 90 天（prune） |
 
 ## 4. 性能
 
-- 常规一轮：15 次请求 + 3 个历史文件读写，< 2 秒（网络除外）；
+- 常规一轮：18 次请求（每天首轮另加 1 次 `fundingInfo`）+ 3 个历史文件读写，< 2 秒（网络除外）；
 - 冷启动：约 60 次请求；首日 30 天缓存约 216 次请求 + 回放预热约 50 秒（只一次）；
 - `backtest.py` 回放 29.5 天 × 3 币约 50 秒。
 

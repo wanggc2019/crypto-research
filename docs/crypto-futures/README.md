@@ -9,4 +9,4 @@
 | [architecture.md](architecture.md) | 业务能力图、业务数据流、关键流程、与其他模块/共享库关系 |
 | [technical.md](technical.md) | 模块技术架构：代码结构、组件职责、运行链路、状态/数据、测试 |
 
-状态：**M1 已实现（2026-11-17）**，待安装 launchd 上线；M2（迁移 crypto-price 的资金费率 / OI 告警）待评审
+状态：**M1 已上线（2026-11-17）**；**M2 已实现（2026-11-17）**：crypto-price 的资金费率 / OI 告警迁入为 `funding_extreme` / `oi_spike`（[需求](requirement-m2.md)）

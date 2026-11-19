@@ -209,6 +209,26 @@ def parse_funding(raw):
     }
 
 
+def parse_funding_info(raw):
+    """解析 /fapi/v1/fundingInfo，返回 {symbol: 结算间隔小时 int}。
+
+    该接口只列出被调整过资金费率参数的合约；不在表里的合约按默认 8h 结算（由调用方决定默认值）。
+    非列表返回 None；单条缺字段/非法时跳过。
+    """
+    data = _loads(raw)
+    if not isinstance(data, list):
+        return None
+    out = {}
+    for row in data:
+        if not isinstance(row, dict):
+            continue
+        hours = _int(row.get("fundingIntervalHours"))
+        symbol = row.get("symbol")
+        if symbol and hours and hours > 0:
+            out[str(symbol)] = hours
+    return out
+
+
 def parse_agg_trades(raw):
     """解析 /api/v3/aggTrades 或 /fapi/v1/aggTrades，返回 list[dict]。
 

@@ -27,6 +27,18 @@ rules:
   extreme_level:           # 账户比创 7 天极值：只落盘、不推送
     enabled: true
     severity: P2
+  # ---- M2：从 crypto-price 迁入（docs/crypto-futures/requirement-m2.md），阈值沿用 crypto-price 原值
+  funding_extreme:         # 当前资金费率（premiumIndex 实时值）绝对值；回退：enabled 改 false
+    enabled: true
+    p1_abs_pct: 0.10       # 单次结算费率 %，P1
+    p0_abs_pct: 0.20       # ≥ 此值为 P0
+    cooldown_hours: 2
+  oi_spike:                # 实时 OI 15 分钟急变 + 合约标记价同向变动；回退：enabled 改 false
+    enabled: true
+    p1_change_pct: 5.0
+    p0_change_pct: 10.0
+    min_price_move_pct: 0.5
+    cooldown_hours: 1
 
 window:
   points_7d: 2016          # 7 天 = 2016 个 5m 点（不含当前点）

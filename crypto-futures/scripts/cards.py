@@ -22,8 +22,12 @@ RULE_CN = {
     "retail_shift": "账户比急转",
     "taker_burst": "合约主动买卖失衡",
     "extreme_level": "账户比创 7 天极值",
+    "funding_extreme": "资金费率极端",
+    "oi_spike": "持仓量急变",
 }
 SCOPE = "Binance USD-M 单所 · 5m 数据"
+SCOPE_RT = "Binance USD-M 单所 · 实时快照（每 5 分钟）"
+RT_RULES = ("funding_extreme", "oi_spike")
 
 
 # ---------------------------------------------------------------- 格式化
@@ -68,16 +72,22 @@ def _position(values, v):
 
 
 # ---------------------------------------------------------------- 取数
-def context(series, ts, funding_rate=None, points_7d=2016):
-    """卡片需要的全部数值（缺失为 None）。"""
+def context(series, ts, funding_rate=None, points_7d=2016, realtime=False):
+    """卡片需要的全部数值（缺失为 None）。
+
+    realtime=True（M2 实时规则）：卡片落在当前 5m 桶，此时 G/T/OI 的这个周期还没收盘，
+    各指标取 ≤ ts 且在 20 分钟内的最新点；M1 规则保持「恰好 ts」的口径，缺失显示「—」。
+    """
+    lag = 1200 if realtime else 0
+    g, t, oi = (ind.latest_at(series, m, ts, lag) for m in ("G", "T", "OI"))
     return {
-        "g": ind.value(series, "G", ts), "g_long": ind.value(series, "G", ts, 1),
-        "g_1h": ind.value(series, "G", ts - ind.HOUR), "g_24h": ind.value(series, "G", ts - ind.DAY),
-        "t": ind.value(series, "T", ts), "t_long": ind.value(series, "T", ts, 1),
-        "t_24h": ind.value(series, "T", ts - ind.DAY),
-        "g_window": ind.window(series, "G", ts, points_7d), "t_window": ind.window(series, "T", ts, points_7d),
-        "price": ind.price(series, ts), "price_24h_pct": ind.price_change(series, ts, ind.DAY),
-        "oi_usd": ind.value(series, "OI", ts, 1), "oi_4h_pct": ind.chg(series, "OI", ts, 4 * ind.HOUR, idx=1),
+        "g": ind.value(series, "G", g), "g_long": ind.value(series, "G", g, 1),
+        "g_1h": ind.value(series, "G", g - ind.HOUR), "g_24h": ind.value(series, "G", g - ind.DAY),
+        "t": ind.value(series, "T", t), "t_long": ind.value(series, "T", t, 1),
+        "t_24h": ind.value(series, "T", t - ind.DAY),
+        "g_window": ind.window(series, "G", g, points_7d), "t_window": ind.window(series, "T", t, points_7d),
+        "price": ind.price(series, oi), "price_24h_pct": ind.price_change(series, oi, ind.DAY),
+        "oi_usd": ind.value(series, "OI", oi, 1), "oi_4h_pct": ind.chg(series, "OI", oi, 4 * ind.HOUR, idx=1),
         "funding_rate": funding_rate,
     }
 
@@ -118,8 +128,24 @@ def _num(v):
     return "—" if v is None else "%.2f" % v
 
 
+def _funding_line(m):
+    interval = "每 %dh 结算" % m["interval_hours"] if m["interval_known"] else "按 8h 折算"
+    return "• 资金费率 %s（%s）· 折算年化 %s · 标记价 %s" % (
+        _funding(m["rate_pct"] / 100), interval, _pct(m["annualized_pct"], 0), _price(m["mark_price"]))
+
+
+def _oi_line(m):
+    return "• 实时 OI %d 分钟 %s（%s → %s 张）· 合约标记价 %s" % (
+        m["window_min"], _pct(m["oi_change_pct"], 1), "{:,.0f}".format(m["oi_ref"]), "{:,.0f}".format(m["oi"]),
+        _pct(m["price_change_pct"], 2))
+
+
 def _metric_lines(card, ctx):
     rule, metrics = card["rule"], card["hits"][0]["metrics"]
+    if rule == "funding_extreme":
+        return [_funding_line(metrics), _g_line(ctx, "1h", True)]
+    if rule == "oi_spike":
+        return [_oi_line(metrics), _g_line(ctx, "1h", False)]
     if rule == "smart_divergence":
         return [_g_line(ctx, "24h", True), _t_line(ctx, False)]
     if rule == "crowding_build":
@@ -161,6 +187,14 @@ READING = {
     ("retail_shift", "down"): "做多的账户快速变少。说明账户层面的倾向变化很快，不说明这些账户的仓位大小，也不代表接下来的方向。",
     ("taker_burst", "buy"): "短时间内合约主动买入集中出现。只说明这 15 分钟的成交方向，不说明持仓方向，也不代表会持续。",
     ("taker_burst", "sell"): "短时间内合约主动卖出集中出现。只说明这 15 分钟的成交方向，不说明持仓方向，也不代表会持续。",
+    ("funding_extreme", "long"): "资金费率为正且很高：永续价格明显高于现货，持有多头要持续付费，多头较拥挤。"
+                                 "这描述的是持仓成本，不代表接下来的方向。",
+    ("funding_extreme", "short"): "资金费率为负且很低：永续价格明显低于现货，持有空头要持续付费，空头较拥挤。"
+                                  "这描述的是持仓成本，不代表接下来的方向。",
+    ("oi_spike", "up"): "短时间内合约持仓快速增加，同时价格同向变动，杠杆在快速累积。只说明仓位变化的速度，"
+                        "不说明是谁在建仓，也不代表会持续。",
+    ("oi_spike", "down"): "短时间内合约持仓快速减少，同时价格同向变动，可能是主动平仓，也可能是强平。"
+                          "这是风险提示，不是方向判断。",
 }
 
 
@@ -172,6 +206,13 @@ def _conclusion(card, ctx):
         side = "高位" if card["direction"] == "long" else "低位"
         where = "到 " + level if level in ("7 天最高", "7 天最低") else "处在 7 天" + side
         return "做多账户占比%s，同时 4h 内 OI 增加 %.1f%%" % (where, metrics["oi_change_4h_pct"])
+    if card["rule"] == "funding_extreme":
+        side = "多头向空头付费" if card["direction"] == "long" else "空头向多头付费"
+        return "资金费率 %s，%s" % (_funding(metrics["rate_pct"] / 100), side)
+    if card["rule"] == "oi_spike":
+        return "%d 分钟内 OI %s %.1f%%，合约价同步%s %.2f%%" % (
+            metrics["window_min"], "增加" if card["direction"] == "up" else "减少", abs(metrics["oi_change_pct"]),
+            "上涨" if card["direction"] == "up" else "下跌", abs(metrics["price_change_pct"]))
     if card["rule"] == "taker_burst":
         r = metrics["taker_ratio_15m"]
         if card["direction"] == "buy":
@@ -205,7 +246,8 @@ def format_card(card, ctx, ref, link=None, job=None, simulated=False):
     trend = _trend(ctx)
     reading = (trend + "，" if trend else "") + READING[(card["rule"], card["direction"])]
     tail = ["", esc(reference_line(ref)),
-            "口径：%s · 截至 %s" % (SCOPE, common.fmt_local(card["ts"], "%H:%M")), ""]
+            "口径：%s · 截至 %s" % (SCOPE_RT if card["rule"] in RT_RULES else SCOPE,
+                                   common.fmt_local(card["ts"], "%H:%M")), ""]
     foot = "⏱ %s" % common.fmt_local(card["ts"], "%m-%d %H:%M")
     if link:
         foot += ' · 🔗 <a href="%s">查看交易数据</a>' % html.escape(link, quote=True)
