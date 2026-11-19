@@ -379,7 +379,7 @@ def run_cycle(args, paths, cfg, now=None):
         state = common.safe_json_load(os.path.join(paths["state"], "market_state.json"), {})
         # 全源不可用连续达到 outage_alert_rounds 轮时 evaluate 产出 P0 data_quality(force_send)；这里只决定退出码。
         events = rules.evaluate(snapshot, state, cfg["rules"], cfg["watchlist"], now=rule_now)
-        new_state = rules.advance_state(state, snapshot, now=rule_now)
+        new_state = rules.advance_state(state, snapshot, now=rule_now, rules_cfg=cfg["rules"])
         if not args.dry_run:
             common.safe_json_dump(os.path.join(paths["state"], "market_state.json"), new_state)
         outage_pending = (rules.sources_outage(snapshot)

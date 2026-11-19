@@ -82,8 +82,8 @@ launchd(60s) → collect.sh（锁） → run.py --once
 
 | 场景 | 表现 | 处理 |
 |---|---|---|
-| 单源失败 | 其余源继续 | **数据源分级**：价格只取 primary（Binance/OKX/Coinbase）中位数，secondary 仅对比校验不参与定价；**≥1 个主源能出价就不告警**，0 个才 rc=1 告警；消息显示「多源核验：2/3 ...（coinbase 获取异常）」 |
-| 全源失败 | 连续 3 轮（`consensus.outage_alert_rounds`）rc=3，不足 3 轮 rc=1 | 第 3 轮发 `monitoring_outage` P0 穿透静默；连续轮数记在 `market_state.json` 的 `outage_streak`/`outage_last_ts`，两次全挂间隔 >150s（如跨休眠）从 1 重新计；`--dry-run` 不落盘 state，手工验收时每次都是第 1 轮（rc=1） |
+| 单源失败 | 其余源继续 | **数据源分级**：价格只取 primary（Binance/OKX/Coinbase）中位数，secondary 仅对比校验不参与定价；**≥1 个主源能出价就不告警**，0 个主源时 rc=1（降级：看门狗只计入汇总，不即时推送）；消息显示「多源核验：2/3 ...（coinbase 获取异常）」 |
+| 全源失败 | 连续 3 轮（`consensus.outage_alert_rounds`）rc=3，不足 3 轮 rc=1 | 第 3 轮发 `monitoring_outage` P0 穿透静默；连续轮数记在 `market_state.json` 的 `outage_streak`/`outage_last_ts`，两次全挂间隔 >600s（`consensus.outage_max_gap_seconds`，如关机/合盖）从 1 重新计；不足 3 轮的 rc=1 与上一行同样只计入看门狗汇总；`--dry-run` 不落盘 state，手工验收时每次都是第 1 轮（rc=1） |
 | 上一轮未结束 | rc=4 | 跳过本轮（单实例锁） |
 | 休眠/漏跑 | 时间窗出现缺口 | 唤醒后继续；早报合并被压制的 P1 |
 | 状态损坏 | 读取失败 | 回退空状态继续，不阻塞推送 |

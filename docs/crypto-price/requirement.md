@@ -37,7 +37,7 @@
 3. `--fixtures` 回放：正常行情 0 条推送；`shock` 快照触发 `fast_move` P0 且卡片含现价/各窗口涨跌/多源核验。
 4. 冷却生效：同一事件连续两轮只推一次；幅度扩大 1.5 倍可再推。
 5. 即时送达：模拟 23:00 的 P0/P1 都立即推送，不进入早报压制。
-6. 单源失败：OKX/Coinbase 挂掉仍能出价（Binance 主源），全挂**连续 3 轮**（约 2 分钟，2026-11-19 起）时 `monitoring_outage` 强制送达、退出码 3；单轮瞬断只记日志、退出码 1。
+6. 单源失败：OKX/Coinbase 挂掉仍能出价（Binance 主源），全挂**连续 3 轮**（约 2 分钟，2026-11-19 起）时 `monitoring_outage` 强制送达、退出码 3；单轮瞬断只记日志、退出码 1。手工验收：不带 `--dry-run`（`--dry-run` 不落盘 state，永远是第 1 轮）对同一份全挂快照连跑 3 次 `run.py --snapshot <文件> --json`，第 3 次应 rc=3 并产出 P0（不带 `--notify` 不会发送）。
 7. `--test` 能收到 Telegram 测试消息；launchd 安装后 `collect.log` 每 60s 有 start/done（rc=0）。
 8. 运行 10 轮无重复告警、无异常日志、`data/` 不失控增长。
 

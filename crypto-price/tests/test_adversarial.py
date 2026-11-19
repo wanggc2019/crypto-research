@@ -268,6 +268,18 @@ class TestRobustState(BaseCase):
         self.assertEqual([e["severity"] for e in events], ["P0"])
         self.assertIn("连续 3 轮", "".join(events[0]["detail"]))
 
+    def test_outage_keeps_alerting_and_ignores_disabled_flag(self):
+        # 第 4 轮及以后持续全挂：每轮都产出 P0（重复由 data_quality 冷却 60 分钟挡住）；
+        # data_quality 规则被关掉时，全源不可用的 P0 仍要发
+        cfg = common.load_all_configs()
+        outage, base = self.outage_snapshot(), int(DAY_NOW.timestamp())
+        state = {"outage_streak": 3, "outage_last_ts": base - 60}
+        self.assertEqual([e["severity"] for e in rules.evaluate(
+            outage, state, cfg["rules"], cfg["watchlist"], now=DAY_NOW)], ["P0"])
+        off = dict(cfg["rules"], rules=dict(cfg["rules"]["rules"], data_quality={"enabled": False}))
+        self.assertEqual([e["severity"] for e in rules.evaluate(
+            outage, state, off, cfg["watchlist"], now=DAY_NOW)], ["P0"])
+
     def test_outage_streak_resets_on_recovery(self):
         cfg = common.load_all_configs()
         state = rules.advance_state({"outage_streak": 2, "outage_last_ts": int(DAY_NOW.timestamp()) - 60},
@@ -293,14 +305,30 @@ class TestRobustState(BaseCase):
         self.assertFalse(rules.outage_alert_due(stale, outage, cfg["rules"], now=DAY_NOW))
         # 没有时间戳的旧 state 也从 1 计
         self.assertFalse(rules.outage_alert_due({"outage_streak": 5}, outage, cfg["rules"], now=DAY_NOW))
-        # 间隔在阈值内（每分钟一轮）照常累加
-        fresh = {"outage_streak": 2, "outage_last_ts": int(DAY_NOW.timestamp()) - rules.OUTAGE_MAX_GAP_SECONDS}
-        self.assertTrue(rules.outage_alert_due(fresh, outage, cfg["rules"], now=DAY_NOW))
+        # 真实断网时单轮因超时变慢、下一轮被锁跳过：间隔 180s 仍算连续，必须能升级为 P0
+        base = int(DAY_NOW.timestamp())
+        slow = {"outage_streak": 2, "outage_last_ts": base - 180}
+        self.assertTrue(rules.outage_alert_due(slow, outage, cfg["rules"], now=DAY_NOW))
+        gap = rules.outage_max_gap_seconds(cfg["rules"])
+        self.assertEqual(gap, 600)
+        edge = {"outage_streak": 2, "outage_last_ts": base - gap}
+        self.assertTrue(rules.outage_alert_due(edge, outage, cfg["rules"], now=DAY_NOW))
+        over = {"outage_streak": 2, "outage_last_ts": base - gap - 1}
+        self.assertFalse(rules.outage_alert_due(over, outage, cfg["rules"], now=DAY_NOW))
+        self.assertEqual(rules.advance_state(over, outage, now=DAY_NOW, rules_cfg=cfg["rules"])["outage_streak"], 1)
+        # advance_state 与告警判定用同一个（配置的）间隔
+        tight = dict(cfg["rules"], consensus=dict(cfg["rules"]["consensus"], outage_max_gap_seconds=100))
+        self.assertEqual(rules.advance_state(slow, outage, now=DAY_NOW, rules_cfg=tight)["outage_streak"], 1)
+        self.assertFalse(rules.outage_alert_due(slow, outage, tight, now=DAY_NOW))
 
     def test_outage_rounds_configurable_and_state_tolerant(self):
         cfg = common.load_all_configs()
-        rules_cfg = dict(cfg["rules"], consensus=dict(cfg["rules"]["consensus"], outage_alert_rounds=1))
-        self.assertTrue(rules.outage_alert_due({}, self.outage_snapshot(), rules_cfg))
+        for rounds in (1, 0):   # 0 = 立即告警，不能静默回落到 3
+            rules_cfg = dict(cfg["rules"], consensus=dict(cfg["rules"]["consensus"], outage_alert_rounds=rounds))
+            self.assertTrue(rules.outage_alert_due({}, self.outage_snapshot(), rules_cfg), rounds)
+        for bad in ("x", 2.5, -1):
+            rules_cfg = dict(cfg["rules"], consensus=dict(cfg["rules"]["consensus"], outage_alert_rounds=bad))
+            self.assertEqual(rules.outage_alert_rounds(rules_cfg), 3, bad)
         for bad in ("x", -5, None, [1]):
             self.assertFalse(rules.outage_alert_due({"outage_streak": bad}, self.outage_snapshot(), cfg["rules"]))
 
