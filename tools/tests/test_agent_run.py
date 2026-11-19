@@ -76,6 +76,14 @@ class AgentRunTest(unittest.TestCase):
         with self.assertRaisesRegex(llm.LLMError, "Edit"):
             llm.resolve_agent("w", cfg=bad)
 
+    def test_offline_refuses_real_launch_but_allows_dry_run(self):
+        import os
+        from unittest import mock
+        with mock.patch.dict(os.environ, {llm.OFFLINE_ENV: "1"}), \
+             mock.patch.object(agent_run.subprocess, "run") as run:
+            self.assertEqual(agent_run.main(["news.inspect", __file__]), 2)
+            run.assert_not_called()
+
     def test_main_rejects_unknown_task_and_missing_prompt(self):
         self.assertEqual(agent_run.main(["nope.task", __file__, "--dry-run"]), 2)
         self.assertEqual(agent_run.main(["news.inspect", "/no/such/prompt.md", "--dry-run"]), 2)

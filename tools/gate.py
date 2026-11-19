@@ -47,6 +47,7 @@ def _env(extra=None):
     env["PYTHONPATH"] = LIBS
     env["CRYPTO_NOTIFY_LEDGER_DIR"] = os.path.join(_GATE_STATE, "notify-ledger")
     env["CRYPTO_RATELIMIT_DIR"] = os.path.join(_GATE_STATE, "ratelimit")
+    env["CRYPTO_LLM_OFFLINE"] = "1"   # 测试与回放不得真调模型：漏了 mock 也不会启动 claude / 发 API 请求
     if extra:
         env.update(extra)
     return env
