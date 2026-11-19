@@ -231,7 +231,7 @@ class TestRobustState(BaseCase):
                   "errors": [{"source": "binance", "asset": "BTC", "error": "TimeoutError"}],
                   "sources_ok": 0, "sources_total": 9}
         # 已连续 2 轮全挂 → 本轮是第 3 轮，发 P0
-        events = rules.evaluate(outage, {"outage_streak": 2}, cfg["rules"], cfg["watchlist"], now=DAY_NOW)
+        events = rules.evaluate(outage, {"outage_streak": 2, "outage_last_ts": int(DAY_NOW.timestamp()) - 60}, cfg["rules"], cfg["watchlist"], now=DAY_NOW)
         self.assertTrue(events)
         self.assertEqual(events[0]["severity"], "P0")
         self.assertTrue(events[0]["force_send"])
@@ -270,10 +270,32 @@ class TestRobustState(BaseCase):
 
     def test_outage_streak_resets_on_recovery(self):
         cfg = common.load_all_configs()
-        state = rules.advance_state({"outage_streak": 2}, self.outage_snapshot(), now=DAY_NOW)
+        state = rules.advance_state({"outage_streak": 2, "outage_last_ts": int(DAY_NOW.timestamp()) - 60},
+                                    self.outage_snapshot(), now=DAY_NOW)
+        self.assertEqual(state["outage_streak"], 3)
         ok = dict(self.outage_snapshot(), sources_ok=9, errors=[])
-        self.assertEqual(rules.advance_state(state, ok, now=DAY_NOW)["outage_streak"], 0)
+        recovered = rules.advance_state(state, ok, now=DAY_NOW)
+        self.assertEqual(recovered["outage_streak"], 0)
+        self.assertNotIn("outage_last_ts", recovered)
         self.assertFalse(rules.outage_alert_due({"outage_streak": 0}, self.outage_snapshot(), cfg["rules"]))
+
+    def test_outage_streak_does_not_span_sleep(self):
+        # 夜里每次 DarkWake 只跑一轮且都断网：两次之间隔了很久，不能累加成「连续 3 轮」
+        cfg = common.load_all_configs()
+        outage, state = self.outage_snapshot(), {}
+        for hours in (0, 1, 2, 3):
+            now = DAY_NOW + datetime.timedelta(hours=hours)
+            self.assertEqual(rules.evaluate(outage, state, cfg["rules"], cfg["watchlist"], now=now), [])
+            state = rules.advance_state(state, outage, now=now)
+            self.assertEqual(state["outage_streak"], 1, "间隔 1 小时的全挂应从 1 重新计")
+        # 关机前留下 streak=2、开机首轮网络未就绪：也不发
+        stale = {"outage_streak": 2, "outage_last_ts": int(DAY_NOW.timestamp()) - 8 * 3600}
+        self.assertFalse(rules.outage_alert_due(stale, outage, cfg["rules"], now=DAY_NOW))
+        # 没有时间戳的旧 state 也从 1 计
+        self.assertFalse(rules.outage_alert_due({"outage_streak": 5}, outage, cfg["rules"], now=DAY_NOW))
+        # 间隔在阈值内（每分钟一轮）照常累加
+        fresh = {"outage_streak": 2, "outage_last_ts": int(DAY_NOW.timestamp()) - rules.OUTAGE_MAX_GAP_SECONDS}
+        self.assertTrue(rules.outage_alert_due(fresh, outage, cfg["rules"], now=DAY_NOW))
 
     def test_outage_rounds_configurable_and_state_tolerant(self):
         cfg = common.load_all_configs()
@@ -355,7 +377,8 @@ class TestLockAndDegrade(BaseCase):
                 f.write(b"{broken json")
         os.makedirs(os.path.join(self.data, "state"), exist_ok=True)
         with open(os.path.join(self.data, "state", "market_state.json"), "w", encoding="utf-8") as f:
-            json.dump({"outage_streak": 2}, f)   # 已连续 2 轮全挂，本轮第 3 轮
+            # 已连续 2 轮全挂；fixtures 全损坏时快照时间取当前真实时间（sources.py），所以按真实时间预置
+            json.dump({"outage_streak": 2, "outage_last_ts": int(datetime.datetime.now().timestamp()) - 60}, f)
         rc, out, _ = self.run_main([
             "--fixtures", fixture, "--dry-run", "--json", "--data-dir", self.data,
         ], now=DAY_NOW)

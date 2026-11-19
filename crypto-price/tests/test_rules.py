@@ -419,7 +419,7 @@ class TestDataQuality(RuleTestCase):
         first = self.evaluate(snap)
         self.assert_no_rule(first, "data_quality")
         self.one(first, "funding")
-        events = self.evaluate(snap, state={"outage_streak": 2})   # 第 3 轮
+        events = self.evaluate(snap, state={"outage_streak": 2, "outage_last_ts": NOW - 60})   # 第 3 轮
         dq = self.one(events, "data_quality")
         self.assertEqual(dq["severity"], "P0")
         self.assertTrue(dq["force_send"])

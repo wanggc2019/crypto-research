@@ -84,17 +84,32 @@ def _sources_outage(snapshot):
 
 
 DEFAULT_OUTAGE_ALERT_ROUNDS = 3
+# 两次全挂间隔超过它（2.5 个 60s 轮询周期）就不算「连续」：
+# 夜里多次 DarkWake 各跑一轮、每轮都断网时，计数不能跨休眠累加
+OUTAGE_MAX_GAP_SECONDS = 150
 
 
 def _int_or_zero(value):
     return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else 0
 
 
-def outage_streak(state, snapshot):
-    """含本轮在内，连续全源不可用的轮数（本轮正常 → 0）。"""
-    if not _sources_outage(snapshot if isinstance(snapshot, dict) else {}):
+def sources_outage(snapshot):
+    """本轮是否全源不可用（run.py 的退出码与此口径一致）。"""
+    return _sources_outage(snapshot if isinstance(snapshot, dict) else {})
+
+
+def outage_streak(state, snapshot, now=None):
+    """含本轮在内，连续全源不可用的轮数（本轮正常 → 0；与上次全挂间隔过长 → 从 1 重新计）。"""
+    snapshot = snapshot if isinstance(snapshot, dict) else {}
+    if not _sources_outage(snapshot):
         return 0
-    return _int_or_zero((state or {}).get("outage_streak") if isinstance(state, dict) else 0) + 1
+    state = state if isinstance(state, dict) else {}
+    previous = _int_or_zero(state.get("outage_streak"))
+    last_ts = _num(state.get("outage_last_ts"))
+    now_ts, _ = _clock(now, snapshot)
+    if previous and (last_ts is None or not 0 <= now_ts - last_ts <= OUTAGE_MAX_GAP_SECONDS):
+        previous = 0
+    return previous + 1
 
 
 def outage_alert_rounds(rules_cfg):
@@ -102,9 +117,9 @@ def outage_alert_rounds(rules_cfg):
     return _int_or_zero(consensus.get("outage_alert_rounds")) or DEFAULT_OUTAGE_ALERT_ROUNDS
 
 
-def outage_alert_due(state, snapshot, rules_cfg):
+def outage_alert_due(state, snapshot, rules_cfg, now=None):
     """全源不可用且已连续达到 outage_alert_rounds 轮 → 该发 P0（run.py 据此给 rc=3，否则 rc=1）。"""
-    return outage_streak(state, snapshot) >= outage_alert_rounds(rules_cfg)
+    return outage_streak(state, snapshot, now) >= outage_alert_rounds(rules_cfg)
 
 
 def _quality_events(snapshot, assets, qualities, ts, streak=1):
@@ -456,8 +471,8 @@ def evaluate(snapshot, state, rules_cfg, watchlist, now=None):
     outage = _sources_outage(snapshot)
     if outage:
         # 未达连续轮数：不发（也不能落到逐资产 P1，那样每轮都会报三条）
-        due = outage_alert_due(state, snapshot, rules_cfg)
-        events = _quality_events(snapshot, assets, qualities, ts, outage_streak(state, snapshot)) if due else []
+        due = outage_alert_due(state, snapshot, rules_cfg, now)
+        events = _quality_events(snapshot, assets, qualities, ts, outage_streak(state, snapshot, now)) if due else []
     else:
         events = _quality_events(snapshot, assets, qualities, ts) if _enabled(rules, "data_quality") else []
     price_assets = [] if outage else [asset for asset in assets if qualities[asset]["ok"]]
@@ -527,6 +542,11 @@ def advance_state(state, snapshot, now=None):
         rows.sort(key=lambda row: _num(row.get("ts")) or 0.0)
         oi_history[asset] = rows[-OI_MAX_ROWS:]
 
+    streak = outage_streak(state, snapshot, now)
     new_state.update({"last_prices": last_prices, "extremes": extremes, "oi_history": oi_history,
-                      "outage_streak": outage_streak(state, snapshot)})
+                      "outage_streak": streak})
+    if streak:
+        new_state["outage_last_ts"] = now_ts
+    else:
+        new_state.pop("outage_last_ts", None)
     return new_state
