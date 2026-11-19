@@ -228,7 +228,9 @@ class HttpLlmTest(unittest.TestCase):
                     "printf '%%s\\n' \"$@\" > \"%s/args\"\n"
                     "cat > \"%s/stdin\"\n"
                     "env > \"%s/env\"\n"
-                    "cat <<'EOF'\n%s\nEOF\n" % (tmp, tmp, tmp, payload))
+                    "pwd > \"%s/cwd\"\n"
+                    "ls -A > \"%s/cwd_files\"\n"
+                    "cat <<'EOF'\n%s\nEOF\n" % (tmp, tmp, tmp, tmp, tmp, payload))
         os.chmod(script, 0o755)
         return script
 
@@ -269,12 +271,42 @@ class HttpLlmTest(unittest.TestCase):
             with self.assertRaisesRegex(llm.LLMError, "退出码"):
                 llm._claude_code_chat([{"role": "user", "content": "x"}], "m", binary=fake)
 
+    def test_claude_code_runs_in_fresh_empty_dir(self):
+        # 共享临时目录里若被放了 .claude/settings.json（hooks）或 CLAUDE.md，--setting-sources project,local 会加载
+        with tempfile.TemporaryDirectory() as tmp:
+            fake = self._fake_claude(tmp, json.dumps({"type": "result", "subtype": "success", "is_error": False,
+                                                      "stop_reason": "end_turn", "result": "ok"}))
+            llm._claude_code_chat([{"role": "user", "content": "x"}], "m", binary=fake)
+            cwd = open(os.path.join(tmp, "cwd")).read().strip()
+            self.assertNotEqual(os.path.realpath(cwd), os.path.realpath(tempfile.gettempdir()))
+            self.assertIn("crypto-llm-", cwd)
+            self.assertEqual(open(os.path.join(tmp, "cwd_files")).read().strip(), "", "工作目录必须是空的")
+            self.assertFalse(os.path.exists(cwd), "用完即删")
+
+    def test_offline_guard_blocks_real_calls(self):
+        spec = {"provider": "claude-code", "key_env": "", "model": "m", "effort": None}
+        api = {"provider": "anthropic", "key_env": "ANTHROPIC_API_KEY", "model": "m", "max_tokens": 10}
+        with mock.patch.dict(os.environ, {llm.OFFLINE_ENV: "1"}), \
+             mock.patch.object(llm, "claude_binary", return_value="/x/claude"), \
+             mock.patch.object(llm.subprocess, "run") as run:
+            self.assertEqual(llm.key_for(spec), "")
+            self.assertEqual(llm.key_for(api, env={"ANTHROPIC_API_KEY": "sk-ant-x"}), "")
+            with self.assertRaisesRegex(llm.LLMError, "离线"):
+                llm.complete(spec, [{"role": "user", "content": "x"}], llm.SUBSCRIPTION)
+            with self.assertRaisesRegex(llm.LLMError, "离线"):
+                llm.complete(api, [{"role": "user", "content": "x"}], "sk-ant-x")
+            run.assert_not_called()
+        with mock.patch.dict(os.environ, {llm.OFFLINE_ENV: "0"}):
+            self.assertFalse(llm.offline())
+
     def test_claude_code_key_for_depends_on_binary(self):
         spec = {"provider": "claude-code", "key_env": ""}
-        with mock.patch.object(llm, "claude_binary", return_value="/x/claude"):
-            self.assertEqual(llm.key_for(spec), llm.SUBSCRIPTION)
-        with mock.patch.object(llm, "claude_binary", return_value=""):
-            self.assertEqual(llm.key_for(spec), "")
+        with mock.patch.dict(os.environ):   # gate 下默认离线；这里测非离线行为（退出作用域后恢复）
+            os.environ.pop(llm.OFFLINE_ENV, None)
+            with mock.patch.object(llm, "claude_binary", return_value="/x/claude"):
+                self.assertEqual(llm.key_for(spec), llm.SUBSCRIPTION)
+            with mock.patch.object(llm, "claude_binary", return_value=""):
+                self.assertEqual(llm.key_for(spec), "")
 
     def test_extract_json(self):
         self.assertEqual(llm.extract_json('```json\n{"a": 1}\n```'), {"a": 1})

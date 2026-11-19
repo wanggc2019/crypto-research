@@ -159,6 +159,13 @@ def resolve_agent(task, cfg=None):
             "allowed_tools": list(tools), "timeout_seconds": int(spec.get("timeout_seconds") or 1800)}
 
 
+OFFLINE_ENV = "CRYPTO_LLM_OFFLINE"   # gate/CI 设为 1：任何路径都不会真调模型（测试与回放的自动护栏）
+
+
+def offline():
+    return os.environ.get(OFFLINE_ENV, "").strip() not in ("", "0")
+
+
 def claude_binary():
     """本机 claude 命令（launchd 的 PATH 很干净，额外找 ~/.local/bin 等）；找不到返回 ""。"""
     path = os.pathsep.join([os.environ.get("PATH", "")] + CLAUDE_PATHS)
@@ -167,6 +174,8 @@ def claude_binary():
 
 def key_for(spec, env=None, use_os_environ=True, use_env_file=True):
     """按 spec 的 key_env 找 key（见 find_api_key）；没有返回 ""。claude-code：装了 claude 就返回 SUBSCRIPTION。"""
+    if offline():
+        return ""   # 离线护栏：调用方按「AI 不可用」降级
     if spec["provider"] in NO_KEY_PROVIDERS:
         return SUBSCRIPTION if claude_binary() else ""
     return find_api_key(env=env, names=(spec["key_env"],), use_os_environ=use_os_environ,
@@ -175,6 +184,8 @@ def key_for(spec, env=None, use_os_environ=True, use_env_file=True):
 
 def complete(spec, messages, api_key, timeout=60, retries=2, base_url=None):
     """按 spec 的提供商发一次请求，返回文本；失败抛 LLMError。base_url 只给离线测试用。"""
+    if offline() and spec["provider"] != "claude-code" and not base_url:
+        raise LLMError("%s=1：离线模式，不发真实请求" % OFFLINE_ENV)
     if spec["provider"] == "claude-code":
         return _claude_code_chat(messages, spec["model"], spec.get("effort"), timeout=timeout)
     if spec["provider"] == "deepseek":
@@ -195,6 +206,8 @@ def chat_for(task, messages, env=None, timeout=60, retries=2):
 
 def _claude_code_chat(messages, model, effort=None, timeout=60, binary=None):
     """claude -p 当纯文本补全用：不给任何工具、自定义 system prompt、新会话、不读用户设置；用本机订阅登录。"""
+    if not binary and offline():
+        raise LLMError("%s=1：离线模式，不启动 claude" % OFFLINE_ENV)   # 测试显式传入的假 claude 不受影响
     binary = binary or claude_binary()
     if not binary:
         raise LLMError("找不到 claude 命令（Claude Code 未安装）")
@@ -210,11 +223,14 @@ def _claude_code_chat(messages, model, effort=None, timeout=60, binary=None):
     for name in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"):  # 留着会被改成按量计费
         env.pop(name, None)
     env["PATH"] = os.pathsep.join([env.get("PATH", "")] + CLAUDE_PATHS)
-    try:
-        proc = subprocess.run(cmd, input=prompt, capture_output=True, text=True, timeout=timeout, env=env,
-                              cwd=tempfile.gettempdir())  # 中性目录：不带入任何项目上下文
-    except subprocess.TimeoutExpired:
-        raise LLMError("claude -p 超过 %s 秒" % timeout) from None
+    # 每次用新建的空目录：--setting-sources project,local 会读 cwd 下的 .claude/settings*.json（可配 hooks）
+    # 和 CLAUDE.md；共享的临时目录可能被别的进程放了这些文件
+    with tempfile.TemporaryDirectory(prefix="crypto-llm-") as workdir:
+        try:
+            proc = subprocess.run(cmd, input=prompt, capture_output=True, text=True, timeout=timeout, env=env,
+                                  cwd=workdir)
+        except subprocess.TimeoutExpired:
+            raise LLMError("claude -p 超过 %s 秒" % timeout) from None
     try:
         data = json.loads(proc.stdout)
     except ValueError:

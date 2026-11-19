@@ -34,5 +34,12 @@ class TestGateDiscovery(unittest.TestCase):
                 self.assertIn(name, gated)
 
 
+
+class OfflineGuardTest(unittest.TestCase):
+    def test_gate_env_forces_llm_offline(self):
+        # 测试与回放不得真调模型：gate 给所有步骤设 CRYPTO_LLM_OFFLINE=1（crypto_core.llm 的自动护栏）
+        self.assertEqual(gate._env().get("CRYPTO_LLM_OFFLINE"), "1")
+
+
 if __name__ == "__main__":
     unittest.main()

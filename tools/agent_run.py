@@ -128,6 +128,9 @@ def main(argv=None):
         print(json.dumps({"task": spec["task"], "agent": label, "cmd": cmd,
                           "stdin": str(stdin_path) if stdin_path else None}, ensure_ascii=False, indent=1))
         return 0
+    if llm.offline():
+        print("agent_run: %s=1（离线模式），不启动 agent" % llm.OFFLINE_ENV, file=sys.stderr)
+        return 2
     print("agent_run: %s → %s" % (spec["task"], label), file=sys.stderr)
     stdin = open(stdin_path, "rb") if stdin_path else subprocess.DEVNULL
     try:
