@@ -415,7 +415,11 @@ class TestDataQuality(RuleTestCase):
         snap = snapshot(quotes={}, funding={"BTC": {"rate": 0.002, "mark_price": 100.0, "ts": NOW}},
                         errors=[{"source": "binance", "error": "Timeout"}],
                         sources_ok=0, sources_total=9)
-        events = self.evaluate(snap)
+        # 首轮全挂：不发数据质量告警（瞬断），衍生品规则照常
+        first = self.evaluate(snap)
+        self.assert_no_rule(first, "data_quality")
+        self.one(first, "funding")
+        events = self.evaluate(snap, state={"outage_streak": 2, "outage_last_ts": NOW - 60})   # 第 3 轮
         dq = self.one(events, "data_quality")
         self.assertEqual(dq["severity"], "P0")
         self.assertTrue(dq["force_send"])
@@ -452,7 +456,8 @@ class TestAdvanceState(unittest.TestCase):
         snap = snapshot(stats={"BTC": {"high": 106.0, "low": 97.0}},
                         oi={"BTC": {"oi": 3.0, "ts": NOW}})
         new_state = rules.advance_state({}, snap, now=NOW)
-        self.assertEqual(sorted(new_state), ["extremes", "last_prices", "oi_history"])
+        self.assertEqual(sorted(new_state), ["extremes", "last_prices", "oi_history", "outage_streak"])
+        self.assertEqual(new_state["outage_streak"], 0)
         self.assertEqual(new_state["extremes"]["BTC"]["high"], 106.0)
         self.assertEqual(new_state["last_prices"]["BTC"]["price"], 100.0)
         self.assertEqual(len(new_state["oi_history"]["BTC"]), 1)
