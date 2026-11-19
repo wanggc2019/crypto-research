@@ -159,6 +159,8 @@ class TestReplay(unittest.TestCase):
             payload = json.loads(out)
             if round_no < 3:
                 self.assertEqual(payload["events"], [], "前两轮只算降级（rc=1，看门狗不即时告警），不发 P0")
+                logs = [os.path.join(d, f) for d, _, fs in os.walk(self.data) for f in fs if f == "price.log"]
+                self.assertTrue(any("全源不可用第 %d 轮" % round_no in open(p, encoding="utf-8").read() for p in logs))
             with open(os.path.join(self.data, "state", "market_state.json"), encoding="utf-8") as f:
                 self.assertEqual(json.load(f)["outage_streak"], round_no)
         payload = json.loads(out)

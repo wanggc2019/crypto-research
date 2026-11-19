@@ -385,6 +385,10 @@ def run_cycle(args, paths, cfg, now=None):
         outage_pending = (rules.sources_outage(snapshot)
                           and not rules.outage_alert_due(state, snapshot, cfg["rules"], now=rule_now))
         out["rc"] = _source_rc(snapshot, primary_ok, outage_pending)
+        if outage_pending:
+            streak = rules.outage_streak(state, snapshot, rule_now, rules.outage_max_gap_seconds(cfg["rules"]))
+            common.log_line("全源不可用第 %d 轮（连续 %d 轮才发 P0），本轮 rc=1"
+                            % (streak, rules.outage_alert_rounds(cfg["rules"])))
         events = _sort_events(events)
         out["events"] = events
         delivery_result = _deliver(events, cfg["rules"], paths, cfg["app"], now,
