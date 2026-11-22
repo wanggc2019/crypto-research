@@ -10,6 +10,7 @@
 | [architecture.md](architecture.md) | **仓库技术架构**：目录分层、依赖方向、运行调度、共享库/契约（含结构图） |
 | [runbook.md](runbook.md) | 运行与下线：launchd 机制、暂停/卸载/彻底下线、健康检查、故障排查 |
 | [notify-policy.md](notify-policy.md) | 消息发送规范（即时类 vs 总结类、发送窗口） |
+| [vps-option.md](vps-option.md) | 备选方案：迁到 VPS 做 7×24 运行（暂缓；选型、地区限制、迁移要点） |
 | [conventions.md](conventions.md) | 命名 / 配置 / 数据 / CLI / 退出码 / 文档规划规范 |
 | [dev-workflow.md](dev-workflow.md) | 开发工作流与 **PR 规范**（标题格式 / 分支 / 验证 / 收尾） |
 | [adr/](adr/) | 架构决策记录（0001-0007） |

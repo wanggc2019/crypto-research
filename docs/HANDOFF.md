@@ -69,7 +69,7 @@ tail -f <module>/data/logs/collect.log
 
 1. 项目必须在 `~/vscode/crypto-research`：`~/Documents` 受 macOS TCC 保护，launchd 读不了。
 2. **launchd 直接跑工作区代码**：切分支 / 改 `scripts/` 下一轮即生效；不要在仓库副本里跑 `collect.sh`（会触发 `healthcheck --fix` 装出幽灵任务），实验后跑 `make jobs` 检查。
-3. 合盖休眠会暂停定时（夜间 70–90 分钟空档）；`make keep-awake` 可防休眠，要 7×24 需 VPS。
+3. 合盖休眠会暂停定时（夜间 70–90 分钟空档）；`make keep-awake` 只在插电时防空闲休眠，挡不住合盖；要 7×24 需 VPS（方案已记录、暂缓，见 [vps-option.md](vps-option.md)）。
 4. 数据不会无限增长：每日首轮自动 prune（规则见 `tools/prune.py`）。
 5. 测试不得写生产 `data/`：gate 为通知台账与限速状态设置临时目录；新测试需要写状态时同样用临时目录。
 
@@ -77,7 +77,8 @@ tail -f <module>/data/logs/collect.log
 
 1. **约 2026-11-23**：看 `make notify-report days=7`，定 `daily_signal_cap` 与是否切 `enforce`（需用户确认）。首日数据（2026-11-16 00:00–10:00，`make notify-report days=1`）：即时信号 23 条，cap=10 时 07:00 前即耗尽，主要是 price 与 news 对 BTC 的近重复 P1。
 2. **crypto-futures 首周观察**（2026-11-17 已安装）：首周看 `make notify-report days=7` 里 crypto-futures 的推送量（预期约 0.5 条/天，>2 条/天就调 `config/rules.yaml` 并用 `scripts/backtest.py` 重跑）。M2（把 crypto-price 的资金费率 / OI 告警迁过来，crypto-price 收窄为纯现货、不改名）需求见 [crypto-futures/requirement-m2.md](crypto-futures/requirement-m2.md)，**已实现**（2026-11-17）。首周额外盯：`funding_extreme` 实时值触发是否 > 1 条/天、funding P0 是否挤占 M1 P0 额度；M3（下游改读 crypto-futures 导出、crypto-price 删 fapi 采集）另开需求。
-3. 模块业务待办（可选，按需排期）：
+3. **VPS（暂缓）**：合盖 / 休眠空档频繁到漏告警时，按 [vps-option.md](vps-option.md) 重新评估（先写需求）。
+4. 模块业务待办（可选，按需排期）：
    - crypto-news：Phase 4 早警指标、LLM 三行摘要、周报校准（[方案 §5–§8](crypto-intel-plan.md)）；
    - crypto-price：关键位自动校准；
    - crypto-jobs：源扩充 / 薪资解析 / 技能共现（[design §P1](crypto-jobs/design.md)）；
