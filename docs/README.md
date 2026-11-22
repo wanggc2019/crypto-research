@@ -13,7 +13,7 @@
 | [vps-option.md](vps-option.md) | 备选方案：迁到 VPS 做 7×24 运行（暂缓；选型、地区限制、迁移要点） |
 | [conventions.md](conventions.md) | 命名 / 配置 / 数据 / CLI / 退出码 / 文档规划规范 |
 | [dev-workflow.md](dev-workflow.md) | 开发工作流与 **PR 规范**（标题格式 / 分支 / 验证 / 收尾） |
-| [adr/](adr/) | 架构决策记录（0001-0007） |
+| [adr/](adr/) | 架构决策记录（0001-0012） |
 | [crypto-intel-plan.md](crypto-intel-plan.md) | 消息面方案 v0.6（crypto-news 的深度业务方案，历史版） |
 | [crypto-learning-plan.md](crypto-learning-plan.md) | **个人学习方案 v0.3**：长期碎片化路线、知识地图、10–15 分钟课程设计、合规边界 |
 | [HANDOFF.md](HANDOFF.md) | 交接文档：当前状态、常用命令、TODO |
